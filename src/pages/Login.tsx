@@ -33,16 +33,16 @@ const Login = () => {
 
   return (
     <div className="min-h-screen flex bg-[#09090b] text-white">
-      {/* Lado Esquerdo - Visual */}
+      {/* Lado Esquerdo - Visual Atualizado para Ecossistema Unificado */}
       <div className="hidden lg:flex w-1/2 bg-emerald-950/30 relative items-center justify-center overflow-hidden border-r border-white/5">
         <div className="absolute w-[600px] h-[600px] bg-emerald-600/20 rounded-full blur-[120px] -top-20 -left-20 animate-pulse" />
         <div className="relative z-10 p-12 text-center">
           <div className="inline-flex items-center justify-center w-24 h-24 rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-700 shadow-2xl mb-8">
             <Plane className="w-12 h-12 text-white" />
           </div>
-          <h2 className="text-4xl font-bold mb-4 tracking-tight">Gestão de Milhas</h2>
+          <h2 className="text-4xl font-bold mb-4 tracking-tight">Finanças & Milhas ERP</h2>
           <p className="text-zinc-400 text-lg max-w-md mx-auto">
-            Controle seu estoque, financeiro e lucro em um único lugar.
+            Sua gestão financeira pessoal, profissional e estoque de milhas unificados em um único ecossistema.
           </p>
         </div>
       </div>

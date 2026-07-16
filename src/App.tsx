@@ -1,123 +1,75 @@
-import { useState, useEffect } from "react";
-import Login from "./pages/Login";
-// IMPORTANTE: Confira se o caminho abaixo está certo no seu projeto
-import { supabase } from "@/integrations/supabase/client"; 
-
+import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
-import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { DataProvider } from "@/contexts/DataContext";
+
+import { MainLayout } from "./components/layout/MainLayout";
 import Index from "./pages/Index";
 import Compras from "./pages/Compras";
 import Vendas from "./pages/Vendas";
 import ContasPagar from "./pages/ContasPagar";
 import ContasReceber from "./pages/ContasReceber";
-// CORREÇÃO 1: Mudar a importação de Clientes para Passageiros
-import Passageiros from "./pages/Passageiros"; 
-// REMOVIDO: import Clientes from "./pages/Clientes";
-
-// REMOVIDO: Fornecedores (a página deve ser apagada/ignorada)
-// import Fornecedores from "./pages/Fornecedores";
-
+import CentrosCusto from './pages/CentrosCusto';
+import Categorias from './pages/Categorias';
+import Passageiros from "./pages/Passageiros";
 import Programas from "./pages/Programas";
 import Contas from "./pages/Contas";
 import Estoque from "./pages/Estoque";
 import ProgramDetails from "./pages/ProgramDetails";
-import CartoesPagamento from "./pages/CartoesPagamento";
 import Limites from "./pages/Limites";
 import Transferencias from "./pages/Transferencias";
 import NotFound from "./pages/NotFound";
+import Transacoes from "./pages/Transacoes";
+import FinancasDashboard from "./pages/FinancasDashboard";
+import Cartoes from "./pages/Cartoes";
+import Metas from "./pages/Metas";
+import FaturaCartao from "./pages/FaturaCartao";
+import FluxoCaixa from "./pages/FluxoCaixa";
 
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 1000 * 60 * 5,
-      gcTime: 1000 * 60 * 10,
-      retry: false,
-      refetchOnWindowFocus: false,
-    },
-  },
-});
+const queryClient = new QueryClient();
 
 const App = () => {
-  const [session, setSession] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  return (
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter>
+          <MainLayout>
+            <Routes>
+              {/* MÓDULO GESTÃO DE MILHAS */}
+              <Route path="/" element={<Index />} />
+              <Route path="/estoque" element={<Estoque />} />
+              <Route path="/estoque/:id" element={<ProgramDetails />} />
+              <Route path="/compras" element={<Compras />} />
+              <Route path="/vendas" element={<Vendas />} />
+              <Route path="/transferencias" element={<Transferencias />} />
+              <Route path="/contas-pagar" element={<ContasPagar />} />
+              <Route path="/contas-receber" element={<ContasReceber />} />
+              <Route path="/cartoes" element={<Cartoes />} />
+              <Route path="/limites" element={<Limites />} />
+              <Route path="/passageiros" element={<Passageiros />} />
+              <Route path="/programas" element={<Programas />} />
+              <Route path="/contas" element={<Contas />} />
 
-  useEffect(() => {
-    // 1. Verifica sessão inicial ao carregar a página (F5)
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setLoading(false);
-    });
-
-    // 2. Escuta mudanças (Login ou Logout)
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      setLoading(false);
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
-
-  // Evita piscar a tela de login enquanto verifica
-  if (loading) {
-    return <div className="flex h-screen items-center justify-center">Carregando...</div>;
-  }
-
-  return (
-    <QueryClientProvider client={queryClient}>
-      <DataProvider>
-        <TooltipProvider>
-          <Toaster />
-          <Sonner />
-          <BrowserRouter>
-            {!session ? (
-              <Routes>
-                <Route path="*" element={<Login />} />
-              </Routes>
-            ) : (
-              <Routes>
-                <Route path="/login" element={<Navigate to="/" replace />} />
-                <Route path="/" element={<Index />} />
-                
-                {/* ROTAS OPERACIONAIS */}
-                <Route path="/estoque" element={<Estoque />} />
-                <Route path="/estoque/:id" element={<ProgramDetails />} />
-
-                <Route path="/compras" element={<Compras />} />
-                <Route path="/vendas" element={<Vendas />} />
-                <Route path="/transferencias" element={<Transferencias />} />
-                
-                {/* ROTAS FINANCEIRAS */}
-                <Route path="/contas-pagar" element={<ContasPagar />} />
-                <Route path="/contas-receber" element={<ContasReceber />} />
-                <Route path="/cartoes" element={<CartoesPagamento />} />
-                
-                {/* ROTAS DE CADASTRO */}
-                {/* CORREÇÃO 2: Rota para Passageiros */}
-                <Route path="/passageiros" element={<Passageiros />} />
-                
-                {/* REMOVIDO: <Route path="/clientes" element={<Clientes />} /> */}
-                {/* REMOVIDO: <Route path="/fornecedores" element={<Fornecedores />} /> */}
-
-                <Route path="/programas" element={<Programas />} />
-                <Route path="/contas" element={<Contas />} />
-                
-                {/* ROTAS DE SEGURANÇA */}
-                <Route path="/limites" element={<Limites />} />
-                
-                <Route path="*" element={<NotFound />} />
-              </Routes>
-            )}
-          </BrowserRouter>
-        </TooltipProvider>
-      </DataProvider>
-    </QueryClientProvider>
-  );
+              {/* MÓDULO FINANÇAS PESSOAIS */}
+              <Route path="/financas" element={<FinancasDashboard />} />
+              <Route path="/financas/transacoes" element={<Transacoes />} />
+              <Route path="/financas/metas" element={<Metas />} />
+              <Route path="/financas/fluxo-caixa" element={<FluxoCaixa />} />
+              <Route path="/financas/cartoes" element={<Cartoes />} />
+              <Route path="/financas/cartoes/:id" element={<FaturaCartao />} />
+              <Route path="/financas/centros-custo" element={<CentrosCusto />} />
+              <Route path="/financas/categorias" element={<Categorias />} />
+              
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </MainLayout>
+        </BrowserRouter>
+      </TooltipProvider>
+    </QueryClientProvider>
+  );
 };
 
 export default App;

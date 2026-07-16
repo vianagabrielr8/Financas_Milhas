@@ -1,498 +1,161 @@
 import { useState, useMemo } from 'react';
-import { MainLayout } from '@/components/layout/MainLayout';
-import { PageHeader } from '@/components/ui/page-header';
-import { StatCard } from '@/components/dashboard/StatCard';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
-import {
-  Plane,
-  TrendingDown,
-  CreditCard,
-  Wallet,
-  Filter,
-  ShieldCheck,
-  BarChart3,
-  ArrowUpRight,
-  Banknote,
-  Target,
-  Percent,
-  TrendingUp,
-  CalendarDays
-} from 'lucide-react';
-import { 
-  Select, 
-  SelectContent, 
-  SelectItem, 
-  SelectTrigger, 
-  SelectValue 
-} from '@/components/ui/select';
-
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Calendar } from '@/components/ui/calendar';
-
-import { 
-  useMilesBalance, 
-  usePayableInstallments, 
-  useReceivableInstallments,
-  useTransactions,
-  useAccounts,
-  useSales
-} from '@/hooks/useSupabaseData';
-import { formatCPM } from '@/utils/financeLogic';
+import { Plane, CreditCard, Wallet, ShieldCheck, BarChart3, ArrowUpRight, Banknote, Target, Percent, TrendingUp, TrendingDown } from 'lucide-react';
+import { useMilesBalance, usePayableInstallments, useReceivableInstallments, useAccounts, useSales } from '@/hooks/useSupabaseData';
+import { formatCPM, formatCurrency, formatNumber } from '@/utils/financeLogic';
 import { format, addMonths, differenceInMonths } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, 
-  ResponsiveContainer, Area, ComposedChart, Line 
-} from 'recharts';
+import { ResponsiveContainer, Area, ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts';
+import { cn } from '@/lib/utils';
+import { Link } from 'react-router-dom';
 
-const MARKET_PRICES: Record<string, number> = {
-  'LATAM PASS': 25.50,
-  'SMILES': 15.50,
-  'ESFERA': 30.00,
-  'LIVELO': 35.00,
-  'AZUL': 21.00,
-  'C6 BANK': 35.00,
-  'ITAU': 35.00
-};
+const MARKET_PRICES: Record<string, number> = { 'LATAM PASS': 25.50, 'SMILES': 15.50, 'ESFERA': 30.00, 'LIVELO': 35.00, 'AZUL': 21.00, 'C6 BANK': 35.00, 'ITAU': 35.00 };
 
-const Dashboard = () => {
-  const { data: milesBalance, isLoading: loadingBalance } = useMilesBalance();
-  const { data: payableInstallments } = usePayableInstallments();
-  const { data: receivableInstallments } = useReceivableInstallments();
-  const { data: transactions } = useTransactions();
-  const { data: accounts } = useAccounts();
-  const { data: vendasData } = useSales(); 
-
-  const [filtroConta, setFiltroConta] = useState("all");
-  const [dataInicio, setDataInicio] = useState<Date | undefined>();
-  const [dataFim, setDataFim] = useState<Date | undefined>();
-
-  // --- 1. LÓGICA DE PATRIMÔNIO E MERCADO (GLOBAL) ---
-  const { totalMiles, totalInvested, marketValue, avgCpmGlobal } = useMemo(() => {
-    if (!milesBalance) return { totalMiles: 0, totalInvested: 0, marketValue: 0, avgCpmGlobal: 0 };
-    
-    const filtered = filtroConta === "all" ? milesBalance : milesBalance.filter(m => m.account_id === filtroConta);
-    
-    const miles = filtered.reduce((acc, item) => acc + (item.balance || 0), 0);
-    const invested = filtered.reduce((acc, item) => acc + (item.total_invested || 0), 0);
-    const market = filtered.reduce((acc, item) => {
-      const price = MARKET_PRICES[item.program_name?.toUpperCase() || ''] || 0;
-      return acc + ((item.balance || 0) / 1000 * price);
-    }, 0);
-
-    return {
-      totalMiles: miles,
-      totalInvested: invested,
-      marketValue: market,
-      avgCpmGlobal: miles > 0 ? (invested / miles) * 1000 : 0
-    };
-  }, [milesBalance, filtroConta]);
-
-  // --- 2. LÓGICA DE ENDIVIDAMENTO (GLOBAL) ---
-  const { totalPayableAllTime, totalReceivableAllTime } = useMemo(() => {
-    const pay = payableInstallments?.filter(i => i.status === 'pendente').reduce((acc, i) => acc + Number(i.amount), 0) || 0;
-    const rec = receivableInstallments?.filter(i => i.status === 'pendente').reduce((acc, i) => acc + Number(i.amount), 0) || 0;
-    return { totalPayableAllTime: pay, totalReceivableAllTime: rec };
-  }, [payableInstallments, receivableInstallments]);
-
-  const equity = (marketValue + totalReceivableAllTime) - totalPayableAllTime;
-  const coverageIndex = totalPayableAllTime > 0 ? marketValue / totalPayableAllTime : 0;
-
-  // --- 3. LÓGICA DE PERFORMANCE DE VENDAS (COM FILTRO DE DATA) ---
-  const { receitaTotal, custoVendas, lucroOperacional, cpmVendido, cpmCustoVenda, margemLucro, spread } = useMemo(() => {
-    if (!vendasData) return { receitaTotal: 0, custoVendas: 0, lucroOperacional: 0, cpmVendido: 0, cpmCustoVenda: 0, margemLucro: 0, spread: 0 };
-
-    let vendasFiltradas = filtroConta === "all" ? vendasData : vendasData.filter(v => v.account_id === filtroConta);
-
-    const dataInicioStr = dataInicio ? format(dataInicio, 'yyyy-MM-dd') : null;
-    const dataFimStr = dataFim ? format(dataFim, 'yyyy-MM-dd') : null;
-
-    if (dataInicioStr) {
-        vendasFiltradas = vendasFiltradas.filter(v => v.transaction_date >= dataInicioStr);
-    }
-    if (dataFimStr) {
-        vendasFiltradas = vendasFiltradas.filter(v => v.transaction_date <= dataFimStr);
-    }
-
-    let receita = 0;
-    let custo = 0;
-    let milhas = 0;
-
-    vendasFiltradas.forEach(v => {
-        const receitaVenda = v.receivables?.[0]?.total_amount || v.sale_price || 0;
-        receita += Number(receitaVenda);
-        custo += Number(v.total_cost || 0); 
-        milhas += Math.abs(Number(v.quantity || 0));
-    });
-
-    const lucro = receita - custo;
-    const margem = receita > 0 ? (lucro / receita) * 100 : 0;
-    const cpmVenda = milhas > 0 ? (receita / (milhas / 1000)) : 0;
-    const cpmCusto = milhas > 0 ? (custo / (milhas / 1000)) : 0;
-    const calculoSpread = cpmVenda - cpmCusto;
-
-    return { 
-        receitaTotal: receita, 
-        custoVendas: custo, 
-        lucroOperacional: lucro, 
-        cpmVendido: cpmVenda, 
-        cpmCustoVenda: cpmCusto, 
-        margemLucro: margem,
-        spread: calculoSpread
-    };
-  }, [vendasData, filtroConta, dataInicio, dataFim]);
-
-  // --- 4. DADOS DO GRÁFICO: PERFORMANCE DE VENDAS ---
-  const salesChartData = useMemo(() => {
-    if (!vendasData) return [];
-    
-    let baseData = filtroConta === "all" ? vendasData : vendasData.filter(v => v.account_id === filtroConta);
-    
-    const dataInicioStr = dataInicio ? format(dataInicio, 'yyyy-MM-dd') : null;
-    const dataFimStr = dataFim ? format(dataFim, 'yyyy-MM-dd') : null;
-
-    if (dataInicioStr) baseData = baseData.filter(v => v.transaction_date >= dataInicioStr);
-    if (dataFimStr) baseData = baseData.filter(v => v.transaction_date <= dataFimStr);
-
-    const grouped: Record<string, any> = {};
-    
-    baseData.forEach(v => {
-        const monthKey = v.transaction_date.substring(0, 7); 
-        if (!grouped[monthKey]) {
-            grouped[monthKey] = { key: monthKey, receita: 0, custo: 0, lucro: 0 };
-        }
-        const rec = Number(v.receivables?.[0]?.total_amount || v.sale_price || 0);
-        const cust = Number(v.total_cost || 0);
-        grouped[monthKey].receita += rec;
-        grouped[monthKey].custo += cust;
-        grouped[monthKey].lucro += (rec - cust);
-    });
-
-    return Object.values(grouped).sort((a, b) => a.key.localeCompare(b.key)).map(item => ({
-        ...item,
-        label: format(new Date(`${item.key}-15T12:00:00`), 'MMM/yy', { locale: ptBR })
-    }));
-  }, [vendasData, filtroConta, dataInicio, dataFim]);
-
-  // --- 5. DADOS DO GRÁFICO: FLUXO DE CAIXA ---
-  const cashFlowData = useMemo(() => {
-    const months = [];
-    const currentDate = new Date();
-    const startDate = new Date(2026, 0, 1);
-    const diffMonths = differenceInMonths(startDate, currentDate);
-
-    for (let i = diffMonths; i <= 4; i++) {
-      const date = addMonths(currentDate, i);
-      months.push({
-        label: format(date, 'MMM/yy', { locale: ptBR }), 
-        key: format(date, 'yyyy-MM'),
-        entradas: 0,
-        saidas: 0,
-        saldo: 0
-      });
-    }
-
-    payableInstallments?.forEach(i => {
-      const monthKey = i.due_date.substring(0, 7);
-      const month = months.find(m => m.key === monthKey);
-      if (month) month.saidas += Number(i.amount);
-    });
-
-    receivableInstallments?.forEach(i => {
-      const monthKey = i.due_date.substring(0, 7);
-      const month = months.find(m => m.key === monthKey);
-      if (month) month.entradas += Number(i.amount);
-    });
-
-    let accum = 0;
-    return months.map(m => {
-      accum += (m.entradas - m.saidas);
-      return { ...m, saldo: accum };
-    });
-  }, [payableInstallments, receivableInstallments]);
-
-  // --- 6. CPM POR PROGRAMA ---
-  const cpmByProgram = useMemo(() => {
-    const agrupado: any[] = [];
-    const base = filtroConta === "all" ? milesBalance : milesBalance?.filter(m => m.account_id === filtroConta);
-    
-    base?.forEach(item => {
-      if (!item.program_name) return;
-      const existing = agrupado.find(a => a.name === item.program_name);
-      if (existing) {
-        existing.balance += item.balance || 0;
-        existing.invested += item.total_invested || 0;
-      } else {
-        agrupado.push({
-          name: item.program_name,
-          balance: item.balance || 0,
-          invested: item.total_invested || 0,
-        });
-      }
-    });
-    
-    return agrupado.map(item => ({
-      ...item,
-      cpm: item.balance > 0 ? (item.invested / item.balance) * 1000 : 0
-    }));
-  }, [milesBalance, filtroConta]);
-
-  const formatCurrency = (value: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
-  const formatNumber = (value: number) => new Intl.NumberFormat('pt-BR').format(value);
-
-  const limparFiltroData = () => {
-      setDataInicio(undefined);
-      setDataFim(undefined);
-  };
-
-  if (loadingBalance) return <MainLayout><div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div></div></MainLayout>;
+const CustomCard = ({ title, value, subtitle, icon: Icon, variant = 'default' }: any) => {
+  const styles = {
+    default: { border: 'border-white/5', iconBg: 'bg-emerald-500/10', iconColor: 'text-emerald-500' },
+    success: { border: 'border-white/5', iconBg: 'bg-emerald-500/10', iconColor: 'text-emerald-500' },
+    destructive: { border: 'border-white/5', iconBg: 'bg-red-500/10', iconColor: 'text-red-500' },
+    warning: { border: 'border-white/5', iconBg: 'bg-amber-500/10', iconColor: 'text-amber-500' },
+  }[variant as 'default' | 'success' | 'destructive' | 'warning'];
 
   return (
-    <MainLayout>
-      <PageHeader title="Dashboard Estratégico" description="Visão de patrimônio, fluxo de caixa e resultados operacionais" />
-
-      {/* --- BARRA DE FILTROS --- */}
-      <div className="flex flex-col md:flex-row gap-6 mb-6 bg-muted/20 p-4 rounded-lg border border-border/50 md:items-end">
-        <div className="space-y-1">
-            <Label className="text-xs text-muted-foreground flex items-center gap-1"><Filter className="h-3 w-3" /> Conta</Label>
-            <Select value={filtroConta} onValueChange={setFiltroConta}>
-            <SelectTrigger className="w-full md:w-[220px] bg-background"><SelectValue placeholder="Todas as Contas" /></SelectTrigger>
-            <SelectContent>
-                <SelectItem value="all">Todas as Contas</SelectItem>
-                {accounts?.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-            </SelectContent>
-            </Select>
-        </div>
-
-        <div className="space-y-1">
-            <Label className="text-xs text-muted-foreground flex items-center gap-1"><CalendarDays className="h-3 w-3" /> Período (Para Vendas)</Label>
-            <div className="flex items-center gap-2">
-                
-                {/* DATE PICKER INÍCIO (LIMPO) */}
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant={"outline"}
-                      className={`w-[140px] justify-start text-left font-normal bg-background ${!dataInicio && "text-muted-foreground"}`}
-                    >
-                      <CalendarDays className="mr-2 h-4 w-4" />
-                      {dataInicio ? format(dataInicio, "dd/MM/yyyy") : <span>Data Inicial</span>}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start">
-                    <Calendar
-                      mode="single"
-                      selected={dataInicio}
-                      onSelect={setDataInicio}
-                      locale={ptBR}
-                      initialFocus
-                    />
-                  </PopoverContent>
-                </Popover>
-
-                <span className="text-muted-foreground text-sm">até</span>
-
-                {/* DATE PICKER FIM (LIMPO) */}
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant={"outline"}
-                      className={`w-[140px] justify-start text-left font-normal bg-background ${!dataFim && "text-muted-foreground"}`}
-                    >
-                      <CalendarDays className="mr-2 h-4 w-4" />
-                      {dataFim ? format(dataFim, "dd/MM/yyyy") : <span>Data Final</span>}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start">
-                    <Calendar
-                      mode="single"
-                      selected={dataFim}
-                      onSelect={setDataFim}
-                      locale={ptBR}
-                      initialFocus
-                    />
-                  </PopoverContent>
-                </Popover>
-
-            </div>
-        </div>
-
-        {(dataInicio || dataFim) && (
-            <Button variant="ghost" size="sm" onClick={limparFiltroData} className="text-xs text-muted-foreground hover:text-destructive">
-                Limpar Datas
-            </Button>
-        )}
+    <div className={cn("p-5 rounded-2xl bg-[#141417] border shadow-md flex flex-col justify-between", styles.border)}>
+      <div className="flex justify-between items-start mb-3">
+        <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">{title}</span>
+        <div className={cn("p-1.5 rounded-lg", styles.iconBg)}><Icon className={cn("w-3.5 h-3.5", styles.iconColor)} /></div>
       </div>
-
-      {/* BLOCO 1: CAIXA E MERCADO */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-8">
-        <StatCard
-          title="Patrimônio Líquido (Equity)"
-          value={formatCurrency(equity)}
-          subtitle="Valor Real do Negócio"
-          icon={ShieldCheck}
-          variant={equity >= 0 ? 'success' : 'destructive'}
-        />
-        <StatCard
-          title="Valor de Mercado"
-          value={formatCurrency(marketValue)}
-          subtitle="Potencial de Venda Hoje"
-          icon={ArrowUpRight}
-          variant="default"
-        />
-        <StatCard
-          title="Dívida Total"
-          value={formatCurrency(totalPayableAllTime)}
-          subtitle="Contas a Pagar (Total)"
-          icon={CreditCard}
-          variant="warning"
-        />
-        <StatCard
-          title="Índice de Cobertura"
-          value={coverageIndex.toFixed(2)}
-          subtitle="Estoque / Dívida"
-          icon={BarChart3}
-          variant={coverageIndex >= 1 ? 'success' : 'destructive'}
-        />
+      <div>
+        <h3 className="text-xl font-black text-white">{value}</h3>
+        <p className="text-[9px] text-zinc-500 mt-0.5 uppercase tracking-wider">{subtitle}</p>
       </div>
-
-      {/* BLOCO 2: RESULTADOS DE VENDAS */}
-      <div className="mb-3 mt-8">
-          <h2 className="text-lg font-bold flex items-center gap-2"><Target className="h-5 w-5 text-emerald-500"/> Performance de Vendas</h2>
-          <p className="text-sm text-muted-foreground">Resultados operacionais baseados no Custo (Estoque) vs Receita (A Receber).</p>
-      </div>
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-8">
-        <StatCard 
-          title="Receita Bruta" 
-          value={formatCurrency(receitaTotal)} 
-          subtitle="Total faturado" 
-          icon={Banknote} 
-          variant="default" 
-        />
-        <StatCard 
-          title="Lucro Bruto" 
-          value={formatCurrency(lucroOperacional)} 
-          subtitle={`Custo Estoque: ${formatCurrency(custoVendas)}`} 
-          icon={TrendingUp} 
-          variant={lucroOperacional >= 0 ? 'success' : 'destructive'} 
-        />
-        <StatCard 
-          title="CPM Médio de Venda" 
-          value={formatCPM(cpmVendido)} 
-          subtitle={`Spread ganho: ${formatCurrency(spread)}`} 
-          icon={ArrowUpRight} 
-          variant="success" 
-        />
-        <StatCard 
-          title="Margem de Lucro" 
-          value={`${margemLucro.toFixed(2)}%`} 
-          subtitle={`CPM Custo: ${formatCPM(cpmCustoVenda)}`} 
-          icon={Percent} 
-          variant={margemLucro >= 0 ? 'success' : 'destructive'} 
-        />
-      </div>
-
-      {/* BLOCO 3: ESTOQUE */}
-      <div className="mb-3 mt-8">
-          <h2 className="text-lg font-bold flex items-center gap-2"><Plane className="h-5 w-5 text-secondary"/> Posição de Estoque</h2>
-      </div>
-      <div className="grid gap-4 md:grid-cols-3 mb-8">
-        <StatCard title="Milhas em Estoque" value={formatNumber(totalMiles)} icon={Plane} />
-        <StatCard title="CPM Médio Global" value={formatCPM(avgCpmGlobal)} icon={TrendingDown} variant="destructive" />
-        <StatCard title="Custo do Estoque" value={formatCurrency(totalInvested)} icon={Wallet} />
-      </div>
-
-      {/* BLOCO 4: GRÁFICOS */}
-      <div className="grid gap-6 lg:grid-cols-2 mb-8">
-        
-        {/* Gráfico 1: Evolução de Vendas e Lucro */}
-        <Card>
-          <CardHeader><CardTitle>Performance de Vendas (Mensal)</CardTitle></CardHeader>
-          <CardContent>
-            <div className="h-80">
-              <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={salesChartData}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
-                  <XAxis dataKey="label" stroke="hsl(var(--muted-foreground))" />
-                  <YAxis stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => `R$${v/1000}k`} />
-                  <Tooltip 
-                    contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))' }}
-                    formatter={(v: number) => formatCurrency(v)}
-                  />
-                  <Bar dataKey="receita" name="Receita" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="custo" name="Custo do Estoque" fill="hsl(var(--destructive))" radius={[4, 4, 0, 0]} />
-                  <Line type="monotone" dataKey="lucro" name="Lucro Líquido" stroke="hsl(var(--success))" strokeWidth={3} dot={{ r: 4 }} activeDot={{ r: 6 }} />
-                </ComposedChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Gráfico 2: Fluxo de Caixa Futuro */}
-        <Card>
-          <CardHeader><CardTitle>Projeção de Fluxo de Caixa (Próx. Meses)</CardTitle></CardHeader>
-          <CardContent>
-            <div className="h-80">
-              <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={cashFlowData}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
-                  <XAxis dataKey="label" stroke="hsl(var(--muted-foreground))" />
-                  <YAxis stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => `R$${v/1000}k`} />
-                  <Tooltip 
-                    contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))' }}
-                    formatter={(v: number) => formatCurrency(v)}
-                  />
-                  <Bar dataKey="entradas" name="Entradas" fill="hsl(var(--success))" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="saidas" name="Saídas" fill="hsl(var(--destructive))" radius={[4, 4, 0, 0]} />
-                  <Area type="monotone" dataKey="saldo" name="Saldo Acumulado" fill="hsl(var(--primary)/0.1)" stroke="hsl(var(--primary))" strokeWidth={2} />
-                </ComposedChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Tabela de CPMs */}
-      <Card>
-        <CardHeader><CardTitle>Gestão por Programa (Mark-to-Market)</CardTitle></CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b text-muted-foreground text-sm">
-                  <th className="text-left py-3 px-4">Programa</th>
-                  <th className="text-right py-3 px-4">Saldo</th>
-                  <th className="text-right py-3 px-4">CPM Atual</th>
-                  <th className="text-right py-3 px-4">Preço Mercado</th>
-                  <th className="text-right py-3 px-4">Spread Virtual</th>
-                </tr>
-              </thead>
-              <tbody>
-                {cpmByProgram.map((item) => {
-                  const mktPrice = MARKET_PRICES[item.name.toUpperCase()] || 0;
-                  const spreadVirtual = mktPrice - (item.cpm || 0);
-                  return (
-                    <tr key={item.name} className="border-b last:border-0 hover:bg-muted/30 transition-colors">
-                      <td className="py-3 px-4"><Badge variant="outline">{item.name}</Badge></td>
-                      <td className="text-right py-3 px-4 font-medium">{formatNumber(item.balance)}</td>
-                      <td className="text-right py-3 px-4 text-destructive font-bold">{formatCPM(item.cpm)}</td>
-                      <td className="text-right py-3 px-4 text-success font-bold">{formatCPM(mktPrice)}</td>
-                      <td className={`text-right py-3 px-4 font-bold ${spreadVirtual >= 0 ? 'text-success' : 'text-destructive'}`}>
-                        {formatCurrency(spreadVirtual)}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </CardContent>
-      </Card>
-    </MainLayout>
+    </div>
   );
 };
 
-export default Dashboard;
+export default function Dashboard() {
+  const { data: milesBalance } = useMilesBalance();
+  const { data: payableInstallments } = usePayableInstallments();
+  const { data: receivableInstallments } = useReceivableInstallments();
+  const { data: vendasData } = useSales();
+  const [filtroConta] = useState("all");
+
+  const stats = useMemo(() => {
+    if (!milesBalance) return { miles: 0, invested: 0, market: 0 };
+    const filtered = filtroConta === "all" ? milesBalance : milesBalance.filter((m: any) => m.account_id === filtroConta);
+    const miles = filtered.reduce((acc: number, m: any) => acc + (m.balance || 0), 0);
+    const invested = filtered.reduce((acc: number, m: any) => acc + (m.total_invested || 0), 0);
+    const market = filtered.reduce((acc: number, m: any) => acc + ((m.balance || 0) / 1000 * (MARKET_PRICES[m.program_name?.toUpperCase()] || 0)), 0);
+    return { miles, invested, market };
+  }, [milesBalance, filtroConta]);
+
+  const totalPayable = payableInstallments?.filter((i: any) => i.status === 'pendente').reduce((acc: number, i: any) => acc + Number(i.amount), 0) || 0;
+  const totalReceivable = receivableInstallments?.filter((i: any) => i.status === 'pendente').reduce((acc: number, i: any) => acc + Number(i.amount), 0) || 0;
+  const equity = (stats.market + totalReceivable) - totalPayable;
+  
+  const saleStats = useMemo(() => {
+    if (!vendasData) return { receita: 0, custo: 0, lucro: 0, cpmV: 0, cpmC: 0, margem: 0, spread: 0 };
+    let filtered = filtroConta === "all" ? vendasData : vendasData.filter((v: any) => v.account_id === filtroConta);
+    let r = 0, c = 0, q = 0;
+    filtered.forEach((v: any) => {
+        const tr = Array.isArray(v.receivables) && v.receivables.length > 0 ? Number(v.receivables[0]?.total_amount || 0) : 0;
+        r += tr || Number(v.sale_price || 0);
+        c += Number(v.total_cost || 0);
+        q += Math.abs(Number(v.quantity || 0));
+    });
+    return { receita: r, custo: c, lucro: r - c, cpmV: q > 0 ? (r / (q / 1000)) : 0, cpmC: q > 0 ? (c / (q / 1000)) : 0, margem: r > 0 ? ((r - c) / r) * 100 : 0, spread: (q > 0 ? (r / (q / 1000)) : 0) - (q > 0 ? (c / (q / 1000)) : 0) };
+  }, [vendasData, filtroConta]);
+
+  const salesChartData = useMemo(() => {
+    if (!vendasData) return [];
+    const grouped: any = {};
+    vendasData.forEach((v: any) => {
+        const key = v.transaction_date.substring(0, 7);
+        if (!grouped[key]) grouped[key] = { key, receita: 0, custo: 0, lucro: 0 };
+        const tr = Array.isArray(v.receivables) && v.receivables.length > 0 ? Number(v.receivables[0]?.total_amount || 0) : 0;
+        const rec = tr || Number(v.sale_price || 0);
+        grouped[key].receita += rec;
+        grouped[key].custo += Number(v.total_cost || 0);
+        grouped[key].lucro += (rec - Number(v.total_cost || 0));
+    });
+    return Object.values(grouped).sort((a:any, b:any) => a.key.localeCompare(b.key)).map(i => ({...i, label: format(new Date(`${i.key}-15`), 'MMM/yy', { locale: ptBR })}));
+  }, [vendasData]);
+
+  const cashFlowData = useMemo(() => {
+    const months: any[] = [];
+    const currentDate = new Date();
+    for (let i = -2; i <= 6; i++) {
+        const date = addMonths(currentDate, i);
+        months.push({ label: format(date, 'MMM/yy', { locale: ptBR }), key: format(date, 'yyyy-MM'), entradas: 0, saidas: 0, saldo: 0 });
+    }
+    payableInstallments?.forEach((i: any) => { const m = months.find(m => m.key === i.due_date.substring(0,7)); if (m) m.saidas += Number(i.amount); });
+    receivableInstallments?.forEach((i: any) => { const m = months.find(m => m.key === i.due_date.substring(0,7)); if (m) m.entradas += Number(i.amount); });
+    let acc = 0; return months.map(m => { acc += (m.entradas - m.saidas); return {...m, saldo: acc}; });
+  }, [payableInstallments, receivableInstallments]);
+
+  const cpmByProgram = useMemo(() => {
+    const agrupado: any[] = [];
+    milesBalance?.forEach((item: any) => {
+      if (!item.program_name) return;
+      const existing = agrupado.find(a => a.name === item.program_name);
+      if (existing) { existing.balance += item.balance || 0; existing.invested += item.total_invested || 0; } 
+      else { agrupado.push({ name: item.program_name, balance: item.balance || 0, invested: item.total_invested || 0 }); }
+    });
+    return agrupado.map(item => ({ ...item, cpm: item.balance > 0 ? (item.invested / item.balance) * 1000 : 0 }));
+  }, [milesBalance]);
+
+  return (
+    <div className="p-8 space-y-6 max-w-[1600px] mx-auto text-zinc-100">
+      <h1 className="text-xl font-bold mb-6">Dashboard</h1>
+
+      <div className="grid grid-cols-4 gap-4">
+        <CustomCard title="Patrimônio Líquido" value={formatCurrency(equity)} subtitle="Valor real do negócio" icon={ShieldCheck} variant={equity >= 0 ? 'success' : 'destructive'} />
+        <CustomCard title="Valor de Mercado" value={formatCurrency(stats.market)} subtitle="Potencial venda hoje" icon={ArrowUpRight} variant="success" />
+        <CustomCard title="Dívida Total" value={formatCurrency(totalPayable)} subtitle="Contas a pagar" icon={CreditCard} variant="warning" />
+        <CustomCard title="Índice Cobertura" value={(totalPayable > 0 ? stats.market / totalPayable : 0).toFixed(2)} subtitle="Estoque / Dívida" icon={BarChart3} variant={(totalPayable > 0 ? stats.market / totalPayable : 0) >= 1 ? 'success' : 'destructive'} />
+      </div>
+
+      <div className="grid grid-cols-4 gap-4">
+        <CustomCard title="Receita Bruta" value={formatCurrency(saleStats.receita)} subtitle="Total faturado" icon={Banknote} variant="success" />
+        <CustomCard title="Lucro Bruto" value={formatCurrency(saleStats.lucro)} subtitle={`Custo: ${formatCurrency(saleStats.custo)}`} icon={TrendingUp} variant={saleStats.lucro >= 0 ? 'success' : 'destructive'} />
+        <CustomCard title="CPM Médio Venda" value={formatCPM(saleStats.cpmV)} subtitle={`Spread: ${formatCurrency(saleStats.spread)}`} icon={ArrowUpRight} variant="success" />
+        <CustomCard title="Margem de Lucro" value={`${saleStats.margem.toFixed(2)}%`} subtitle={`CPM Custo: ${formatCPM(saleStats.cpmC)}`} icon={Percent} variant={saleStats.margem >= 0 ? 'success' : 'destructive'} />
+      </div>
+
+      <div className="grid grid-cols-3 gap-4">
+        <Link to="/estoque"><CustomCard title="Milhas em Estoque" value={formatNumber(stats.miles)} subtitle="Total consolidado" icon={Plane} variant="success" /></Link>
+        <CustomCard title="CPM Médio Global" value={formatCPM(stats.miles > 0 ? (stats.invested / stats.miles) * 1000 : 0)} subtitle="Custo médio aquisição" icon={TrendingDown} variant="destructive" />
+        <CustomCard title="Custo do Estoque" value={formatCurrency(stats.invested)} subtitle="Capital alocado" icon={Wallet} variant="success" />
+      </div>
+      
+      <div className="grid grid-cols-2 gap-6 h-64">
+        <Card className="bg-[#141417] border-white/5"><CardContent className="h-full pt-6"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={salesChartData}><CartesianGrid strokeDasharray="3 3" stroke="#27272a" /><XAxis dataKey="label" stroke="#a1a1aa" fontSize={10}/><Tooltip contentStyle={{backgroundColor:'#18181b'}}/><Bar dataKey="receita" fill="#10b981" /><Bar dataKey="custo" fill="#ef4444" /><Line dataKey="lucro" stroke="#34d399" /></ComposedChart></ResponsiveContainer></CardContent></Card>
+        <Card className="bg-[#141417] border-white/5"><CardContent className="h-full pt-6"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={cashFlowData}><CartesianGrid strokeDasharray="3 3" stroke="#27272a" /><XAxis dataKey="label" stroke="#a1a1aa" fontSize={10}/><Tooltip contentStyle={{backgroundColor:'#18181b'}}/><Bar dataKey="entradas" fill="#10b981" /><Bar dataKey="saidas" fill="#ef4444" /><Area dataKey="saldo" fill="#10b981" stroke="#10b981" /></ComposedChart></ResponsiveContainer></CardContent></Card>
+      </div>
+
+      <Card className="bg-[#141417] border-white/5">
+        <CardContent className="p-0">
+          <table className="w-full text-xs">
+            <thead className="text-zinc-500 uppercase border-b border-white/5"><tr className="text-left"><th className="p-4">Programa</th><th className="p-4">Saldo</th><th className="p-4">CPM Atual</th><th className="p-4">Preço Mercado</th><th className="p-4">Spread Virtual</th></tr></thead>
+            <tbody>
+              {cpmByProgram.map((item: any) => {
+                const mkt = MARKET_PRICES[item.name.toUpperCase()] || 0;
+                const sp = mkt - item.cpm;
+                return (
+                  <tr key={item.name} className="border-b border-white/5 text-white">
+                    <td className="p-4 font-bold">{item.name}</td>
+                    <td className="p-4">{formatNumber(item.balance)}</td>
+                    <td className="p-4 text-red-400">{formatCPM(item.cpm)}</td>
+                    <td className="p-4 text-emerald-400">{formatCPM(mkt)}</td>
+                    <td className={`p-4 font-bold ${sp >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>{formatCurrency(sp)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}

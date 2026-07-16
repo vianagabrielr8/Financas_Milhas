@@ -1,152 +1,127 @@
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink } from 'react-router-dom';
 import { cn } from '@/lib/utils';
-import { supabase } from '@/integrations/supabase/client';
-import {
-  LayoutDashboard,
-  ShoppingCart,
-  DollarSign,
-  Users, // Será usado para Passageiros
-  Plane,
-  UserCircle,
-  ChevronLeft,
-  Menu,
-  Package,
-  Wallet,
-  LogOut,
-  User,
-  ShieldCheck,
-  ArrowRightLeft,
-  ArrowDownCircle,
-  ArrowUpCircle,
+import { 
+  LayoutDashboard, Package, ShoppingCart, DollarSign, ArrowRightLeft, 
+  Wallet, UserCircle, Plane, Users, ShieldCheck, LogOut, ChevronLeft, Menu, Target, CalendarDays, Tags, FolderTree 
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { useState, useEffect } from 'react';
-
-const menuGroups = [
-  {
-    title: "Principal",
-    items: [
-      { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
-    ]
-  },
-  {
-    title: "Operacional",
-    items: [
-      { icon: Package, label: 'Estoque', path: '/estoque' },
-      { icon: ShoppingCart, label: 'Compras', path: '/compras' },
-      { icon: DollarSign, label: 'Vendas', path: '/vendas' },
-      { icon: ArrowRightLeft, label: 'Transferências', path: '/transferencias' },
-    ]
-  },
-  {
-    title: "Financeiro",
-    items: [
-      { icon: ArrowDownCircle, label: 'Contas a Pagar', path: '/contas-pagar' },
-      { icon: ArrowUpCircle, label: 'Contas a Receber', path: '/contas-receber' },
-      { icon: Wallet, label: 'Cartões', path: '/cartoes' },
-    ]
-  },
-  {
-    title: "Gestão e Cadastros",
-    items: [
-      { icon: UserCircle, label: 'Contas (CPFs)', path: '/contas' },
-      { icon: Plane, label: 'Programas', path: '/programas' },
-      // CORREÇÃO AQUI: 'Clientes' trocado por 'Passageiros'
-      { icon: Users, label: 'Passageiros', path: '/passageiros' },
-      // REMOVIDO: Fornecedores
-    ]
-  },
-  {
-    title: "Segurança",
-    items: [
-      { icon: ShieldCheck, label: 'Limites CPF', path: '/limites' },
-    ]
-  }
-];
+import { useState } from 'react';
 
 export const Sidebar = () => {
-  const [collapsed, setCollapsed] = useState(false);
-  const [userInfo, setUserInfo] = useState<{ name: string; email: string; avatar: string | null } | null>(null);
-  const navigate = useNavigate();
+  const [collapsed, setCollapsed] = useState(false);
+  const [moduloAtivo, setModuloAtivo] = useState<'FINANCAS' | 'MILHAS'>(() => {
+    return (localStorage.getItem('erp_modulo_ativo') as 'FINANCAS' | 'MILHAS') || 'FINANCAS';
+  });
 
-  useEffect(() => {
-    const getUserData = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        setUserInfo({
-          name: user.user_metadata.full_name || user.user_metadata.name || 'Usuário',
-          email: user.email || '',
-          avatar: user.user_metadata.avatar_url || null,
-        });
-      }
-    };
-    getUserData();
-  }, []);
+  const alterarModulo = (modulo: 'FINANCAS' | 'MILHAS') => {
+    setModuloAtivo(modulo);
+    localStorage.setItem('erp_modulo_ativo', modulo);
+    window.location.reload();
+  };
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    navigate("/login");
-  };
+  const menuConfig = moduloAtivo === 'FINANCAS' ? [
+    { group: "VISÃO GERAL", items: [
+      { icon: LayoutDashboard, label: 'Dashboard', path: '/financas' },
+      { icon: DollarSign, label: 'Transações', path: '/financas/transacoes' },
+      { icon: Target, label: 'Metas', path: '/financas/metas' },
+      { icon: CalendarDays, label: 'Fluxo por Dia', path: '/financas/fluxo-caixa' },
+    ]},
+    { group: "FINANCEIRO", items: [
+      { icon: Wallet, label: 'Cartões', path: '/financas/cartoes' },
+      { icon: FolderTree, label: 'Centros de Custo', path: '/financas/centros-custo' },
+      { icon: Tags, label: 'Categorias', path: '/financas/categorias' },
+    ]}
+  ] : [
+    { group: "PRINCIPAL", items: [{ icon: LayoutDashboard, label: 'Dashboard', path: '/' }] },
+    { group: "OPERACIONAL", items: [
+      { icon: Package, label: 'Estoque', path: '/estoque' },
+      { icon: ShoppingCart, label: 'Compras', path: '/compras' },
+      { icon: DollarSign, label: 'Vendas', path: '/vendas' },
+      { icon: ArrowRightLeft, label: 'Transferências', path: '/transferencias' },
+    ]},
+    { group: "GESTÃO E CADASTROS", items: [
+      { icon: UserCircle, label: 'Contas (CPFs)', path: '/contas' },
+      { icon: Plane, label: 'Programas', path: '/programas' },
+      { icon: Users, label: 'Passageiros', path: '/passageiros' },
+    ]},
+    { group: "SEGURANÇA", items: [{ icon: ShieldCheck, label: 'Limites CPF', path: '/limites' }]}
+  ];
 
-  return (
-    <aside className={cn('fixed left-0 top-0 z-40 h-screen bg-sidebar border-r border-sidebar-border transition-all duration-300', collapsed ? 'w-16' : 'w-64')}>
-      <div className="flex h-full flex-col">
-        <div className="flex h-16 items-center justify-between border-b border-sidebar-border px-4">
-          {!collapsed && (
-            <div className="flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg gradient-primary">
-                <Plane className="h-5 w-5 text-primary-foreground" />
-              </div>
-              <span className="font-display font-semibold text-lg text-sidebar-foreground">MilhasERP</span>
-            </div>
-          )}
-          <Button variant="ghost" size="icon" onClick={() => setCollapsed(!collapsed)} className="text-sidebar-foreground hover:bg-sidebar-accent ml-auto">
-            {collapsed ? <Menu className="h-5 w-5" /> : <ChevronLeft className="h-5 w-5" />}
-          </Button>
-        </div>
+  return (
+    <aside className={cn(
+      "h-screen bg-[#0a0a0b] border-r border-white/5 transition-all duration-300 flex flex-col shrink-0 z-40 relative", 
+      collapsed ? "w-20" : "w-64"
+    )}>
+      
+      {/* HEADER */}
+      <div className={cn("h-16 flex items-center border-b border-white/5", collapsed ? "justify-center" : "px-6 justify-between")}>
+        {!collapsed && (
+          <span className="text-lg font-black tracking-tighter text-white truncate">
+            360<span className="text-emerald-500">GESTÃO</span>
+          </span>
+        )}
+        <Button variant="ghost" size="icon" onClick={() => setCollapsed(!collapsed)} className="text-zinc-400 hover:text-white shrink-0">
+          {collapsed ? <Menu className="w-5 h-5" /> : <ChevronLeft className="w-5 h-5" />}
+        </Button>
+      </div>
 
-        <nav className="flex-1 overflow-y-auto scrollbar-hide py-4 px-2 space-y-6">
-          {menuGroups.map((group, groupIndex) => (
-            <div key={groupIndex}>
-              {!collapsed && <h3 className="mb-2 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">{group.title}</h3>}
-              <div className="space-y-1">
-                {group.items.map((item) => (
-                  <NavLink
-                    key={item.path}
-                    to={item.path}
-                    className={({ isActive }) => cn('flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200', collapsed ? 'justify-center' : '', isActive ? 'bg-sidebar-accent text-sidebar-accent-foreground' : 'text-sidebar-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground')}
-                    title={collapsed ? item.label : undefined}
-                  >
-                    <item.icon className="h-5 w-5 flex-shrink-0" />
-                    {!collapsed && <span>{item.label}</span>}
-                  </NavLink>
-                ))}
-              </div>
-            </div>
-          ))}
-        </nav>
+      {/* SELETOR DE AMBIENTE REAJUSTÁVEL */}
+      <div className="p-4 border-b border-white/5">
+        <div className={cn("flex bg-[#141417] rounded-lg p-1 border border-white/5", collapsed ? "flex-col gap-1.5" : "gap-1")}>
+          <button 
+            onClick={() => alterarModulo('FINANCAS')} 
+            className={cn("py-1.5 text-[10px] font-bold rounded transition-colors text-center", collapsed ? "w-full" : "flex-1", moduloAtivo === 'FINANCAS' ? "bg-emerald-500 text-white" : "text-zinc-500 hover:text-zinc-300")}
+          >
+            {collapsed ? "F" : "FINANÇAS"}
+          </button>
+          <button 
+            onClick={() => alterarModulo('MILHAS')} 
+            className={cn("py-1.5 text-[10px] font-bold rounded transition-colors text-center", collapsed ? "w-full" : "flex-1", moduloAtivo === 'MILHAS' ? "bg-indigo-500 text-white" : "text-zinc-500 hover:text-zinc-300")}
+          >
+            {collapsed ? "M" : "MILHAS"}
+          </button>
+        </div>
+      </div>
 
-        <div className="border-t border-sidebar-border p-4 bg-sidebar-accent/10">
-          {userInfo && (
-            <div className={cn("flex items-center gap-3 mb-4", collapsed ? "justify-center" : "")}>
-              <div className="relative flex-shrink-0">
-                {userInfo.avatar ? <img src={userInfo.avatar} alt="Avatar" className="h-9 w-9 rounded-full border border-sidebar-border object-cover" /> : <div className="h-9 w-9 rounded-full bg-sidebar-accent flex items-center justify-center border border-sidebar-border"><User className="h-5 w-5 text-sidebar-foreground" /></div>}
-                <div className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-emerald-500 border-2 border-sidebar" />
-              </div>
-              {!collapsed && (
-                <div className="flex flex-col overflow-hidden">
-                  <span className="text-sm font-medium text-sidebar-foreground truncate" title={userInfo.name}>{userInfo.name.split(' ')[0]}</span>
-                  <span className="text-[10px] text-muted-foreground truncate" title={userInfo.email}>{userInfo.email}</span>
-                </div>
-              )}
-            </div>
-          )}
-          <button onClick={handleLogout} className={cn('flex w-full items-center gap-3 rounded-lg px-3 py-2 text-xs font-medium transition-all duration-200 text-red-400 hover:bg-red-500/10 hover:text-red-500', collapsed ? 'justify-center' : '')} title="Sair da Conta">
-            <LogOut className="h-4 w-4 flex-shrink-0" />
-            {!collapsed && <span>Sair da Conta</span>}
-          </button>
-        </div>
-      </div>
-    </aside>
-  );
+      {/* NAVEGAÇÃO */}
+      <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-6 scrollbar-hide">
+        {menuConfig.map((group) => (
+          <div key={group.group}>
+            {!collapsed && <p className="text-[10px] font-bold text-zinc-500 mb-2 px-3 uppercase tracking-wider">{group.group}</p>}
+            <div className="space-y-1">
+              {group.items.map((item) => (
+                <NavLink 
+                  key={item.label} 
+                  to={item.path} 
+                  title={collapsed ? item.label : undefined}
+                  className={({isActive}) => cn(
+                    "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors", 
+                    collapsed ? "justify-center" : "",
+                    isActive 
+                      ? (moduloAtivo === 'FINANCAS' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-indigo-500/10 text-indigo-500') 
+                      : "text-zinc-400 hover:text-zinc-100 hover:bg-white/5"
+                  )}
+                >
+                  <item.icon className="w-4 h-4 shrink-0" /> 
+                  {!collapsed && <span className="truncate">{item.label}</span>}
+                </NavLink>
+              ))}
+            </div>
+          </div>
+        ))}
+      </nav>
+
+      {/* FOOTER */}
+      <div className={cn("p-4 border-t border-white/5 flex items-center gap-3", collapsed ? "justify-center" : "")}>
+        <div className="w-8 h-8 rounded-full bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center shrink-0 text-xs text-emerald-500 font-bold">G</div>
+        {!collapsed && (
+          <div className="flex-1 overflow-hidden">
+            <p className="text-sm font-semibold text-white truncate">Gabriel</p>
+            <p className="text-[10px] text-zinc-500 uppercase tracking-wider">Admin</p>
+          </div>
+        )}
+        {!collapsed && <LogOut className="w-4 h-4 text-zinc-500 cursor-pointer hover:text-red-400 shrink-0" />}
+      </div>
+    </aside>
+  );
 };

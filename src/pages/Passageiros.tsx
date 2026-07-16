@@ -1,102 +1,91 @@
 import { useState } from 'react';
-import { useData } from '@/contexts/DataContext'; 
-import { MainLayout } from '@/components/layout/MainLayout';
-import { PageHeader } from '@/components/ui/page-header';
-import { DataTable } from '@/components/ui/data-table';
+import { Users, Search, Filter, MoreVertical, Plus, Plane, Hash } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Plus, Pencil, Trash2 } from 'lucide-react';
-import { toast } from 'sonner';
-import { supabase } from '@/integrations/supabase/client';
+import { cn } from '@/lib/utils';
 
-const Passageiros = () => {
-  const { passageiros, addCliente, updateCliente, deleteCliente } = useData();
-  const [isOpen, setIsOpen] = useState(false);
-  const [editingPassageiro, setEditingPassageiro] = useState<any>(null);
-  const [formData, setFormData] = useState({ nome: '', cpf: '' });
+const mockPassageiros = [
+  { id: 1, nome: 'Gabriel Viana Rodrigues', documento: '***.***.***-**', totalEmissoes: 12, ultimaEmissao: '20/06/2026', status: 'Frequente' },
+  { id: 2, nome: 'Ingrid Bittencourt', documento: '***.***.***-**', totalEmissoes: 8, ultimaEmissao: '12/05/2026', status: 'Frequente' },
+  { id: 3, nome: 'Bento Rodrigues', documento: '***.***.***-**', totalEmissoes: 2, ultimaEmissao: '14/01/2026', status: 'Regular' },
+  { id: 4, nome: 'Cliente Balcão Exemplo 1', documento: '***.***.***-**', totalEmissoes: 1, ultimaEmissao: '04/07/2026', status: 'Avulso' }
+];
 
-  const resetForm = () => {
-    setFormData({ nome: '', cpf: '' });
-    setEditingPassageiro(null);
-  };
+export default function Passageiros() {
+  const [busca, setBusca] = useState('');
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const rawCpf = formData.cpf.replace(/\D/g, '');
-
-    if (!formData.nome.trim() || rawCpf.length !== 11) {
-      toast.error('Nome e CPF (11 dígitos) são obrigatórios.');
-      return;
-    }
-
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Não logado");
-
-      const payload = {
-        name: formData.nome,
-        cpf: rawCpf,
-        user_id: user.id
-      };
-
-      if (editingPassageiro) {
-        await updateCliente({ id: editingPassageiro.id, ...payload });
-        toast.success('Passageiro atualizado!');
-      } else {
-        await addCliente(payload);
-        toast.success('Passageiro cadastrado!');
-      }
-      setIsOpen(false);
-      resetForm();
-    } catch (error) {
-      toast.error('Erro ao salvar passageiro.');
-    }
-  };
-
-  const columns = [
-    { key: 'name', header: 'Nome' },
-    { key: 'cpf', header: 'CPF' },
-    {
-      key: 'actions',
-      header: 'Ações',
-      render: (p: any) => (
-        <div className="flex gap-2">
-          <Button variant="ghost" size="icon" onClick={() => { setEditingPassageiro(p); setFormData({ nome: p.name, cpf: p.cpf }); setIsOpen(true); }}>
-            <Pencil className="h-4 w-4" />
-          </Button>
-          <Button variant="ghost" size="icon" onClick={() => confirm('Excluir?') && deleteCliente(p.id)}>
-            <Trash2 className="h-4 w-4 text-destructive" />
-          </Button>
-        </div>
-      ),
-    },
-  ];
+  const filtrados = mockPassageiros.filter(p => p.nome.toLowerCase().includes(busca.toLowerCase()));
 
   return (
-    <MainLayout>
-      <PageHeader 
-        title="Passageiros" 
-        action={
-          <Dialog open={isOpen} onOpenChange={setIsOpen}>
-            <DialogTrigger asChild><Button><Plus className="mr-2" />Novo Passageiro</Button></DialogTrigger>
-            <DialogContent>
-              <DialogHeader><DialogTitle>{editingPassageiro ? 'Editar' : 'Novo'} Passageiro</DialogTitle></DialogHeader>
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <Label>Nome</Label>
-                <Input value={formData.nome} onChange={e => setFormData({...formData, nome: e.target.value})} required />
-                <Label>CPF</Label>
-                <Input value={formData.cpf} onChange={e => setFormData({...formData, cpf: e.target.value})} maxLength={14} required />
-                <Button type="submit" className="w-full">Salvar</Button>
-              </form>
-            </DialogContent>
-          </Dialog>
-        }
-      />
-      <DataTable data={passageiros} columns={columns} />
-    </MainLayout>
-  );
-};
+    <div className="space-y-6 max-w-[1600px] mx-auto text-zinc-100 p-4 md:p-6 pb-24">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+            <Users className="w-6 h-6 text-emerald-500" /> Passageiros Voados
+          </h1>
+          <p className="text-zinc-400 text-xs mt-0.5">Banco de dados de clientes e beneficiários associados às emissões de passagens.</p>
+        </div>
+        <Button className="bg-[#10b981] hover:bg-[#059669] text-black font-semibold h-9 rounded-md text-xs px-4 flex items-center gap-1.5 ml-auto">
+          <Plus className="w-4 h-4" /> Novo Passageiro
+        </Button>
+      </div>
 
-export default Passageiros;
+      <div className="flex items-center gap-3 bg-[#141417] p-3 rounded-xl border border-white/5">
+        <div className="relative flex-1 max-w-md">
+          <Search className="absolute left-3 top-2.5 h-4 w-4 text-zinc-500" />
+          <Input 
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+            placeholder="Buscar por nome do passageiro..." 
+            className="pl-9 h-9 bg-black/40 border-white/10 text-white text-xs"
+          />
+        </div>
+        <Button variant="outline" size="icon" className="h-9 w-9 border-white/10 bg-transparent hover:bg-white/5"><Filter className="w-4 h-4 text-zinc-400" /></Button>
+      </div>
+
+      <div className="bg-[#141417] border border-white/5 rounded-xl overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm text-left">
+            <thead className="text-xs text-zinc-400 font-semibold border-b border-white/5 bg-black/20">
+              <tr>
+                <th className="px-6 py-4">Nome Completo</th>
+                <th className="px-6 py-4">Documento (CPF)</th>
+                <th className="px-6 py-4 text-center">Total de Emissões</th>
+                <th className="px-6 py-4 text-center">Último Voo</th>
+                <th className="px-6 py-4 text-center">Classificação</th>
+                <th className="px-6 py-4 text-center">Ações</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5">
+              {filtrados.map((p) => (
+                <tr key={p.id} className="hover:bg-white/[0.01] transition-colors">
+                  <td className="px-6 py-4 font-semibold text-white">{p.nome}</td>
+                  <td className="px-6 py-4 text-zinc-400 text-xs font-mono">
+                    <span className="flex items-center gap-1.5"><Hash className="w-3.5 h-3.5" /> {p.documento}</span>
+                  </td>
+                  <td className="px-6 py-4 text-center text-zinc-300 font-medium">{p.totalEmissoes}</td>
+                  <td className="px-6 py-4 text-center text-zinc-400 text-xs">
+                    <span className="flex items-center justify-center gap-1"><Plane className="w-3.5 h-3.5 text-zinc-500" /> {p.ultimaEmissao}</span>
+                  </td>
+                  <td className="px-6 py-4 text-center">
+                    <span className={cn(
+                      "inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold border",
+                      p.status === 'Frequente' ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" :
+                      p.status === 'Regular' ? "bg-blue-500/10 text-blue-400 border-blue-500/20" :
+                      "bg-zinc-500/10 text-zinc-400 border-zinc-500/20"
+                    )}>
+                      {p.status.toUpperCase()}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 text-center">
+                    <Button variant="ghost" size="icon" className="h-8 w-8 text-zinc-500 hover:text-white"><MoreVertical className="w-4 h-4" /></Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
