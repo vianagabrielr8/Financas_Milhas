@@ -1,7 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { 
-  LayoutDashboard, Package, ShoppingCart, DollarSign, ArrowRightLeft, 
+  LayoutDashboard, Package, ArrowRightLeft, DollarSign,
   Wallet, UserCircle, Plane, Users, ShieldCheck, LogOut, ChevronLeft, Menu, Target, CalendarDays, Tags, FolderTree, Landmark 
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -35,17 +35,15 @@ export const Sidebar = () => {
   ] : [
     { group: "PRINCIPAL", items: [{ icon: LayoutDashboard, label: 'Dashboard', path: '/' }] },
     { group: "OPERACIONAL", items: [
-      { icon: Package, label: 'Estoque', path: '/estoque' },
-      { icon: ShoppingCart, label: 'Compras', path: '/compras' },
-      { icon: DollarSign, label: 'Vendas', path: '/vendas' },
-      { icon: ArrowRightLeft, label: 'Transferências', path: '/transferencias' },
+      { icon: Package, label: 'Estoque', path: '/milhas/estoque' },
+      { icon: ArrowRightLeft, label: 'Transferências', path: '/milhas/transferencias' }, // <-- DEVOLVIDO
     ]},
     { group: "GESTÃO E CADASTROS", items: [
-      { icon: UserCircle, label: 'Contas (CPFs)', path: '/contas' },
-      { icon: Plane, label: 'Programas', path: '/programas' },
-      { icon: Users, label: 'Passageiros', path: '/passageiros' },
+      { icon: UserCircle, label: 'Contas (CPFs)', path: '/milhas/contas' },
+      { icon: Plane, label: 'Programas', path: '/milhas/programas' },
+      { icon: Users, label: 'Passageiros', path: '/milhas/passageiros' },
     ]},
-    { group: "SEGURANÇA", items: [{ icon: ShieldCheck, label: 'Limites CPF', path: '/limites' }]}
+    { group: "SEGURANÇA", items: [{ icon: ShieldCheck, label: 'Limites CPF', path: '/milhas/limites' }]}
   ];
 
   return (

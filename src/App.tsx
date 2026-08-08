@@ -1,3 +1,6 @@
+import { useEffect, useState } from "react";
+import { Session } from "@supabase/supabase-js";
+import { supabase } from "@/integrations/supabase/client";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/toaster";
@@ -5,17 +8,18 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { MainLayout } from "./components/layout/MainLayout";
+import Login from "./pages/Login"; // <-- IMPORT DA NOVA TELA
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 
 // IMPORTS MILHAS
-import Compras from "./pages/milhas/Compras";
-import Vendas from "./pages/milhas/Vendas";
 import Passageiros from "./pages/milhas/Passageiros";
 import Programas from "./pages/milhas/Programas";
 import Estoque from "./pages/milhas/Estoque";
 import ProgramDetails from "./pages/milhas/ProgramDetails";
 import Limites from "./pages/milhas/Limites";
+import ContasMilhas from "./pages/milhas/Titulares"; 
+import TransferenciasMilhas from "./pages/milhas/Transferencias"; 
 
 // IMPORTS FINANÇAS
 import FinancasDashboard from "./pages/financas/FinancasDashboard";
@@ -24,7 +28,7 @@ import Transacoes from "./pages/financas/Transacoes";
 import FluxoCaixa from "./pages/financas/FluxoCaixa";
 import ContasPagar from "./pages/financas/ContasPagar";
 import ContasReceber from "./pages/financas/ContasReceber";
-import Transferencias from "./pages/financas/Transferencias";
+import TransferenciasFinancas from "./pages/financas/Transferencias"; 
 import Cartoes from "./pages/financas/Cartoes";
 import FaturaCartao from "./pages/financas/FaturaCartao";
 import CentrosCusto from './pages/financas/CentrosCusto';
@@ -34,6 +38,35 @@ import Metas from "./pages/financas/Metas";
 const queryClient = new QueryClient();
 
 const App = () => {
+  const [session, setSession] = useState<Session | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    // Pega a sessão inicial
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setLoading(false);
+    });
+
+    // Escuta mudanças (login/logout)
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  if (loading) {
+    return <div className="min-h-screen bg-[#0a0a0b] flex items-center justify-center text-emerald-500 font-bold tracking-widest uppercase">Carregando...</div>;
+  }
+
+  // Se não tem sessão, barra tudo e mostra o Login
+  if (!session) {
+    return <Login />;
+  }
+
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
@@ -42,24 +75,21 @@ const App = () => {
         <BrowserRouter>
           <MainLayout>
             <Routes>
-              {/* ROTA PRINCIPAL */}
               <Route path="/" element={<Index />} />
 
-              {/* MÓDULO GESTÃO DE MILHAS */}
-              <Route path="/milhas/compras" element={<Compras />} />
-              <Route path="/milhas/vendas" element={<Vendas />} />
               <Route path="/milhas/estoque" element={<Estoque />} />
               <Route path="/milhas/estoque/:id" element={<ProgramDetails />} />
               <Route path="/milhas/limites" element={<Limites />} />
               <Route path="/milhas/passageiros" element={<Passageiros />} />
               <Route path="/milhas/programas" element={<Programas />} />
+              <Route path="/milhas/contas" element={<ContasMilhas />} />
+              <Route path="/milhas/transferencias" element={<TransferenciasMilhas />} />
 
-              {/* MÓDULO FINANÇAS PESSOAIS */}
               <Route path="/financas" element={<FinancasDashboard />} />
               <Route path="/financas/contas" element={<Contas />} />
               <Route path="/financas/transacoes" element={<Transacoes />} />
               <Route path="/financas/fluxo-caixa" element={<FluxoCaixa />} />
-              <Route path="/financas/transferencias" element={<Transferencias />} />
+              <Route path="/financas/transferencias" element={<TransferenciasFinancas />} />
               <Route path="/financas/contas-pagar" element={<ContasPagar />} />
               <Route path="/financas/contas-receber" element={<ContasReceber />} />
               <Route path="/financas/cartoes" element={<Cartoes />} />
@@ -68,7 +98,6 @@ const App = () => {
               <Route path="/financas/categorias" element={<Categorias />} />
               <Route path="/financas/metas" element={<Metas />} />
               
-              {/* FALLBACK (404) */}
               <Route path="*" element={<NotFound />} />
             </Routes>
           </MainLayout>
