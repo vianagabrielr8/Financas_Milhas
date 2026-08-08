@@ -1,4 +1,4 @@
-import Dashboard from './Dashboard';
+import Dashboard from './milhas/MilhasDashboard.tsx';
 
 export default function Index() {
   return <Dashboard />;

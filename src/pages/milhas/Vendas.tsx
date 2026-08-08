@@ -1,5 +1,4 @@
 import { useState, useMemo } from 'react';
-import { MainLayout } from '@/components/layout/MainLayout';
 import { PageHeader } from '@/components/ui/page-header';
 import { DataTable } from '@/components/ui/data-table';
 import { Button } from '@/components/ui/button';
@@ -68,7 +67,7 @@ const Vendas = () => {
         contaId: '',
         quantidade: '',
         valorUnitario: '',
-        valorTotalBruto: '', // Adicionado para controlar o input do Total
+        valorTotalBruto: '', 
         dataVenda: new Date().toLocaleDateString('en-CA'),
         dataRecebimento: format(addDays(new Date(), 30), 'yyyy-MM-dd'),
         status: 'pendente' as 'pendente' | 'recebido',
@@ -294,7 +293,7 @@ const Vendas = () => {
     ];
 
     return (
-        <MainLayout>
+        <div className="w-full">
             <PageHeader 
                 title="Vendas" 
                 description="Gerencie suas vendas de milhas"
@@ -633,7 +632,7 @@ const Vendas = () => {
                 columns={columns} 
                 emptyMessage={isLoading ? "Carregando vendas..." : "Nenhuma venda registrada."} 
             />
-        </MainLayout>
+        </div>
     );
 };
 

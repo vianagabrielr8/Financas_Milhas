@@ -1,5 +1,4 @@
 import { useMemo, useState } from 'react';
-import { MainLayout } from '@/components/layout/MainLayout';
 import { PageHeader } from '@/components/ui/page-header';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
@@ -132,7 +131,7 @@ const Limites = () => {
   }, [limitStatus, selectedAccount]);
 
   return (
-    <MainLayout>
+    <div className="w-full">
       <PageHeader
         title="Limites de CPF"
         description="Monitoramento inteligente de cotas por Cia Aérea"
@@ -246,7 +245,7 @@ const Limites = () => {
             </div>
         )}
       </div>
-    </MainLayout>
+    </div>
   );
 };
 

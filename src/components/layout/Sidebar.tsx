@@ -2,7 +2,7 @@ import { NavLink } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { 
   LayoutDashboard, Package, ShoppingCart, DollarSign, ArrowRightLeft, 
-  Wallet, UserCircle, Plane, Users, ShieldCheck, LogOut, ChevronLeft, Menu, Target, CalendarDays, Tags, FolderTree 
+  Wallet, UserCircle, Plane, Users, ShieldCheck, LogOut, ChevronLeft, Menu, Target, CalendarDays, Tags, FolderTree, Landmark 
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useState } from 'react';
@@ -27,6 +27,7 @@ export const Sidebar = () => {
       { icon: CalendarDays, label: 'Fluxo por Dia', path: '/financas/fluxo-caixa' },
     ]},
     { group: "FINANCEIRO", items: [
+      { icon: Landmark, label: 'Contas e Caixas', path: '/financas/contas' },
       { icon: Wallet, label: 'Cartões', path: '/financas/cartoes' },
       { icon: FolderTree, label: 'Centros de Custo', path: '/financas/centros-custo' },
       { icon: Tags, label: 'Categorias', path: '/financas/categorias' },
@@ -57,7 +58,7 @@ export const Sidebar = () => {
       <div className={cn("h-16 flex items-center border-b border-white/5", collapsed ? "justify-center" : "px-6 justify-between")}>
         {!collapsed && (
           <span className="text-lg font-black tracking-tighter text-white truncate">
-            360<span className="text-emerald-500">GESTÃO</span>
+            Milheiro<span className="text-emerald-500">Smart</span>
           </span>
         )}
         <Button variant="ghost" size="icon" onClick={() => setCollapsed(!collapsed)} className="text-zinc-400 hover:text-white shrink-0">
@@ -93,6 +94,7 @@ export const Sidebar = () => {
                 <NavLink 
                   key={item.label} 
                   to={item.path} 
+                  end={item.path === '/financas' || item.path === '/'}
                   title={collapsed ? item.label : undefined}
                   className={({isActive}) => cn(
                     "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors", 

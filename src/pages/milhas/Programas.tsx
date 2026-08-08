@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { MainLayout } from '@/components/layout/MainLayout';
 import { PageHeader } from '@/components/ui/page-header';
 import { DataTable } from '@/components/ui/data-table';
 import { Button } from '@/components/ui/button';
@@ -142,7 +141,7 @@ const Programas = () => {
   ];
 
   return (
-    <MainLayout>
+    <div className="w-full">
       <PageHeader
         title="Programas de Milhas"
         description="Programas de fidelidade disponíveis no sistema"
@@ -212,7 +211,7 @@ const Programas = () => {
         columns={columns}
         emptyMessage={isLoading ? "Carregando..." : "Nenhum programa cadastrado. Clique em 'Novo Programa' para começar."}
       />
-    </MainLayout>
+    </div>
   );
 };
 

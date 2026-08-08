@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { User, Search, Filter, MoreVertical, Plus, Mail, ShieldAlert } from 'lucide-react';
+import { User, Search, Filter, MoreVertical, Plus, Mail } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
@@ -9,13 +9,13 @@ const mockContas = [
   { id: 3, nome: 'Bento Rodrigues (Infantil)', email: 'bento.r@teste.com', status: 'Ativa', totalMilhas: 0, programasAtivos: 1 },
 ];
 
-export default function Contas() {
+export default function Titulares() {
   const [busca, setBusca] = useState('');
 
   const filtradas = mockContas.filter(c => c.nome.toLowerCase().includes(busca.toLowerCase()));
 
   return (
-    <div className="space-y-6 max-w-[1600px] mx-auto text-zinc-100">
+    <div className="space-y-6 max-w-[1600px] mx-auto text-zinc-100 p-6 pb-24">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
