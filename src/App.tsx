@@ -8,7 +8,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { MainLayout } from "./components/layout/MainLayout";
-import Login from "./pages/Login"; // <-- IMPORT DA NOVA TELA
+import Login from "./pages/Login";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 
@@ -42,13 +42,11 @@ const App = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Pega a sessão inicial
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setLoading(false);
     });
 
-    // Escuta mudanças (login/logout)
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -62,45 +60,48 @@ const App = () => {
     return <div className="min-h-screen bg-[#0a0a0b] flex items-center justify-center text-emerald-500 font-bold tracking-widest uppercase">Carregando...</div>;
   }
 
-  // Se não tem sessão, barra tudo e mostra o Login
-  if (!session) {
-    return <Login />;
-  }
-
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <Toaster />
         <Sonner />
         <BrowserRouter>
-          <MainLayout>
+          {/* TRAVA DE SEGURANÇA: Se não tem sessão ativa, carrega APENAS as rotas de Login */}
+          {!session ? (
             <Routes>
-              <Route path="/" element={<Index />} />
-
-              <Route path="/milhas/estoque" element={<Estoque />} />
-              <Route path="/milhas/estoque/:id" element={<ProgramDetails />} />
-              <Route path="/milhas/limites" element={<Limites />} />
-              <Route path="/milhas/passageiros" element={<Passageiros />} />
-              <Route path="/milhas/programas" element={<Programas />} />
-              <Route path="/milhas/contas" element={<ContasMilhas />} />
-              <Route path="/milhas/transferencias" element={<TransferenciasMilhas />} />
-
-              <Route path="/financas" element={<FinancasDashboard />} />
-              <Route path="/financas/contas" element={<Contas />} />
-              <Route path="/financas/transacoes" element={<Transacoes />} />
-              <Route path="/financas/fluxo-caixa" element={<FluxoCaixa />} />
-              <Route path="/financas/transferencias" element={<TransferenciasFinancas />} />
-              <Route path="/financas/contas-pagar" element={<ContasPagar />} />
-              <Route path="/financas/contas-receber" element={<ContasReceber />} />
-              <Route path="/financas/cartoes" element={<Cartoes />} />
-              <Route path="/financas/cartoes/:id" element={<FaturaCartao />} />
-              <Route path="/financas/centros-custo" element={<CentrosCusto />} />
-              <Route path="/financas/categorias" element={<Categorias />} />
-              <Route path="/financas/metas" element={<Metas />} />
-              
-              <Route path="*" element={<NotFound />} />
+              <Route path="*" element={<Login />} />
             </Routes>
-          </MainLayout>
+          ) : (
+            /* Se está logado, libera o Layout e o Sistema inteiro */
+            <MainLayout>
+              <Routes>
+                <Route path="/" element={<Index />} />
+
+                <Route path="/milhas/estoque" element={<Estoque />} />
+                <Route path="/milhas/estoque/:id" element={<ProgramDetails />} />
+                <Route path="/milhas/limites" element={<Limites />} />
+                <Route path="/milhas/passageiros" element={<Passageiros />} />
+                <Route path="/milhas/programas" element={<Programas />} />
+                <Route path="/milhas/contas" element={<ContasMilhas />} />
+                <Route path="/milhas/transferencias" element={<TransferenciasMilhas />} />
+
+                <Route path="/financas" element={<FinancasDashboard />} />
+                <Route path="/financas/contas" element={<Contas />} />
+                <Route path="/financas/transacoes" element={<Transacoes />} />
+                <Route path="/financas/fluxo-caixa" element={<FluxoCaixa />} />
+                <Route path="/financas/transferencias" element={<TransferenciasFinancas />} />
+                <Route path="/financas/contas-pagar" element={<ContasPagar />} />
+                <Route path="/financas/contas-receber" element={<ContasReceber />} />
+                <Route path="/financas/cartoes" element={<Cartoes />} />
+                <Route path="/financas/cartoes/:id" element={<FaturaCartao />} />
+                <Route path="/financas/centros-custo" element={<CentrosCusto />} />
+                <Route path="/financas/categorias" element={<Categorias />} />
+                <Route path="/financas/metas" element={<Metas />} />
+                
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </MainLayout>
+          )}
         </BrowserRouter>
       </TooltipProvider>
     </QueryClientProvider>
