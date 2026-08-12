@@ -1,18 +1,24 @@
 import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
 import { User, Search, Filter, MoreVertical, Plus, Mail } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
-const mockContas = [
-  { id: 1, nome: 'Gabriel Viana Rodrigues', email: 'gvianacomercial@gmail.com', status: 'Ativa', totalMilhas: 1759604, programasAtivos: 4 },
-  { id: 2, nome: 'Ingrid Bittencourt', email: 'ingrid.b@teste.com', status: 'Ativa', font: 'Azul, Latam, Livelo', totalMilhas: 95404, programasAtivos: 3 },
-  { id: 3, nome: 'Bento Rodrigues (Infantil)', email: 'bento.r@teste.com', status: 'Ativa', totalMilhas: 0, programasAtivos: 1 },
-];
-
 export default function Titulares() {
   const [busca, setBusca] = useState('');
 
-  const filtradas = mockContas.filter(c => c.nome.toLowerCase().includes(busca.toLowerCase()));
+  // BUSCA OS TITULARES REAIS DO SUPABASE
+  const { data: contas = [] } = useQuery({
+    queryKey: ['contas_titulares_lista'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('contas_titulares').select('*').order('nome');
+      if (error) throw error;
+      return data || [];
+    }
+  });
+
+  const filtradas = contas.filter((c: any) => c.nome?.toLowerCase().includes(busca.toLowerCase()));
 
   return (
     <div className="space-y-6 max-w-[1600px] mx-auto text-zinc-100 p-6 pb-24">
@@ -55,24 +61,28 @@ export default function Titulares() {
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
-              {filtradas.map((c) => (
-                <tr key={c.id} className="hover:bg-white/[0.01] transition-colors">
-                  <td className="px-6 py-4 font-semibold text-white">{c.nome}</td>
-                  <td className="px-6 py-4 text-zinc-400 text-xs">
-                    <span className="flex items-center gap-1.5"><Mail className="w-3.5 h-3.5" /> {c.email}</span>
-                  </td>
-                  <td className="px-6 py-4 text-center text-zinc-300 font-medium">{c.programasAtivos}</td>
-                  <td className="px-6 py-4 text-right font-bold text-emerald-400">{c.totalMilhas.toLocaleString('pt-BR')}</td>
-                  <td className="px-6 py-4 text-center">
-                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                      {c.status.toUpperCase()}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-center">
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-zinc-500 hover:text-white"><MoreVertical className="w-4 h-4" /></Button>
-                  </td>
-                </tr>
-              ))}
+              {filtradas.length === 0 ? (
+                <tr><td colSpan={6} className="px-6 py-8 text-center text-zinc-500">Nenhum titular encontrado no banco.</td></tr>
+              ) : (
+                filtradas.map((c: any) => (
+                  <tr key={c.id} className="hover:bg-white/[0.01] transition-colors">
+                    <td className="px-6 py-4 font-semibold text-white">{c.nome}</td>
+                    <td className="px-6 py-4 text-zinc-400 text-xs">
+                      <span className="flex items-center gap-1.5"><Mail className="w-3.5 h-3.5" /> {c.email || 'N/D'}</span>
+                    </td>
+                    <td className="px-6 py-4 text-center text-zinc-300 font-medium">0</td>
+                    <td className="px-6 py-4 text-right font-bold text-emerald-400">0</td>
+                    <td className="px-6 py-4 text-center">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                        {c.status?.toUpperCase() || 'ATIVA'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-center">
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-zinc-500 hover:text-white"><MoreVertical className="w-4 h-4" /></Button>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
