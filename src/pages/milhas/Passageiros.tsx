@@ -1,20 +1,28 @@
 import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
 import { Users, Search, Filter, MoreVertical, Plus, Plane, Hash } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 
-const mockPassageiros = [
-  { id: 1, nome: 'Gabriel Viana Rodrigues', documento: '***.***.***-**', totalEmissoes: 12, ultimaEmissao: '20/06/2026', status: 'Frequente' },
-  { id: 2, nome: 'Ingrid Bittencourt', documento: '***.***.***-**', totalEmissoes: 8, ultimaEmissao: '12/05/2026', status: 'Frequente' },
-  { id: 3, nome: 'Bento Rodrigues', documento: '***.***.***-**', totalEmissoes: 2, ultimaEmissao: '14/01/2026', status: 'Regular' },
-  { id: 4, nome: 'Cliente Balcão Exemplo 1', documento: '***.***.***-**', totalEmissoes: 1, ultimaEmissao: '04/07/2026', status: 'Avulso' }
-];
-
 export default function Passageiros() {
   const [busca, setBusca] = useState('');
 
-  const filtrados = mockPassageiros.filter(p => p.nome.toLowerCase().includes(busca.toLowerCase()));
+  // BUSCA OS PASSAGEIROS REAIS DO SUPABASE
+  const { data: passageiros = [] } = useQuery({
+    queryKey: ['passageiros_lista'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('passageiros').select('*').order('nome');
+      if (error) {
+        console.warn("Tabela de passageiros pode não existir ou erro no RLS", error);
+        return [];
+      }
+      return data || [];
+    }
+  });
+
+  const filtrados = passageiros.filter((p: any) => p.nome?.toLowerCase().includes(busca.toLowerCase()));
 
   return (
     <div className="space-y-6 max-w-[1600px] mx-auto text-zinc-100 p-4 md:p-6 pb-24">
@@ -57,31 +65,35 @@ export default function Passageiros() {
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
-              {filtrados.map((p) => (
-                <tr key={p.id} className="hover:bg-white/[0.01] transition-colors">
-                  <td className="px-6 py-4 font-semibold text-white">{p.nome}</td>
-                  <td className="px-6 py-4 text-zinc-400 text-xs font-mono">
-                    <span className="flex items-center gap-1.5"><Hash className="w-3.5 h-3.5" /> {p.documento}</span>
-                  </td>
-                  <td className="px-6 py-4 text-center text-zinc-300 font-medium">{p.totalEmissoes}</td>
-                  <td className="px-6 py-4 text-center text-zinc-400 text-xs">
-                    <span className="flex items-center justify-center gap-1"><Plane className="w-3.5 h-3.5 text-zinc-500" /> {p.ultimaEmissao}</span>
-                  </td>
-                  <td className="px-6 py-4 text-center">
-                    <span className={cn(
-                      "inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold border",
-                      p.status === 'Frequente' ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" :
-                      p.status === 'Regular' ? "bg-blue-500/10 text-blue-400 border-blue-500/20" :
-                      "bg-zinc-500/10 text-zinc-400 border-zinc-500/20"
-                    )}>
-                      {p.status.toUpperCase()}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-center">
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-zinc-500 hover:text-white"><MoreVertical className="w-4 h-4" /></Button>
-                  </td>
-                </tr>
-              ))}
+              {filtrados.length === 0 ? (
+                 <tr><td colSpan={6} className="px-6 py-8 text-center text-zinc-500">Nenhum passageiro registrado.</td></tr>
+              ) : (
+                filtrados.map((p: any) => (
+                  <tr key={p.id} className="hover:bg-white/[0.01] transition-colors">
+                    <td className="px-6 py-4 font-semibold text-white">{p.nome}</td>
+                    <td className="px-6 py-4 text-zinc-400 text-xs font-mono">
+                      <span className="flex items-center gap-1.5"><Hash className="w-3.5 h-3.5" /> {p.documento || 'N/D'}</span>
+                    </td>
+                    <td className="px-6 py-4 text-center text-zinc-300 font-medium">{p.totalEmissoes || 0}</td>
+                    <td className="px-6 py-4 text-center text-zinc-400 text-xs">
+                      <span className="flex items-center justify-center gap-1"><Plane className="w-3.5 h-3.5 text-zinc-500" /> {p.ultimaEmissao || '-'}</span>
+                    </td>
+                    <td className="px-6 py-4 text-center">
+                      <span className={cn(
+                        "inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold border",
+                        p.status === 'Frequente' ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" :
+                        p.status === 'Regular' ? "bg-blue-500/10 text-blue-400 border-blue-500/20" :
+                        "bg-zinc-500/10 text-zinc-400 border-zinc-500/20"
+                      )}>
+                        {(p.status || 'AVULSO').toUpperCase()}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-center">
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-zinc-500 hover:text-white"><MoreVertical className="w-4 h-4" /></Button>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
