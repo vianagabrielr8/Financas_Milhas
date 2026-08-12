@@ -1,29 +1,40 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
 import { Target, AlertTriangle, CheckCircle2, Edit2, CalendarDays } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
-const mockMetas = [
-  { id: 1, categoria: 'Moradia', meta: 3500, gasto: 3200, icon: '🏠', cor: '#3498db' },
-  { id: 2, categoria: 'Alimentação', meta: 2000, gasto: 2150, icon: '🍕', cor: '#f1c40f' }, // Estourado
-  { id: 3, categoria: 'Transporte', meta: 800, gasto: 420, icon: '🚗', cor: '#e74c3c' },
-  { id: 4, categoria: 'Pessoal - Gabriel', meta: 1500, gasto: 3187.21, icon: '👨', cor: '#2f3542' }, // Estourado Absurdo
-  { id: 5, categoria: 'Pessoal - Ingrid', meta: 1500, gasto: 1350, icon: '👩', cor: '#ff7675' }, // Quase no limite
-  { id: 6, categoria: 'Infantil - Bento', meta: 2000, gasto: 1650, icon: '👶', cor: '#5cc4e7' },
-  { id: 7, categoria: 'Saúde & Cuidados', meta: 500, gasto: 200, icon: '💊', cor: '#2ecc71' }
-];
-
 export default function Metas() {
   const [mes, setMes] = useState('Julho 2026');
+
+  // BUSCA AS CATEGORIAS REAIS DO SUPABASE
+  const { data: categorias = [] } = useQuery({
+    queryKey: ['categorias_metas'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('categoria_pessoal').select('*').order('nome');
+      if (error) throw error;
+      return data || [];
+    }
+  });
+
+  const metasProcessadas = useMemo(() => {
+    return categorias.map((cat: any) => ({
+      id: cat.id,
+      categoria: cat.nome,
+      meta: Number(cat.teto_gastos) || 0,
+      gasto: 0, 
+      cor: cat.cor || '#3498db',
+      icon: cat.icone || '📊'
+    }));
+  }, [categorias]);
   
-  const totalMeta = mockMetas.reduce((acc, m) => acc + m.meta, 0);
-  const totalGasto = mockMetas.reduce((acc, m) => acc + m.gasto, 0);
-  const percentualGeral = (totalGasto / totalMeta) * 100;
+  const totalMeta = metasProcessadas.reduce((acc: number, m: any) => acc + m.meta, 0);
+  const totalGasto = metasProcessadas.reduce((acc: number, m: any) => acc + m.gasto, 0);
+  const percentualGeral = totalMeta > 0 ? (totalGasto / totalMeta) * 100 : 0;
 
   return (
     <div className="space-y-6 max-w-[1600px] mx-auto text-zinc-100">
-      
-      {/* HEADER */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-[#141417] p-4 rounded-xl border border-white/5">
         <div>
           <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
@@ -40,7 +51,6 @@ export default function Metas() {
         </div>
       </div>
 
-      {/* KPI GLOBAL DE ORÇAMENTO */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-[#1e1e24] border border-white/5 rounded-2xl p-5">
           <p className="text-zinc-400 text-xs font-medium mb-1">Orçamento Total Definido</p>
@@ -58,7 +68,6 @@ export default function Metas() {
         </div>
       </div>
 
-      {/* BARRA DE PROGRESSO GLOBAL */}
       <div className="bg-[#1e1e24] border border-white/5 rounded-2xl p-6">
         <div className="flex justify-between items-end mb-3">
           <div>
@@ -76,16 +85,18 @@ export default function Metas() {
         </div>
       </div>
 
-      {/* GRID DE CATEGORIAS INDIVIDUAIS */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {mockMetas.map((item) => {
-          const percentual = (item.gasto / item.meta) * 100;
+        {metasProcessadas.length === 0 && (
+          <p className="text-zinc-500 col-span-2 text-center py-10">Nenhuma categoria com meta/orçamento definida.</p>
+        )}
+        {metasProcessadas.map((item: any) => {
+          const percentual = item.meta > 0 ? (item.gasto / item.meta) * 100 : 0;
           const estourou = item.gasto > item.meta;
           const emAlerta = percentual >= 85 && percentual <= 100;
           
           let corBarra = item.cor;
-          if (estourou) corBarra = '#e74c3c'; // Vermelho
-          else if (emAlerta) corBarra = '#f39c12'; // Laranja
+          if (estourou) corBarra = '#e74c3c';
+          else if (emAlerta) corBarra = '#f39c12';
           
           return (
             <div key={item.id} className="bg-[#141417] border border-white/5 rounded-2xl p-5 hover:border-white/10 transition-colors">
@@ -125,7 +136,6 @@ export default function Metas() {
           )
         })}
       </div>
-
     </div>
   );
 }
