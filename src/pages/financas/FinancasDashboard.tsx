@@ -1,12 +1,36 @@
-import { useState } from 'react';
-import { 
-  Landmark, ArrowUpCircle, ArrowDownCircle, CalendarDays, 
-  Wallet, Layers, PieChart, BarChart3, AlertTriangle 
-} from 'lucide-react';
+import { useState, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
+import { Landmark, ArrowUpCircle, ArrowDownCircle, CalendarDays, Wallet, Layers, PieChart, BarChart3, AlertTriangle } from 'lucide-react';
 
 export default function FinancasDashboard() {
   const [filtroMes, setFiltroMes] = useState('Julho 2026');
   const [filtroCentro, setFiltroCentro] = useState('Todos (Visão Global)');
+
+  // BUSCA DADOS REAIS DO BANCO
+  const { data: transacoes = [] } = useQuery({
+    queryKey: ['transacoes_dashboard'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('transacao_pessoal').select('*, categoria_pessoal(nome), centro_custo_projeto(nome)');
+      if (error) throw error;
+      return data || [];
+    }
+  });
+
+  // CÁLCULOS DINÂMICOS
+  const { faturamento, gastoConsumido } = useMemo(() => {
+    let fat = 0;
+    let gas = 0;
+    transacoes.forEach((t: any) => {
+      if (t.tipo === 'Receita') fat += Number(t.valor) || 0;
+      if (t.tipo === 'Despesa') gas += Number(t.valor) || 0;
+    });
+    return { faturamento: fat, gastoConsumido: gas };
+  }, [transacoes]);
+
+  // CATEGORIAS E CENTROS ZERADOS AGUARDANDO DADOS
+  const despesasPorCategoria: any[] = []; 
+  const custoPorUnidade: any[] = []; 
 
   return (
     <div className="space-y-6 max-w-[1600px] mx-auto text-zinc-100">
@@ -42,25 +66,25 @@ export default function FinancasDashboard() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-[#1e1e24] border border-white/5 rounded-xl p-5">
           <div className="flex justify-between items-start">
-            <div><p className="text-zinc-400 text-xs font-medium mb-1">Faturamento Geral</p><p className="text-xl font-bold text-[#2ecc71]">R$ 24.500,00</p></div>
+            <div><p className="text-zinc-400 text-xs font-medium mb-1">Faturamento Geral</p><p className="text-xl font-bold text-[#2ecc71]">R$ {faturamento.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p></div>
             <div className="h-8 w-8 rounded-full bg-[#2ecc71]/10 flex items-center justify-center"><ArrowUpCircle className="w-4 h-4 text-[#2ecc71]" /></div>
           </div>
         </div>
         <div className="bg-[#1e1e24] border border-white/5 rounded-xl p-5">
           <div className="flex justify-between items-start">
-            <div><p className="text-zinc-400 text-xs font-medium mb-1">Gasto Consumido</p><p className="text-xl font-bold text-[#e74c3c]">R$ 14.164,58</p></div>
+            <div><p className="text-zinc-400 text-xs font-medium mb-1">Gasto Consumido</p><p className="text-xl font-bold text-[#e74c3c]">R$ {gastoConsumido.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p></div>
             <div className="h-8 w-8 rounded-full bg-[#e74c3c]/10 flex items-center justify-center"><ArrowDownCircle className="w-4 h-4 text-[#e74c3c]" /></div>
           </div>
         </div>
         <div className="bg-[#1e1e24] border border-white/5 rounded-xl p-5">
           <div className="flex justify-between items-start">
-            <div><p className="text-zinc-400 text-xs font-medium mb-1">Faturas Ativas de Cartões</p><p className="text-xl font-bold text-amber-400">R$ 10.114,58</p></div>
+            <div><p className="text-zinc-400 text-xs font-medium mb-1">Faturas Ativas de Cartões</p><p className="text-xl font-bold text-amber-400">R$ 0,00</p></div>
             <div className="h-8 w-8 rounded-full bg-amber-400/10 flex items-center justify-center"><Wallet className="w-4 h-4 text-amber-400" /></div>
           </div>
         </div>
         <div className="bg-[#1e1e24] border border-white/5 rounded-xl p-5">
           <div className="flex justify-between items-start">
-            <div><p className="text-zinc-400 text-xs font-medium mb-1">Saldo Líquido Previsto</p><p className="text-xl font-bold text-white">R$ 10.335,42</p></div>
+            <div><p className="text-zinc-400 text-xs font-medium mb-1">Saldo Líquido Previsto</p><p className="text-xl font-bold text-white">R$ {(faturamento - gastoConsumido).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p></div>
             <div className="h-8 w-8 rounded-full bg-[#3498db]/10 flex items-center justify-center"><Landmark className="w-4 h-4 text-[#3498db]" /></div>
           </div>
         </div>
@@ -69,53 +93,47 @@ export default function FinancasDashboard() {
       {/* METRICAS VISUAIS DE INVESTIMENTOS / ALOCAÇÃO */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
-        {/* Distribuição por Categorias (C/ SCROLL) */}
+        {/* Distribuição por Categorias */}
         <div className="bg-[#1e1e24] border border-white/5 rounded-2xl p-5 col-span-2 flex flex-col h-[400px]">
           <h3 className="text-sm font-bold flex items-center gap-2 mb-4 shrink-0"><BarChart3 className="w-4 h-4 text-[#6c5ce7]" /> Despesas por Categoria (Visão Completa)</h3>
           
           <div className="space-y-4 overflow-y-auto pr-3 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent flex-1">
-            {[
-              { cat: 'Repasses a Terceiros (Synthia/Suzana)', valor: 6927.37, cor: '#ff9f43', pct: '48.9%' },
-              { cat: 'Moradia (Parcela Caixa + Condominio)', valor: 3200, cor: '#3498db', pct: '22.5%' },
-              { cat: 'Pessoal - Gabriel (Consumos)', valor: 3187.21, cor: '#2f3542', pct: '22.6%' },
-              { cat: 'Serviços Bancários (Empréstimo/Tarifas)', valor: 850, cor: '#95a5a6', pct: '6%' },
-              { cat: 'Alimentação (Supermercado e Delivery)', valor: 750, cor: '#f1c40f', pct: '4.5%' },
-              { cat: 'Transporte (Uber, Combustível, Seguro)', valor: 420, cor: '#e74c3c', pct: '3%' },
-              { cat: 'Infantil - Bento (Mensalidade e Itens)', valor: 350, cor: '#5cc4e7', pct: '2.5%' },
-              { cat: 'Saúde & Cuidados (Plano de Saúde)', valor: 200, cor: '#2ecc71', pct: '1.4%' }
-            ].map((i, idx) => (
-              <div key={idx} className="space-y-1.5">
-                <div className="flex justify-between text-xs text-zinc-300">
-                  <span className="font-semibold">{i.cat}</span>
-                  <span className="font-bold text-white">R$ {i.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} ({i.pct})</span>
+            {despesasPorCategoria.length === 0 ? (
+              <p className="text-zinc-500 text-sm text-center mt-10">Nenhuma despesa registrada no período.</p>
+            ) : (
+              despesasPorCategoria.map((i, idx) => (
+                <div key={idx} className="space-y-1.5">
+                  <div className="flex justify-between text-xs text-zinc-300">
+                    <span className="font-semibold">{i.cat}</span>
+                    <span className="font-bold text-white">R$ {i.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} ({i.pct})</span>
+                  </div>
+                  <div className="h-2 w-full bg-black/40 rounded-full overflow-hidden">
+                    <div className="h-full rounded-full" style={{ width: i.pct, backgroundColor: i.cor }} />
+                  </div>
                 </div>
-                <div className="h-2 w-full bg-black/40 rounded-full overflow-hidden">
-                  <div className="h-full rounded-full" style={{ width: i.pct, backgroundColor: i.cor }} />
-                </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </div>
 
-        {/* Divisão de Centros de Custo (Donut Simulado) */}
+        {/* Divisão de Centros de Custo */}
         <div className="bg-[#1e1e24] border border-white/5 rounded-2xl p-5 flex flex-col h-[400px]">
           <h3 className="text-sm font-bold flex items-center gap-2 mb-4 shrink-0"><PieChart className="w-4 h-4 text-emerald-500" /> Custo por Unidade</h3>
           
           <div className="space-y-4 my-auto">
-            {[
-              { cc: 'Terceiros / Reembolsos', valor: 6927.37, cor: '#ff9f43' },
-              { cc: 'Familiar', valor: 7237.21, cor: '#3498db' },
-              { cc: 'Bitté', valor: 0, cor: '#2ecc71' },
-              { cc: '360 Gestão', valor: 0, cor: '#2ecc71' }
-            ].map((u, idx) => (
-              <div key={idx} className="flex justify-between items-center text-xs border-b border-white/[0.03] pb-2">
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: u.cor }} />
-                  <span className="font-semibold text-zinc-300">{u.cc}</span>
+            {custoPorUnidade.length === 0 ? (
+              <p className="text-zinc-500 text-sm text-center">Nenhum custo apropriado.</p>
+            ) : (
+              custoPorUnidade.map((u, idx) => (
+                <div key={idx} className="flex justify-between items-center text-xs border-b border-white/[0.03] pb-2">
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: u.cor }} />
+                    <span className="font-semibold text-zinc-300">{u.cc}</span>
+                  </div>
+                  <span className="font-bold text-white">R$ {u.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
                 </div>
-                <span className="font-bold text-white">R$ {u.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
-              </div>
-            ))}
+              ))
+            )}
           </div>
 
           <div className="text-[10px] text-zinc-500 text-center flex items-center justify-center gap-1.5 mt-auto pt-4 border-t border-white/5">
@@ -123,7 +141,6 @@ export default function FinancasDashboard() {
           </div>
         </div>
       </div>
-
     </div>
   );
 }
