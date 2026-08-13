@@ -5,7 +5,7 @@ import {
   Wallet, UserCircle, Plane, Users, ShieldCheck, LogOut, ChevronLeft, Menu, Target, CalendarDays, Tags, FolderTree, Landmark 
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 
 export const Sidebar = () => {
@@ -15,16 +15,34 @@ export const Sidebar = () => {
     return (localStorage.getItem('erp_modulo_ativo') as 'FINANCAS' | 'MILHAS') || 'FINANCAS';
   });
 
+  // Estados para armazenar os dados reais do usuário logado
+  const [userName, setUserName] = useState('Carregando...');
+  const [userInitial, setUserInitial] = useState('');
+  const [userRole, setUserRole] = useState('');
+
+  useEffect(() => {
+    const buscarUsuario = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        // Tenta pegar o nome completo do Google. Se não tiver, usa a primeira parte do e-mail.
+        const nomeCompleto = user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split('@')[0] || 'Usuário';
+        setUserName(nomeCompleto);
+        setUserInitial(nomeCompleto.charAt(0).toUpperCase());
+        setUserRole(user.email || 'Usuário');
+      }
+    };
+    buscarUsuario();
+  }, []);
+
   const alterarModulo = (modulo: 'FINANCAS' | 'MILHAS') => {
     setModuloAtivo(modulo);
     localStorage.setItem('erp_modulo_ativo', modulo);
     window.location.reload();
   };
 
-  // FUNÇÃO DE SAÍDA
   const handleLogout = async () => {
     await supabase.auth.signOut();
-    navigate('/login'); // Ajuste a rota se o seu login for em outro caminho
+    navigate('/login'); 
     window.location.reload();
   };
 
@@ -64,7 +82,7 @@ export const Sidebar = () => {
       <div className={cn("h-16 flex items-center border-b border-white/5", collapsed ? "justify-center" : "px-6 justify-between")}>
         {!collapsed && (
           <span className="text-lg font-black tracking-tighter text-white truncate">
-            Milheiro<span className="text-emerald-500">Smart</span>
+            Milheiro<span className="text-[#10b981]">Smart</span>
           </span>
         )}
         <Button variant="ghost" size="icon" onClick={() => setCollapsed(!collapsed)} className="text-zinc-400 hover:text-white shrink-0">
@@ -76,7 +94,7 @@ export const Sidebar = () => {
         <div className={cn("flex bg-[#141417] rounded-lg p-1 border border-white/5", collapsed ? "flex-col gap-1.5" : "gap-1")}>
           <button 
             onClick={() => alterarModulo('FINANCAS')} 
-            className={cn("py-1.5 text-[10px] font-bold rounded transition-colors text-center", collapsed ? "w-full" : "flex-1", moduloAtivo === 'FINANCAS' ? "bg-emerald-500 text-white" : "text-zinc-500 hover:text-zinc-300")}
+            className={cn("py-1.5 text-[10px] font-bold rounded transition-colors text-center", collapsed ? "w-full" : "flex-1", moduloAtivo === 'FINANCAS' ? "bg-[#10b981] text-black" : "text-zinc-500 hover:text-zinc-300")}
           >
             {collapsed ? "F" : "FINANÇAS"}
           </button>
@@ -104,7 +122,7 @@ export const Sidebar = () => {
                     "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors", 
                     collapsed ? "justify-center" : "",
                     isActive 
-                      ? (moduloAtivo === 'FINANCAS' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-indigo-500/10 text-indigo-500') 
+                      ? (moduloAtivo === 'FINANCAS' ? 'bg-[#10b981]/10 text-[#10b981]' : 'bg-indigo-500/10 text-indigo-500') 
                       : "text-zinc-400 hover:text-zinc-100 hover:bg-white/5"
                   )}
                 >
@@ -118,14 +136,15 @@ export const Sidebar = () => {
       </nav>
 
       <div className={cn("p-4 border-t border-white/5 flex items-center gap-3", collapsed ? "justify-center" : "")}>
-        <div className="w-8 h-8 rounded-full bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center shrink-0 text-xs text-emerald-500 font-bold">G</div>
+        <div className="w-8 h-8 rounded-full bg-[#10b981]/20 border border-[#10b981]/30 flex items-center justify-center shrink-0 text-xs text-[#10b981] font-bold">
+          {userInitial}
+        </div>
         {!collapsed && (
           <div className="flex-1 overflow-hidden">
-            <p className="text-sm font-semibold text-white truncate">Gabriel</p>
-            <p className="text-[10px] text-zinc-500 uppercase tracking-wider">Admin</p>
+            <p className="text-sm font-semibold text-white truncate">{userName}</p>
+            <p className="text-[10px] text-zinc-500 truncate" title={userRole}>{userRole}</p>
           </div>
         )}
-        {/* BOTÃO ATIVO */}
         <LogOut 
           className="w-4 h-4 text-zinc-500 cursor-pointer hover:text-red-400 shrink-0 transition-colors" 
           onClick={handleLogout}
