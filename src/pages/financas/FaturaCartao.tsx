@@ -19,7 +19,7 @@ export default function FaturaCartao() {
   const [formDescricao, setFormDescricao] = useState('');
   const [formValor, setFormValor] = useState('');
   const [formData, setFormData] = useState(new Date().toISOString().split('T')[0]);
-  const [formFaturaDestino, setFormFaturaDestino] = useState(mesSelecionado); 
+  const [formFaturaDestino, setFormFaturaDestino] = useState(`${mesSelecionado}/${anoSelecionado}`); 
   const [formParcelado, setFormParcelado] = useState(false);
   const [formParcelas, setFormParcelas] = useState(2);
   const [formObservacao, setFormObservacao] = useState('');
@@ -29,6 +29,15 @@ export default function FaturaCartao() {
   const [buscaCat, setBuscaCat] = useState('');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Gera as opções de Fatura (2 meses para trás, 10 para frente)
+  const opcoesFatura = useMemo(() => {
+    return Array.from({length: 13}).map((_, i) => {
+      const d = new Date();
+      d.setMonth(d.getMonth() + i - 2);
+      return `${mesesNomes[d.getMonth()]}/${d.getFullYear()}`;
+    });
+  }, []);
 
   const { data: cartoes = [], isLoading: carregandoCartoes } = useQuery({
     queryKey: ['cartoes_pessoais'],
@@ -56,24 +65,25 @@ export default function FaturaCartao() {
     }
   });
 
-  const mesFormatado = String(mesesNomes.indexOf(mesSelecionado) + 1).padStart(2, '0');
-  const ultimoDia = new Date(anoSelecionado, Number(mesFormatado), 0).getDate();
-  const dataInicio = `${anoSelecionado}-${mesFormatado}-01`;
-  const dataFim = `${anoSelecionado}-${mesFormatado}-${ultimoDia}`;
+  // A busca agora é cirúrgica: pega exatamente o que está carimbado no mes_fatura
+  const faturaAtual = `${mesSelecionado}/${anoSelecionado}`;
 
   const { data: transacoes = [], refetch } = useQuery({
-    queryKey: ['transacoes_cartao', cartaoAtivo?.id, dataInicio, dataFim],
+    queryKey: ['transacoes_cartao', cartaoAtivo?.id, faturaAtual],
     enabled: !!cartaoAtivo,
     queryFn: async () => {
       const { data, error } = await supabase
         .from('transacao_pessoal')
         .select('*')
         .eq('cartao_id', cartaoAtivo.id)
-        .gte('data', dataInicio)
-        .lte('data', dataFim)
+        .eq('mes_fatura', faturaAtual)
         .order('data', { ascending: false });
       
-      if (error) throw error; return data || [];
+      if (error) {
+        console.warn("Se der erro, verifique se você criou a coluna 'mes_fatura' no Supabase.");
+        return [];
+      }
+      return data || [];
     }
   });
 
@@ -82,7 +92,6 @@ export default function FaturaCartao() {
   const categoriasFiltradas = useMemo(() => {
     const termo = buscaCat.toLowerCase();
     if (!termo) return categorias;
-    
     return categorias.filter((cat: any) => {
       const matchCat = cat.nome.toLowerCase().includes(termo);
       const subs = subcategorias.filter((sub: any) => sub.categoria_id === cat.id);
@@ -99,7 +108,7 @@ export default function FaturaCartao() {
     setFormParcelado(false);
     setFormObservacao('');
     setFormData(new Date().toISOString().split('T')[0]);
-    setFormFaturaDestino(mesSelecionado);
+    setFormFaturaDestino(faturaAtual);
   };
 
   const abrirModalNovaDespesa = () => {
@@ -111,11 +120,9 @@ export default function FaturaCartao() {
     setTransacaoEditandoId(t.id);
     setFormDescricao(t.descricao);
     setFormValor(Math.abs(Number(t.valor)).toString());
-    setFormData(t.data);
+    setFormData(t.data); 
     setFormObservacao(t.observacao || '');
-    
-    const dataObj = new Date(`${t.data}T12:00:00Z`);
-    setFormFaturaDestino(mesesNomes[dataObj.getUTCMonth()]);
+    setFormFaturaDestino(t.mes_fatura || faturaAtual);
     
     if (t.categoria_id) {
       setCategoriaSelecionada({
@@ -131,6 +138,18 @@ export default function FaturaCartao() {
     setModalAberto(true);
   };
 
+  // Helper para avançar os meses no parcelamento
+  const avancarMesFatura = (faturaBase: string, addMeses: number) => {
+    const [mes, anoStr] = faturaBase.split('/');
+    let index = mesesNomes.indexOf(mes) + addMeses;
+    let ano = parseInt(anoStr);
+    while (index > 11) {
+      index -= 12;
+      ano++;
+    }
+    return `${mesesNomes[index]}/${ano}`;
+  };
+
   const handleSalvarDespesa = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!cartaoAtivo) return alert('Você precisa ter um cartão ativo.');
@@ -139,28 +158,14 @@ export default function FaturaCartao() {
 
     const valorOriginal = Number(formValor);
     
+    // EDIÇÃO
     if (transacaoEditandoId) {
-      const dataOriginal = formData.split('-');
-      let mesIndexAlvo = mesesNomes.indexOf(formFaturaDestino);
-      const mesAlvoStr = String(mesIndexAlvo + 1).padStart(2, '0');
-      
-      let dataLancamento = `${dataOriginal[0]}-${mesAlvoStr}-${dataOriginal[2]}`;
-      const testeData = new Date(`${dataLancamento}T12:00:00Z`);
-      if (isNaN(testeData.getTime()) || testeData.getUTCMonth() !== mesIndexAlvo) {
-        dataLancamento = `${dataOriginal[0]}-${mesAlvoStr}-01`;
-      }
-
-      let observacaoFinal = formObservacao;
-      const mesOriginalIndex = new Date(`${formData}T12:00:00Z`).getUTCMonth();
-      if (mesesNomes[mesOriginalIndex] !== formFaturaDestino) {
-        observacaoFinal = `Compra original em: ${dataOriginal[2]}/${dataOriginal[1]}/${dataOriginal[0]}. ${formObservacao}`.trim();
-      }
-
       const { error } = await supabase.from('transacao_pessoal').update({
         descricao: formDescricao,
         valor: valorOriginal,
-        data: dataLancamento,
-        observacao: observacaoFinal,
+        data: formData, // Data da compra IMUTÁVEL
+        mes_fatura: formFaturaDestino, // Você manda para onde quiser
+        observacao: formObservacao,
         categoria_id: categoriaSelecionada.catId,
         subcategoria_id: categoriaSelecionada.subId || null,
       }).eq('id', transacaoEditandoId);
@@ -174,42 +179,20 @@ export default function FaturaCartao() {
       return;
     }
 
+    // CRIAÇÃO E PARCELAMENTO
     const transacoesParaInserir = [];
     const qtdParcelas = formParcelado ? formParcelas : 1;
     const valorParcela = valorOriginal / qtdParcelas;
-    const dataOriginal = formData.split('-'); 
-    const diaCompra = dataOriginal[2];
 
     for (let i = 0; i < qtdParcelas; i++) {
-      let mesIndexAlvo = mesesNomes.indexOf(formFaturaDestino) + i;
-      let anoAlvo = anoSelecionado;
-      
-      while (mesIndexAlvo > 11) {
-        mesIndexAlvo -= 12;
-        anoAlvo++;
-      }
-      
-      const mesAlvoStr = String(mesIndexAlvo + 1).padStart(2, '0');
-      let dataLancamento = `${anoAlvo}-${mesAlvoStr}-${diaCompra}`;
-      
-      const testeData = new Date(`${dataLancamento}T12:00:00Z`);
-      if (isNaN(testeData.getTime()) || testeData.getUTCMonth() !== mesIndexAlvo) {
-        dataLancamento = `${anoAlvo}-${mesAlvoStr}-01`;
-      }
-
-      let observacaoFinal = formObservacao;
-      const mesOriginalIndex = new Date(`${formData}T12:00:00Z`).getUTCMonth();
-      if (mesesNomes[mesOriginalIndex] !== formFaturaDestino || formParcelado) {
-        observacaoFinal = `Compra original em: ${dataOriginal[2]}/${dataOriginal[1]}/${dataOriginal[0]}. ${formObservacao}`.trim();
-      }
-
       transacoesParaInserir.push({
         descricao: formParcelado ? `${formDescricao} (${i + 1}/${qtdParcelas})` : formDescricao,
         valor: valorParcela,
         situacao: 'PENDENTE', 
         tipo: 'DESPESA',
-        data: dataLancamento,
-        observacao: observacaoFinal,
+        data: formData, // Fica sempre com a data real da compra
+        mes_fatura: avancarMesFatura(formFaturaDestino, i), // Joga pras próximas faturas
+        observacao: formObservacao,
         cartao_id: cartaoAtivo.id,
         categoria_id: categoriaSelecionada.catId,
         subcategoria_id: categoriaSelecionada.subId || null, 
@@ -244,11 +227,10 @@ export default function FaturaCartao() {
 
   const baixarModeloCSV = () => {
     const conteudo = "Data;Descricao;Valor;Categoria (Opcional);Parcelas (Opcional);Observacao (Opcional)\n" +
-                     "01/08/2026;Uber;26,22;Transporte;1;Corrida para o cliente\n" +
+                     "30/07/2026;Uber;26,22;Transporte;1;Corrida para o cliente\n" +
                      "15/08/2026;Restaurante;145,50;Alimentação;1;Almoço\n" +
                      "20/08/2026;Seguro Auto;1200,00;Transporte;10;Renovação anual";
     
-    // Adiciona o BOM para o Excel ler acentos (UTF-8) corretamente
     const blob = new Blob(["\uFEFF" + conteudo], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -276,13 +258,11 @@ export default function FaturaCartao() {
 
           const [dataRaw, desc, valorRaw, catRaw, parcelasRaw, obsRaw] = colunas;
           
-          // Data
           const partesData = dataRaw.split('/');
           if (partesData.length !== 3) continue;
           const dataCompraObj = new Date(`${partesData[2]}-${partesData[1]}-${partesData[0]}T12:00:00Z`);
           if (isNaN(dataCompraObj.getTime())) continue;
 
-          // Valor
           let cleanVal = valorRaw.replace('R$', '').trim();
           if (cleanVal.includes('.') && cleanVal.includes(',')) {
              cleanVal = cleanVal.replace(/\./g, '').replace(',', '.');
@@ -292,7 +272,6 @@ export default function FaturaCartao() {
           const valorFinal = parseFloat(cleanVal);
           if (isNaN(valorFinal)) continue;
 
-          // Categoria (Busca Inteligente)
           let categoriaMatchId = null;
           if (catRaw) {
             const catDigitada = catRaw.trim().toLowerCase();
@@ -300,17 +279,25 @@ export default function FaturaCartao() {
             if (catEncontrada) categoriaMatchId = catEncontrada.id;
           }
 
-          // Parcelas
+          // Adivinha a fatura base usando o ciclo de fechamento
+          let mesIdx = dataCompraObj.getUTCMonth();
+          let ano = dataCompraObj.getUTCFullYear();
+          const diaFechamento = cartaoAtivo?.dia_fechamento || 31;
+          
+          if (dataCompraObj.getUTCDate() > diaFechamento) {
+            mesIdx++;
+            if (mesIdx > 11) { mesIdx = 0; ano++; }
+          }
+          const faturaBaseImportacao = `${mesesNomes[mesIdx]}/${ano}`;
+
           const parcelas = parcelasRaw && parseInt(parcelasRaw) > 0 ? parseInt(parcelasRaw) : 1;
           const valorParcela = valorFinal / parcelas;
 
           for (let p = 0; p < parcelas; p++) {
-            const dataFatura = new Date(dataCompraObj);
-            dataFatura.setUTCMonth(dataFatura.getUTCMonth() + p);
-            
             transacoesImportadas.push({
               cartao_id: cartaoAtivo.id,
-              data: dataFatura.toISOString().split('T')[0],
+              data: dataCompraObj.toISOString().split('T')[0],
+              mes_fatura: avancarMesFatura(faturaBaseImportacao, p),
               descricao: parcelas > 1 ? `${desc.trim()} (${p + 1}/${parcelas})` : desc.trim(),
               valor: valorParcela,
               categoria_id: categoriaMatchId,
@@ -329,7 +316,7 @@ export default function FaturaCartao() {
             refetch();
           }
         } else {
-            alert("Nenhuma transação válida encontrada. Verifique o formato do arquivo.");
+            alert("Nenhuma transação válida encontrada. Verifique as colunas do arquivo.");
         }
       } catch (err) {
         alert("Erro ao ler o arquivo CSV. Verifique se o formato está idêntico ao modelo.");
@@ -411,11 +398,11 @@ export default function FaturaCartao() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm text-left">
               <thead className="text-[11px] text-zinc-400 font-bold uppercase border-b border-white/5">
-                <tr><th className="pb-3">Data Ref.</th><th className="pb-3">Descrição</th><th className="pb-3">Categoria</th><th className="pb-3 text-right">Valor</th><th className="pb-3 text-center">Ações</th></tr>
+                <tr><th className="pb-3">Data</th><th className="pb-3">Descrição</th><th className="pb-3">Categoria</th><th className="pb-3 text-right">Valor</th><th className="pb-3 text-center">Ações</th></tr>
               </thead>
               <tbody className="divide-y divide-white/5">
                 {transacoes.length === 0 ? (
-                   <tr><td colSpan={5} className="py-8 text-center text-zinc-500">Nenhuma compra registrada para {mesSelecionado}/{anoSelecionado}.</td></tr>
+                   <tr><td colSpan={5} className="py-8 text-center text-zinc-500">Nenhuma compra listada na fatura de {faturaAtual}.</td></tr>
                 ) : (
                   transacoes.map((t: any) => (
                     <tr key={t.id} className="hover:bg-white/[0.02]">
@@ -485,6 +472,12 @@ export default function FaturaCartao() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 
                 <div className="space-y-5">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="col-span-2">
+                      <label className="text-zinc-400 text-[10px] font-bold uppercase block mb-1.5">Data da Compra (Fato Real)</label>
+                      <input type="date" required value={formData} onChange={(e) => setFormData(e.target.value)} className="w-full bg-[#1e1e24] text-white border border-white/10 rounded-xl p-3 focus:border-[#10b981] focus:outline-none transition-all [color-scheme:dark] text-sm" />
+                    </div>
+                  </div>
                   <div>
                     <label className="text-zinc-400 text-xs font-bold uppercase block mb-1.5">Valor Total</label>
                     <div className="relative">
@@ -496,7 +489,9 @@ export default function FaturaCartao() {
                     <label className="text-zinc-400 text-xs font-bold uppercase block mb-1.5">Descrição da Compra</label>
                     <input type="text" required value={formDescricao} onChange={(e) => setFormDescricao(e.target.value)} className="w-full bg-[#1e1e24] text-white border border-white/10 rounded-xl p-3 focus:border-[#10b981] focus:outline-none transition-all" placeholder="Ex: Mercado Livre" />
                   </div>
-                  
+                </div>
+
+                <div className="space-y-5">
                   <div className="relative">
                     <label className="text-zinc-400 text-xs font-bold uppercase block mb-1.5">Categoria</label>
                     
@@ -559,18 +554,12 @@ export default function FaturaCartao() {
                       </>
                     )}
                   </div>
-                </div>
 
-                <div className="space-y-5">
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 gap-4">
                     <div>
-                      <label className="text-zinc-400 text-[10px] font-bold uppercase block mb-1.5">Data da Compra</label>
-                      <input type="date" required value={formData} onChange={(e) => setFormData(e.target.value)} className="w-full bg-[#1e1e24] text-white border border-white/10 rounded-xl p-3 focus:border-[#10b981] focus:outline-none transition-all [color-scheme:dark] text-sm" />
-                    </div>
-                    <div>
-                      <label className="text-[#10b981] text-[10px] font-bold uppercase block mb-1.5">Lançar na Fatura de:</label>
+                      <label className="text-[#10b981] text-[10px] font-bold uppercase block mb-1.5">Lançar/Alterar Para a Fatura de:</label>
                       <select value={formFaturaDestino} onChange={(e) => setFormFaturaDestino(e.target.value)} className="w-full bg-[#10b981]/10 text-[#10b981] font-bold border border-[#10b981]/30 rounded-xl p-3 focus:outline-none transition-all text-sm appearance-none cursor-pointer">
-                        {mesesNomes.map(m => <option key={m} value={m} className="bg-[#1e1e24] text-white">{m}</option>)}
+                        {opcoesFatura.map(f => <option key={f} value={f} className="bg-[#1e1e24] text-white">{f}</option>)}
                       </select>
                     </div>
                   </div>
