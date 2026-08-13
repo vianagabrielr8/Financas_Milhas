@@ -45,7 +45,8 @@ export default function CentrosCusto() {
 
     const { error } = await supabase.from('centro_custo_projeto').insert([{ 
       nome: novoCentro.trim(),
-      icone: 'Briefcase' // Ícone padrão na criação rápida
+      icone: 'Briefcase', // Ícone padrão na criação rápida
+      tipo: 'Unidade de Negócio' // Corrige o erro de null na tabela
     }]);
 
     if (error) {
@@ -73,7 +74,7 @@ export default function CentrosCusto() {
     }).eq('id', centroEditandoId);
 
     if (error) {
-      alert('Erro ao editar. Verifique se você criou a coluna "icone" no Supabase: ' + error.message);
+      alert('Erro ao editar: ' + error.message);
     } else {
       setModalAberto(false);
       refetch();
@@ -135,7 +136,7 @@ export default function CentrosCusto() {
                 </div>
                 <div className="space-y-0.5">
                   <p className="font-bold text-sm text-white tracking-wide">{c.nome}</p>
-                  <p className="text-[10px] text-zinc-500 font-medium uppercase tracking-wider">Unidade de Negócio</p>
+                  <p className="text-[10px] text-zinc-500 font-medium uppercase tracking-wider">{c.tipo || 'Unidade de Negócio'}</p>
                 </div>
               </div>
               
