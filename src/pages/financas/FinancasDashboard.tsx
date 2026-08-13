@@ -1,26 +1,19 @@
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { Landmark, ArrowUpCircle, ArrowDownCircle, CalendarDays, Wallet, Layers, PieChart, BarChart3, AlertTriangle } from 'lucide-react';
+import { Landmark, ArrowUpCircle, ArrowDownCircle, Calendar, Layers, PieChart, BarChart3, AlertTriangle } from 'lucide-react';
 
-// Paleta de cores para os gráficos não dependerem do banco de dados
 const CORES_PALETA = ['#8b5cf6', '#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#ec4899', '#06b6d4', '#14b8a6'];
 
 export default function FinancasDashboard() {
   const mesesNomes = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
-  
-  const opcoesMeses = useMemo(() => {
-    return Array.from({length: 13}).map((_, i) => {
-      const d = new Date();
-      d.setMonth(d.getMonth() + i - 6);
-      return `${mesesNomes[d.getMonth()]}/${d.getFullYear()}`;
-    });
-  }, []);
 
-  const [filtroMes, setFiltroMes] = useState(() => {
-    const d = new Date();
-    return `${mesesNomes[d.getMonth()]}/${d.getFullYear()}`;
-  });
+  // Inicializa com o ano e mês atual no formato YYYY-MM (igual à tela de Transações)
+  const dataAtual = new Date();
+  const anoAtual = dataAtual.getFullYear();
+  const mesAtualNum = String(dataAtual.getMonth() + 1).padStart(2, '0');
+  
+  const [anoMesSelecionado, setAnoMesSelecionado] = useState(`${anoAtual}-${mesAtualNum}`);
   const [filtroCentro, setFiltroCentro] = useState('Todos (Visão Global)');
 
   const { data: centrosCusto = [] } = useQuery({
@@ -31,7 +24,6 @@ export default function FinancasDashboard() {
     }
   });
 
-  // A CONSULTA CORRIGIDA (Sem pedir a coluna "cor" que não existe)
   const { data: transacoes = [] } = useQuery({
     queryKey: ['transacoes_dashboard_fix'],
     queryFn: async () => {
@@ -52,11 +44,11 @@ export default function FinancasDashboard() {
     let gas = 0;
     let faturas = 0;
     
-    // Tratamento Inteligente de Datas
-    const [mesNome, anoStr] = filtroMes.split('/');
-    const mesIndex = mesesNomes.findIndex(m => m.toLowerCase() === mesNome.toLowerCase());
-    const mesNumber = String(mesIndex + 1).padStart(2, '0');
-    const anoMesMascara = `${anoStr}-${mesNumber}`; // Ex: "2026-09"
+    // Converte o valor do input type="month" (ex: "2026-09") para o formato da fatura ("Set/2026")
+    const [anoStr, mesNumStr] = anoMesSelecionado.split('-');
+    const mesIdx = parseInt(mesNumStr, 10) - 1;
+    const nomeMesAbrev = mesesNomes[mesIdx]; // Ex: "Set"
+    const formatoFaturaAlvo = `${nomeMesAbrev}/${anoStr}`; // Ex: "Set/2026"
 
     const transacoesFiltradas = transacoes.filter((t: any) => {
       const centroNome = t.centro_custo_projeto?.nome || 'Sem Centro';
@@ -64,16 +56,13 @@ export default function FinancasDashboard() {
       
       let bateuMes = false;
       if (t.cartao_id) {
-        // Se a despesa for de cartão, olha pra Fatura
         if (t.mes_fatura) {
-          bateuMes = t.mes_fatura.toLowerCase().replace(/\s/g,'') === filtroMes.toLowerCase().replace(/\s/g,'');
+          bateuMes = t.mes_fatura.toLowerCase().replace(/\s/g,'') === formatoFaturaAlvo.toLowerCase().replace(/\s/g,'');
         } else if (t.data) {
-          // Fallback caso falte mes_fatura
-          bateuMes = t.data.startsWith(anoMesMascara);
+          bateuMes = t.data.startsWith(anoMesSelecionado);
         }
       } else {
-        // Se for conta corrente, olha pra data real da transação
-        bateuMes = t.data && t.data.startsWith(anoMesMascara);
+        bateuMes = t.data && t.data.startsWith(anoMesSelecionado);
       }
 
       return bateuCentro && bateuMes;
@@ -95,7 +84,6 @@ export default function FinancasDashboard() {
         gas += val;
         if (t.cartao_id) faturas += val; 
 
-        // Cores Dinâmicas Categorias
         const catNome = t.categoria_pessoal?.nome || 'A Classificar';
         if (!mapCategorias[catNome]) {
            mapCategorias[catNome] = { valor: 0, cor: CORES_PALETA[corCatIdx % CORES_PALETA.length] };
@@ -103,7 +91,6 @@ export default function FinancasDashboard() {
         }
         mapCategorias[catNome].valor += val;
 
-        // Cores Dinâmicas Centros de Custo
         const ccNome = t.centro_custo_projeto?.nome || 'Sem Centro';
         if (!mapCentros[ccNome]) {
            mapCentros[ccNome] = { valor: 0, cor: CORES_PALETA[corCcIdx % CORES_PALETA.length] };
@@ -135,7 +122,7 @@ export default function FinancasDashboard() {
       despesasPorCategoria: arrayCategorias,
       custoPorUnidade: arrayCentros
     };
-  }, [transacoes, filtroCentro, filtroMes]);
+  }, [transacoes, filtroCentro, anoMesSelecionado]);
 
   return (
     <div className="space-y-6 max-w-[1600px] mx-auto text-zinc-100 p-6 animate-fade-in">
@@ -147,16 +134,21 @@ export default function FinancasDashboard() {
         </div>
         
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-2 bg-black/40 px-3 py-1.5 rounded-lg border border-white/10 transition-colors focus-within:border-[#10b981]/50">
-            <CalendarDays className="w-4 h-4 text-zinc-400" />
-            <select value={filtroMes} onChange={(e) => setFiltroMes(e.target.value)} className="bg-transparent text-xs font-semibold text-white focus:outline-none cursor-pointer appearance-none">
-              {opcoesMeses.map(m => <option key={m} value={m} className="bg-[#1a1a20]">{m}</option>)}
-            </select>
+          {/* SELETOR DE MÊS IGUAL À TELA DE TRANSAÇÕES */}
+          <div className="flex items-center bg-[#1a1a20] border border-gray-800 rounded-lg px-3 focus-within:border-[#10b981] transition-colors h-[42px]">
+            <Calendar className="w-4 h-4 text-gray-400 mr-2" />
+            <input 
+              type="month" 
+              value={anoMesSelecionado} 
+              onChange={(e) => setAnoMesSelecionado(e.target.value)} 
+              className="bg-transparent text-sm text-white focus:outline-none [color-scheme:dark] cursor-pointer" 
+            />
           </div>
-          <div className="flex items-center gap-2 bg-black/40 px-3 py-1.5 rounded-lg border border-white/10 transition-colors focus-within:border-[#10b981]/50">
-            <Layers className="w-4 h-4 text-zinc-400" />
+
+          <div className="flex items-center gap-2 bg-[#1a1a20] border border-gray-800 rounded-lg px-3 transition-colors h-[42px]">
+            <Layers className="w-4 h-4 text-gray-400" />
             <select value={filtroCentro} onChange={(e) => setFiltroCentro(e.target.value)} className="bg-transparent text-xs font-semibold text-white focus:outline-none cursor-pointer appearance-none max-w-[150px] truncate">
-              <option value="Todos (Visão Global)">Todos (Visão Global)</option>
+              <option value="Todos (Visão Global)" className="bg-[#1a1a20]">Todos (Visão Global)</option>
               {centrosCusto.map((cc: any) => <option key={cc.nome} value={cc.nome} className="bg-[#1a1a20]">{cc.nome}</option>)}
             </select>
           </div>
