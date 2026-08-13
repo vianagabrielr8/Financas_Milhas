@@ -1,14 +1,13 @@
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { Landmark, ArrowUpCircle, ArrowDownCircle, Calendar, Layers, PieChart, BarChart3, AlertTriangle } from 'lucide-react';
+import { Landmark, ArrowUpCircle, ArrowDownCircle, Calendar, Layers, PieChart, BarChart3, AlertTriangle, Wallet } from 'lucide-react';
 
 const CORES_PALETA = ['#8b5cf6', '#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#ec4899', '#06b6d4', '#14b8a6'];
 
 export default function FinancasDashboard() {
   const mesesNomes = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
 
-  // Inicializa com o ano e mês atual no formato YYYY-MM (igual à tela de Transações)
   const dataAtual = new Date();
   const anoAtual = dataAtual.getFullYear();
   const mesAtualNum = String(dataAtual.getMonth() + 1).padStart(2, '0');
@@ -31,10 +30,7 @@ export default function FinancasDashboard() {
         .from('transacao_pessoal')
         .select('*, categoria_pessoal(nome), centro_custo_projeto(nome)');
         
-      if (error) {
-        console.error("Erro na busca do Dashboard:", error);
-        throw error;
-      }
+      if (error) throw error;
       return data || [];
     }
   });
@@ -44,11 +40,10 @@ export default function FinancasDashboard() {
     let gas = 0;
     let faturas = 0;
     
-    // Converte o valor do input type="month" (ex: "2026-09") para o formato da fatura ("Set/2026")
     const [anoStr, mesNumStr] = anoMesSelecionado.split('-');
     const mesIdx = parseInt(mesNumStr, 10) - 1;
-    const nomeMesAbrev = mesesNomes[mesIdx]; // Ex: "Set"
-    const formatoFaturaAlvo = `${nomeMesAbrev}/${anoStr}`; // Ex: "Set/2026"
+    const nomeMesAbrev = mesesNomes[mesIdx];
+    const formatoFaturaAlvo = `${nomeMesAbrev}/${anoStr}`;
 
     const transacoesFiltradas = transacoes.filter((t: any) => {
       const centroNome = t.centro_custo_projeto?.nome || 'Sem Centro';
@@ -134,7 +129,6 @@ export default function FinancasDashboard() {
         </div>
         
         <div className="flex flex-wrap items-center gap-3">
-          {/* SELETOR DE MÊS IGUAL À TELA DE TRANSAÇÕES */}
           <div className="flex items-center bg-[#1a1a20] border border-gray-800 rounded-lg px-3 focus-within:border-[#10b981] transition-colors h-[42px]">
             <Calendar className="w-4 h-4 text-gray-400 mr-2" />
             <input 
