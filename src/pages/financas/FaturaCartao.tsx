@@ -476,7 +476,6 @@ export default function FaturaCartao() {
                       <td className="py-4">
                         <div className="flex flex-col">
                           <span className="font-semibold text-white">{t.descricao}</span>
-                          {/* AUMENTO DA FONTE AQUI DE text-[10px] PARA text-xs */}
                           {t.observacao && <span className="text-xs text-zinc-400 flex items-center gap-1 mt-1 truncate max-w-[350px]"><FileText className="w-3.5 h-3.5 flex-shrink-0" /> {t.observacao}</span>}
                         </div>
                       </td>
