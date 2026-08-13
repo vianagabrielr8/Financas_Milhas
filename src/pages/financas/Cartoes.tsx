@@ -8,6 +8,7 @@ import { CreditCard, Trash2, Edit2, Plus, X } from 'lucide-react';
 
 export default function Cartoes() {
   const [modalAberto, setModalAberto] = useState(false);
+  const [cartaoEditandoId, setCartaoEditandoId] = useState<string | null>(null);
   
   const [nome, setNome] = useState('');
   const [limite, setLimite] = useState('');
@@ -23,31 +24,58 @@ export default function Cartoes() {
     }
   });
 
-  const handleCriarCartao = async (e: React.FormEvent) => {
+  const abrirModalNovo = () => {
+    setCartaoEditandoId(null);
+    setNome('');
+    setLimite('');
+    setDiaFechamento('');
+    setDiaVencimento('');
+    setModalAberto(true);
+  };
+
+  const abrirModalEdicao = (e: React.MouseEvent, cartao: any) => {
+    e.preventDefault(); // Impede que o Link mude de página
+    setCartaoEditandoId(cartao.id);
+    setNome(cartao.nome);
+    setLimite(cartao.limite?.toString() || '');
+    setDiaFechamento(cartao.dia_fechamento?.toString() || '');
+    setDiaVencimento(cartao.dia_vencimento?.toString() || '');
+    setModalAberto(true);
+  };
+
+  const handleSalvarCartao = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    const { error } = await supabase.from('cartao_pessoal').insert([{
+    const payload = {
       nome,
       limite: Number(limite),
       dia_fechamento: Number(diaFechamento),
       dia_vencimento: Number(diaVencimento)
-    }]);
+    };
 
-    if (error) {
-      alert('Erro ao criar cartão: ' + error.message);
+    let erroOcorrido;
+
+    if (cartaoEditandoId) {
+      // MODO EDIÇÃO
+      const { error } = await supabase.from('cartao_pessoal').update(payload).eq('id', cartaoEditandoId);
+      erroOcorrido = error;
+    } else {
+      // MODO CRIAÇÃO
+      const { error } = await supabase.from('cartao_pessoal').insert([payload]);
+      erroOcorrido = error;
+    }
+
+    if (erroOcorrido) {
+      alert('Erro ao salvar cartão: ' + erroOcorrido.message);
     } else {
       setModalAberto(false);
-      setNome('');
-      setLimite('');
-      setDiaFechamento('');
-      setDiaVencimento('');
       refetch(); 
     }
   };
 
   const deletarCartao = async (e: React.MouseEvent, id: string) => {
     e.preventDefault(); 
-    if (!window.confirm('Excluir este cartão?')) return;
+    if (!window.confirm('Tem certeza que deseja excluir este cartão? Todas as faturas vinculadas podem ser afetadas.')) return;
     
     await supabase.from('cartao_pessoal').delete().eq('id', id);
     refetch();
@@ -61,7 +89,7 @@ export default function Cartoes() {
         <h1 className="text-2xl font-bold flex items-center gap-2">
           <CreditCard className="text-[#10b981]" /> Cartões
         </h1>
-        <Button onClick={() => setModalAberto(true)} className="bg-[#10b981] hover:bg-[#059669] text-black font-bold flex items-center gap-2">
+        <Button onClick={abrirModalNovo} className="bg-[#10b981] hover:bg-[#059669] text-black font-bold flex items-center gap-2">
           <Plus size={18} /> Novo Cartão
         </Button>
       </div>
@@ -73,7 +101,6 @@ export default function Cartoes() {
           const limiteDisponivel = limiteTotal - consumido;
           const percentual = limiteTotal > 0 ? (consumido / limiteTotal) * 100 : 0;
           
-          // Lógica do Melhor Dia: Adiciona +1. Se fechar dia 31, vira dia 1.
           const melhorDia = cartao.dia_fechamento ? (cartao.dia_fechamento === 31 ? 1 : cartao.dia_fechamento + 1) : '--';
 
           return (
@@ -82,7 +109,7 @@ export default function Cartoes() {
                 <div className="flex justify-between mb-2">
                   <span className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider">Cartão de Crédito</span>
                   <div className="flex gap-2 relative z-10">
-                     <button onClick={(e) => { e.preventDefault(); }} className="p-1 text-zinc-500 hover:text-white transition-colors"><Edit2 className="w-4 h-4" /></button>
+                     <button onClick={(e) => abrirModalEdicao(e, cartao)} className="p-1 text-zinc-500 hover:text-white transition-colors"><Edit2 className="w-4 h-4" /></button>
                      <button onClick={(e) => deletarCartao(e, cartao.id)} className="p-1 text-zinc-500 hover:text-red-500 transition-colors"><Trash2 className="w-4 h-4" /></button>
                   </div>
                 </div>
@@ -126,12 +153,12 @@ export default function Cartoes() {
           <div className="bg-[#1a1a20] rounded-2xl w-full max-w-md border border-white/10 shadow-2xl overflow-hidden">
             <div className="px-6 py-5 border-b border-white/10 flex justify-between items-center">
               <h2 className="text-xl text-white font-bold flex items-center gap-2">
-                <CreditCard className="text-[#10b981]" size={20} /> Cadastrar Cartão
+                <CreditCard className="text-[#10b981]" size={20} /> {cartaoEditandoId ? 'Editar Cartão' : 'Cadastrar Cartão'}
               </h2>
               <button onClick={() => setModalAberto(false)} className="text-zinc-500 hover:text-white transition-colors"><X size={20} /></button>
             </div>
             
-            <form onSubmit={handleCriarCartao} className="p-6 space-y-4">
+            <form onSubmit={handleSalvarCartao} className="p-6 space-y-4">
               <div>
                 <label className="text-zinc-400 text-xs font-bold uppercase block mb-1.5">Nome do Cartão (Ex: Latam Pass Black)</label>
                 <input type="text" required value={nome} onChange={(e) => setNome(e.target.value)} className="w-full bg-[#1e1e24] text-white border border-white/10 rounded-xl p-3 focus:border-[#10b981] focus:outline-none transition-all" />
