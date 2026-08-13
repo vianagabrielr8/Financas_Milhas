@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
 export default function FaturaCartao() {
-  const { id: urlCardId } = useParams(); // LÊ O CARTÃO CLICADO NA TELA ANTERIOR
+  const { id: urlCardId } = useParams();
   
   const mesesNomes = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
   const [mesSelecionado, setMesSelecionado] = useState(mesesNomes[new Date().getMonth()]);
@@ -22,7 +22,7 @@ export default function FaturaCartao() {
   const [formValor, setFormValor] = useState('');
   const [formData, setFormData] = useState(new Date().toISOString().split('T')[0]);
   const [formFaturaDestino, setFormFaturaDestino] = useState(`${mesSelecionado}/${anoSelecionado}`); 
-  const [formCentroCusto, setFormCentroCusto] = useState(''); // NOVO ESTADO
+  const [formCentroCusto, setFormCentroCusto] = useState(''); 
   const [formParcelado, setFormParcelado] = useState(false);
   const [formParcelas, setFormParcelas] = useState(2);
   const [formObservacao, setFormObservacao] = useState('');
@@ -50,7 +50,6 @@ export default function FaturaCartao() {
     }
   });
 
-  // CORREÇÃO DO BUG DE ROTEAMENTO
   useEffect(() => {
     if (cartoes.length > 0) {
       if (urlCardId) {
@@ -94,7 +93,7 @@ export default function FaturaCartao() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('transacao_pessoal')
-        .select('*, centro_custo_projeto(nome)') // Traz o nome do centro de custo na query
+        .select('*, centro_custo_projeto(nome)') 
         .eq('cartao_id', cartaoAtivo.id)
         .eq('mes_fatura', faturaAtual)
         .order('data', { ascending: false });
@@ -177,7 +176,6 @@ export default function FaturaCartao() {
 
     const valorOriginal = Number(formValor);
     
-    // EDIÇÃO
     if (transacaoEditandoId) {
       const { error } = await supabase.from('transacao_pessoal').update({
         descricao: formDescricao,
@@ -199,7 +197,6 @@ export default function FaturaCartao() {
       return;
     }
 
-    // CRIAÇÃO
     const transacoesParaInserir = [];
     const qtdParcelas = formParcelado ? formParcelas : 1;
     const valorParcela = valorOriginal / qtdParcelas;
@@ -247,10 +244,10 @@ export default function FaturaCartao() {
   };
 
   const baixarModeloCSV = () => {
-    const conteudo = "Data;Descricao;Valor;Categoria (Opcional);Parcelas (Opcional);Observacao (Opcional)\n" +
-                     "30/07/2026;Uber;26,22;Transporte;1;Corrida para o cliente\n" +
-                     "15/08/2026;Restaurante;145,50;Alimentação;1;Almoço\n" +
-                     "20/08/2026;Seguro Auto;1200,00;Transporte;10;Renovação anual";
+    const conteudo = "Data;Descricao;Valor;Categoria (Opcional);Centro Custo (Opcional);Parcelas (Opcional);Observacao (Opcional)\n" +
+                     "30/07/2026;Uber;26,22;Transporte;360 Gestão;1;Corrida para o cliente\n" +
+                     "15/08/2026;Restaurante;145,50;Alimentação;Familiar;1;Almoço\n" +
+                     "20/08/2026;Seguro Auto;1200,00;Transporte;Familiar;10;Renovação anual";
     
     const blob = new Blob(["\uFEFF" + conteudo], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -275,9 +272,11 @@ export default function FaturaCartao() {
 
         for(let i = 1; i < rows.length; i++) {
           const colunas = rows[i].split(';');
+          // Agora exigimos pelo menos as 3 primeiras colunas, mas o CSV tem até 7
           if (colunas.length < 3) continue;
 
-          const [dataRaw, desc, valorRaw, catRaw, parcelasRaw, obsRaw] = colunas;
+          // Ajustado para receber o "ccRaw" (Centro de Custo)
+          const [dataRaw, desc, valorRaw, catRaw, ccRaw, parcelasRaw, obsRaw] = colunas;
           
           const partesData = dataRaw.split('/');
           if (partesData.length !== 3) continue;
@@ -293,11 +292,20 @@ export default function FaturaCartao() {
           const valorFinal = parseFloat(cleanVal);
           if (isNaN(valorFinal)) continue;
 
+          // Match Categoria
           let categoriaMatchId = null;
           if (catRaw) {
             const catDigitada = catRaw.trim().toLowerCase();
             const catEncontrada = categorias.find((c: any) => c.nome.toLowerCase() === catDigitada);
             if (catEncontrada) categoriaMatchId = catEncontrada.id;
+          }
+
+          // Match Centro de Custo
+          let ccMatchId = null;
+          if (ccRaw) {
+            const ccDigitado = ccRaw.trim().toLowerCase();
+            const ccEncontrado = centrosCusto.find((c: any) => c.nome.toLowerCase() === ccDigitado);
+            if (ccEncontrado) ccMatchId = ccEncontrado.id;
           }
 
           let mesIdx = dataCompraObj.getUTCMonth();
@@ -321,10 +329,10 @@ export default function FaturaCartao() {
               descricao: parcelas > 1 ? `${desc.trim()} (${p + 1}/${parcelas})` : desc.trim(),
               valor: valorParcela,
               categoria_id: categoriaMatchId,
+              centro_custo_id: ccMatchId, // Agora o CSV puxa o Centro de Custo!
               tipo: 'DESPESA',
               situacao: 'PENDENTE',
               observacao: obsRaw ? obsRaw.trim() : 'Importado via CSV',
-              centro_custo_id: null // Na importação ele entra vazio para você classificar depois editando
             });
           }
         }
@@ -337,7 +345,7 @@ export default function FaturaCartao() {
             refetch();
           }
         } else {
-            alert("Nenhuma transação válida encontrada.");
+            alert("Nenhuma transação válida encontrada. Verifique as colunas do arquivo.");
         }
       } catch (err) {
         alert("Erro ao ler o arquivo CSV.");
