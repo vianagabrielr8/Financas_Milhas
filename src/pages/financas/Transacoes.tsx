@@ -42,13 +42,11 @@ export default function Transacoes() {
   const [dropdownCatAberto, setDropdownCatAberto] = useState(false);
   const [buscaCat, setBuscaCat] = useState('');
 
-  // Buscas no Supabase
   const { data: categorias = [] } = useQuery({ queryKey: ['categorias_pessoais'], queryFn: async () => { const { data } = await supabase.from('categoria_pessoal').select('*').order('nome'); return data || []; }});
   const { data: subcategorias = [] } = useQuery({ queryKey: ['subcategorias_pessoais'], queryFn: async () => { const { data } = await supabase.from('subcategoria_pessoal').select('*').order('nome'); return data || []; }});
   const { data: contas = [] } = useQuery({ queryKey: ['contas_financeiras'], queryFn: async () => { const { data } = await supabase.from('conta_financeira_pessoal').select('*').order('nome'); return data || []; }});
   const { data: cartoes = [] } = useQuery({ queryKey: ['cartoes_pessoais'], queryFn: async () => { const { data } = await supabase.from('cartao_pessoal').select('*').order('nome'); return data || []; }});
   
-  // Busca Corrigida e Reforçada: Centro de Custo Projeto
   const { data: centrosCusto = [] } = useQuery({ 
     queryKey: ['centro_custo_projeto'], 
     queryFn: async () => { 
@@ -67,15 +65,17 @@ export default function Transacoes() {
   const ultimoDia = new Date(anoSelecionado, mesSelecionado, 0).getDate();
   const dataInicio = `${anoSelecionado}-${mesFormatado}-01`;
   const dataFim = `${anoSelecionado}-${mesFormatado}-${ultimoDia}`;
+  
+  const mesesNomes = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  const mesFaturaStr = `${mesesNomes[mesSelecionado - 1]}/${anoSelecionado}`;
 
   const { data: transacoes = [], isLoading, refetch } = useQuery({
-    queryKey: ['transacoes_gerais', dataInicio, dataFim],
+    queryKey: ['transacoes_gerais', dataInicio, dataFim, mesFaturaStr],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('transacao_pessoal')
         .select('*, conta_financeira_pessoal(nome), cartao_pessoal(nome, dia_vencimento), centro_custo_projeto(nome)')
-        .gte('data', dataInicio)
-        .lte('data', dataFim)
+        .or(`and(cartao_id.is.null,data.gte.${dataInicio},data.lte.${dataFim}),and(cartao_id.not.is.null,mes_fatura.eq.${mesFaturaStr})`)
         .order('data', { ascending: false });
       if (error) throw error;
       return data || [];
@@ -155,7 +155,6 @@ export default function Transacoes() {
 
   const handleChangeTipo = (novoTipo: string) => {
     setFormTipo(novoTipo);
-    // Inteligência para trocar o status se o usuário alternar entre Receita e Despesa
     if (novoTipo === 'RECEITA' && formSituacao === 'PAGO') setFormSituacao('RECEBIDO');
     if (novoTipo === 'DESPESA' && formSituacao === 'RECEBIDO') setFormSituacao('PAGO');
   };
@@ -192,7 +191,7 @@ export default function Transacoes() {
         frequencia_recorrencia: formRecorrente ? formFrequencia : null,
         centro_custo_id: formCentroCustoId,
         conta_id: formContaId,
-        cartao_id: null, // Forçado nulo pois removemos o campo
+        cartao_id: null,
         categoria_id: categoriaSelecionada.catId,
         subcategoria_id: categoriaSelecionada.subId || null,
       });
@@ -239,16 +238,15 @@ export default function Transacoes() {
         </div>
       </div>
 
-      {/* TABELA DE DADOS */}
       <div className="bg-[#1a1a20] rounded-xl border border-gray-800 overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="border-b border-gray-800 bg-[#22222a] text-gray-400 text-[11px] uppercase tracking-wider font-semibold">
-                <th className="p-4 w-28">Data</th>
+                <th className="p-4 w-28">Data Compra</th>
                 <th className="p-4">Descrição</th>
                 <th className="p-4">Categoria</th>
-                <th className="p-4 w-32">Conta / Cartão</th>
+                <th className="p-4 w-40">Conta / Cartão</th>
                 <th className="p-4 w-32">Tipo</th>
                 <th className="p-4 text-right w-40">Valor</th>
                 <th className="p-4 w-32 text-center">Situação</th>
@@ -258,11 +256,11 @@ export default function Transacoes() {
               {isLoading ? (
                 <tr><td colSpan={7} className="p-8 text-center text-emerald-500 font-medium">Carregando dados...</td></tr>
               ) : transacoesFiltradas.length === 0 ? (
-                <tr><td colSpan={7} className="p-8 text-center text-gray-500">Nenhuma transação encontrada.</td></tr>
+                <tr><td colSpan={7} className="p-8 text-center text-gray-500">Nenhuma transação encontrada para este mês.</td></tr>
               ) : (
                 transacoesFiltradas.map((t: any) => (
                   <tr key={t.id} className="hover:bg-[#22222a] transition-colors text-gray-200">
-                    <td className="p-4 text-sm whitespace-nowrap">
+                    <td className="p-4 text-sm whitespace-nowrap text-zinc-400">
                       {new Date(t.data).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}
                     </td>
                     <td className="p-4">
@@ -270,7 +268,6 @@ export default function Transacoes() {
                         <span className="font-medium text-white">{t.descricao}</span>
                         <div className="flex flex-wrap gap-2">
                           {t.recorrente && <span className="text-[9px] bg-blue-500/10 text-blue-400 px-1.5 py-0.5 rounded border border-blue-500/20 uppercase font-bold tracking-wider">Recorrente</span>}
-                          {t.cartao_pessoal?.dia_vencimento && <span className="text-[9px] text-gray-500 border border-gray-700 px-1.5 py-0.5 rounded font-bold uppercase">Venc: Dia {t.cartao_pessoal.dia_vencimento}</span>}
                         </div>
                       </div>
                     </td>
@@ -279,7 +276,6 @@ export default function Transacoes() {
                         <span className="bg-[#22222a] border border-gray-800 px-2.5 py-1.5 rounded-md text-xs text-gray-300 inline-block max-w-[180px] truncate">
                           {renderNomeCategoria(t.categoria_id, t.subcategoria_id)}
                         </span>
-                        {/* TAG DO CENTRO DE CUSTO PROJETO */}
                         {t.centro_custo_projeto && (
                           <span className="text-[10px] text-emerald-500/80 font-semibold uppercase tracking-wider pl-1">
                             {t.centro_custo_projeto.nome}
@@ -289,7 +285,10 @@ export default function Transacoes() {
                     </td>
                     <td className="p-4 text-sm text-gray-400">
                       {t.cartao_pessoal ? (
-                         <span className="text-[10px] bg-purple-500/10 text-purple-400 px-2 py-1 rounded border border-purple-500/20 uppercase font-bold tracking-wider flex items-center gap-1 w-max">💳 {t.cartao_pessoal.nome}</span>
+                         <div className="flex flex-col gap-1 items-start">
+                           <span className="text-[10px] bg-purple-500/10 text-purple-400 px-2 py-1 rounded border border-purple-500/20 uppercase font-bold tracking-wider flex items-center gap-1 w-max">💳 {t.cartao_pessoal.nome}</span>
+                           <span className="text-[9px] text-gray-500 font-bold uppercase tracking-wider pl-1">• Fatura {t.mes_fatura}</span>
+                         </div>
                       ) : (t.conta_financeira_pessoal?.nome || '—')}
                     </td>
                     <td className="p-4 text-sm">
@@ -325,7 +324,6 @@ export default function Transacoes() {
 
             <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
               
-              {/* FILTRO CENTRO DE CUSTO */}
               <div>
                 <label className="text-[11px] uppercase font-bold text-gray-500 mb-2 block tracking-wider">Centro de Custo</label>
                 <select value={filtrosTemp.centroCustoId} onChange={(e) => setFiltrosTemp({...filtrosTemp, centroCustoId: e.target.value})} className="w-full bg-[#22222a] text-sm text-white border border-gray-800 rounded-lg p-3 focus:border-emerald-500 focus:outline-none appearance-none transition-colors">
@@ -426,7 +424,6 @@ export default function Transacoes() {
             
             <form onSubmit={handleSalvarTransacao} className="flex flex-col gap-5 overflow-y-auto custom-scrollbar pr-2">
               
-              {/* Botões Receita vs Despesa */}
               <div className="flex bg-[#22222a] p-1 rounded-lg border border-gray-800">
                 <button type="button" onClick={() => handleChangeTipo('DESPESA')} className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${formTipo === 'DESPESA' ? 'bg-red-500/20 text-red-400 shadow-sm' : 'text-gray-500 hover:text-gray-300'}`}>Despesa</button>
                 <button type="button" onClick={() => handleChangeTipo('RECEITA')} className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${formTipo === 'RECEITA' ? 'bg-emerald-500/20 text-emerald-400 shadow-sm' : 'text-gray-500 hover:text-gray-300'}`}>Receita</button>
@@ -448,7 +445,6 @@ export default function Transacoes() {
                 </div>
               </div>
 
-              {/* CC e Conta lado a lado */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="text-gray-400 text-xs font-semibold uppercase tracking-wider block mb-1.5">Centro de Custo</label>
@@ -466,7 +462,6 @@ export default function Transacoes() {
                 </div>
               </div>
 
-              {/* Categoria ocupando toda a largura para melhorar UX de busca */}
               <div className="relative">
                 <label className="text-gray-400 text-xs font-semibold uppercase tracking-wider block mb-1.5">Categoria</label>
                 <button type="button" onClick={() => setDropdownCatAberto(!dropdownCatAberto)} className={cn("w-full bg-[#22222a] text-left border rounded-lg p-2.5 flex justify-between items-center transition-all", dropdownCatAberto ? "border-emerald-500" : "border-gray-700 hover:border-gray-500")}>
@@ -503,7 +498,6 @@ export default function Transacoes() {
                 )}
               </div>
 
-              {/* Situação Condicional */}
               <div>
                 <label className="text-gray-400 text-xs font-semibold uppercase tracking-wider block mb-1.5">Situação</label>
                 <select value={formSituacao} onChange={(e) => setFormSituacao(e.target.value)} className="w-full bg-[#22222a] text-white border border-gray-700 rounded-lg p-2.5 focus:border-emerald-500 focus:outline-none transition-all appearance-none">
