@@ -18,6 +18,7 @@ export default function FaturaCartao() {
   const [formDescricao, setFormDescricao] = useState('');
   const [formValor, setFormValor] = useState('');
   const [formData, setFormData] = useState(new Date().toISOString().split('T')[0]);
+  const [formFaturaDestino, setFormFaturaDestino] = useState(mesSelecionado); // Novo Estado
   const [formParcelado, setFormParcelado] = useState(false);
   const [formParcelas, setFormParcelas] = useState(2);
   const [formObservacao, setFormObservacao] = useState('');
@@ -27,7 +28,6 @@ export default function FaturaCartao() {
   const [dropdownCatAberto, setDropdownCatAberto] = useState(false);
   const [buscaCat, setBuscaCat] = useState('');
 
-  // 1. Busca Cartões
   const { data: cartoes = [], isLoading: carregandoCartoes } = useQuery({
     queryKey: ['cartoes_pessoais'],
     queryFn: async () => {
@@ -38,7 +38,6 @@ export default function FaturaCartao() {
     }
   });
 
-  // 2. Busca Categorias e Subcategorias
   const { data: categorias = [] } = useQuery({
     queryKey: ['categorias_pessoais'],
     queryFn: async () => {
@@ -55,7 +54,6 @@ export default function FaturaCartao() {
     }
   });
 
-  // 3. Busca Transações (CORRIGIDO PARA TIPO DATE NO SUPABASE)
   const mesFormatado = String(mesesNomes.indexOf(mesSelecionado) + 1).padStart(2, '0');
   const ultimoDia = new Date(anoSelecionado, Number(mesFormatado), 0).getDate();
   const dataInicio = `${anoSelecionado}-${mesFormatado}-01`;
@@ -79,7 +77,6 @@ export default function FaturaCartao() {
 
   const totalFatura = transacoes.reduce((acc, curr) => acc + Number(curr.valor), 0);
 
-  // Lógica de filtro para o dropdown customizado de categorias
   const categoriasFiltradas = useMemo(() => {
     const termo = buscaCat.toLowerCase();
     if (!termo) return categorias;
@@ -92,6 +89,10 @@ export default function FaturaCartao() {
     });
   }, [categorias, subcategorias, buscaCat]);
 
+  const abrirModalNovaDespesa = () => {
+    setFormFaturaDestino(mesSelecionado); // Sincroniza com a aba que você está olhando
+    setModalAberto(true);
+  };
 
   const handleSalvarDespesa = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -103,17 +104,43 @@ export default function FaturaCartao() {
     const qtdParcelas = formParcelado ? formParcelas : 1;
     const valorParcela = Number(formValor) / qtdParcelas;
 
+    const dataOriginal = formData.split('-'); // [YYYY, MM, DD]
+    const diaCompra = dataOriginal[2];
+
     for (let i = 0; i < qtdParcelas; i++) {
-      const dataFatura = new Date(formData + 'T12:00:00Z');
-      dataFatura.setUTCMonth(dataFatura.getUTCMonth() + i);
+      // Magia para forçar o lançamento na fatura escolhida
+      let mesIndexAlvo = mesesNomes.indexOf(formFaturaDestino) + i;
+      let anoAlvo = anoSelecionado;
+      
+      while (mesIndexAlvo > 11) {
+        mesIndexAlvo -= 12;
+        anoAlvo++;
+      }
+      
+      const mesAlvoStr = String(mesIndexAlvo + 1).padStart(2, '0');
+      let dataLancamento = `${anoAlvo}-${mesAlvoStr}-${diaCompra}`;
+      
+      // Ajuste se o dia da compra não existir no mês alvo (ex: 31 de Fevereiro)
+      const testeData = new Date(`${anoAlvo}-${mesAlvoStr}-${diaCompra}T12:00:00Z`);
+      if (isNaN(testeData.getTime()) || testeData.getUTCMonth() !== mesIndexAlvo) {
+        dataLancamento = `${anoAlvo}-${mesAlvoStr}-01`;
+      }
+
+      // Preservar a data oficial na observação caso tenha alterado o mês da fatura
+      let observacaoFinal = formObservacao;
+      const mesOriginalIndex = new Date(`${formData}T12:00:00Z`).getUTCMonth();
+      if (mesesNomes[mesOriginalIndex] !== formFaturaDestino || formParcelado) {
+        const dataFormatada = `${dataOriginal[2]}/${dataOriginal[1]}/${dataOriginal[0]}`;
+        observacaoFinal = `Compra original em: ${dataFormatada}. ${formObservacao}`.trim();
+      }
 
       transacoesParaInserir.push({
         descricao: formParcelado ? `${formDescricao} (${i + 1}/${qtdParcelas})` : formDescricao,
         valor: valorParcela,
         situacao: 'PENDENTE', 
         tipo: 'DESPESA',
-        data: dataFatura.toISOString().split('T')[0],
-        observacao: formObservacao,
+        data: dataLancamento,
+        observacao: observacaoFinal,
         cartao_id: cartaoAtivo.id,
         categoria_id: categoriaSelecionada.catId,
         subcategoria_id: categoriaSelecionada.subId || null, 
@@ -183,7 +210,7 @@ export default function FaturaCartao() {
             </div>
           )}
         </div>
-        <Button onClick={() => setModalAberto(true)} className="bg-[#10b981] hover:bg-[#059669] text-black font-bold flex items-center gap-2">
+        <Button onClick={abrirModalNovaDespesa} className="bg-[#10b981] hover:bg-[#059669] text-black font-bold flex items-center gap-2">
           <Plus className="w-4 h-4" /> Nova Despesa
         </Button>
       </div>
@@ -208,7 +235,7 @@ export default function FaturaCartao() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm text-left">
               <thead className="text-[11px] text-zinc-400 font-bold uppercase border-b border-white/5">
-                <tr><th className="pb-3">Data</th><th className="pb-3">Descrição</th><th className="pb-3">Categoria</th><th className="pb-3 text-right">Valor</th><th className="pb-3 text-center">Ações</th></tr>
+                <tr><th className="pb-3">Data Ref.</th><th className="pb-3">Descrição</th><th className="pb-3">Categoria</th><th className="pb-3 text-right">Valor</th><th className="pb-3 text-center">Ações</th></tr>
               </thead>
               <tbody className="divide-y divide-white/5">
                 {transacoes.length === 0 ? (
@@ -220,7 +247,7 @@ export default function FaturaCartao() {
                       <td className="py-4">
                         <div className="flex flex-col">
                           <span className="font-semibold text-white">{t.descricao}</span>
-                          {t.observacao && <span className="text-[10px] text-zinc-500 flex items-center gap-1 mt-0.5 truncate max-w-[200px]"><FileText className="w-3 h-3 flex-shrink-0" /> {t.observacao}</span>}
+                          {t.observacao && <span className="text-[10px] text-zinc-500 flex items-center gap-1 mt-0.5 truncate max-w-[300px]"><FileText className="w-3 h-3 flex-shrink-0" /> {t.observacao}</span>}
                         </div>
                       </td>
                       <td className="py-4">
@@ -288,7 +315,6 @@ export default function FaturaCartao() {
                     <input type="text" required value={formDescricao} onChange={(e) => setFormDescricao(e.target.value)} className="w-full bg-[#1e1e24] text-white border border-white/10 rounded-xl p-3 focus:border-[#10b981] focus:outline-none transition-all" placeholder="Ex: Mercado Livre" />
                   </div>
                   
-                  {/* NOVO SELETOR DE CATEGORIA UX */}
                   <div className="relative">
                     <label className="text-zinc-400 text-xs font-bold uppercase block mb-1.5">Categoria</label>
                     
@@ -351,15 +377,23 @@ export default function FaturaCartao() {
                       </>
                     )}
                   </div>
-
-                  <div>
-                    <label className="text-zinc-400 text-xs font-bold uppercase block mb-1.5">Data da Compra</label>
-                    <input type="date" required value={formData} onChange={(e) => setFormData(e.target.value)} className="w-full bg-[#1e1e24] text-white border border-white/10 rounded-xl p-3 focus:border-[#10b981] focus:outline-none transition-all [color-scheme:dark]" />
-                  </div>
                 </div>
 
                 {/* COLUNA DIREITA */}
                 <div className="space-y-5">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-zinc-400 text-[10px] font-bold uppercase block mb-1.5">Data da Compra</label>
+                      <input type="date" required value={formData} onChange={(e) => setFormData(e.target.value)} className="w-full bg-[#1e1e24] text-white border border-white/10 rounded-xl p-3 focus:border-[#10b981] focus:outline-none transition-all [color-scheme:dark] text-sm" />
+                    </div>
+                    <div>
+                      <label className="text-[#10b981] text-[10px] font-bold uppercase block mb-1.5">Lançar na Fatura de:</label>
+                      <select value={formFaturaDestino} onChange={(e) => setFormFaturaDestino(e.target.value)} className="w-full bg-[#10b981]/10 text-[#10b981] font-bold border border-[#10b981]/30 rounded-xl p-3 focus:outline-none transition-all text-sm appearance-none cursor-pointer">
+                        {mesesNomes.map(m => <option key={m} value={m} className="bg-[#1e1e24] text-white">{m}</option>)}
+                      </select>
+                    </div>
+                  </div>
+
                   <div className="p-4 bg-[#1e1e24] border border-white/10 rounded-xl">
                     <div className="flex items-center justify-between mb-4">
                       <div>
