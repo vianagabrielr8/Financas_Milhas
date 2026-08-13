@@ -1,4 +1,4 @@
-import { NavLink } from 'react-router-dom';
+import { NavLink, useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { 
   LayoutDashboard, Package, ArrowRightLeft, DollarSign,
@@ -6,8 +6,10 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useState } from 'react';
+import { supabase } from '@/integrations/supabase/client';
 
 export const Sidebar = () => {
+  const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
   const [moduloAtivo, setModuloAtivo] = useState<'FINANCAS' | 'MILHAS'>(() => {
     return (localStorage.getItem('erp_modulo_ativo') as 'FINANCAS' | 'MILHAS') || 'FINANCAS';
@@ -16,6 +18,13 @@ export const Sidebar = () => {
   const alterarModulo = (modulo: 'FINANCAS' | 'MILHAS') => {
     setModuloAtivo(modulo);
     localStorage.setItem('erp_modulo_ativo', modulo);
+    window.location.reload();
+  };
+
+  // FUNÇÃO DE SAÍDA
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    navigate('/login'); // Ajuste a rota se o seu login for em outro caminho
     window.location.reload();
   };
 
@@ -36,7 +45,7 @@ export const Sidebar = () => {
     { group: "PRINCIPAL", items: [{ icon: LayoutDashboard, label: 'Dashboard', path: '/' }] },
     { group: "OPERACIONAL", items: [
       { icon: Package, label: 'Estoque', path: '/milhas/estoque' },
-      { icon: ArrowRightLeft, label: 'Transferências', path: '/milhas/transferencias' }, // <-- DEVOLVIDO
+      { icon: ArrowRightLeft, label: 'Transferências', path: '/milhas/transferencias' },
     ]},
     { group: "GESTÃO E CADASTROS", items: [
       { icon: UserCircle, label: 'Contas (CPFs)', path: '/milhas/contas' },
@@ -52,7 +61,6 @@ export const Sidebar = () => {
       collapsed ? "w-20" : "w-64"
     )}>
       
-      {/* HEADER */}
       <div className={cn("h-16 flex items-center border-b border-white/5", collapsed ? "justify-center" : "px-6 justify-between")}>
         {!collapsed && (
           <span className="text-lg font-black tracking-tighter text-white truncate">
@@ -64,7 +72,6 @@ export const Sidebar = () => {
         </Button>
       </div>
 
-      {/* SELETOR DE AMBIENTE REAJUSTÁVEL */}
       <div className="p-4 border-b border-white/5">
         <div className={cn("flex bg-[#141417] rounded-lg p-1 border border-white/5", collapsed ? "flex-col gap-1.5" : "gap-1")}>
           <button 
@@ -82,7 +89,6 @@ export const Sidebar = () => {
         </div>
       </div>
 
-      {/* NAVEGAÇÃO */}
       <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-6 scrollbar-hide">
         {menuConfig.map((group) => (
           <div key={group.group}>
@@ -111,7 +117,6 @@ export const Sidebar = () => {
         ))}
       </nav>
 
-      {/* FOOTER */}
       <div className={cn("p-4 border-t border-white/5 flex items-center gap-3", collapsed ? "justify-center" : "")}>
         <div className="w-8 h-8 rounded-full bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center shrink-0 text-xs text-emerald-500 font-bold">G</div>
         {!collapsed && (
@@ -120,7 +125,11 @@ export const Sidebar = () => {
             <p className="text-[10px] text-zinc-500 uppercase tracking-wider">Admin</p>
           </div>
         )}
-        {!collapsed && <LogOut className="w-4 h-4 text-zinc-500 cursor-pointer hover:text-red-400 shrink-0" />}
+        {/* BOTÃO ATIVO */}
+        <LogOut 
+          className="w-4 h-4 text-zinc-500 cursor-pointer hover:text-red-400 shrink-0 transition-colors" 
+          onClick={handleLogout}
+        />
       </div>
     </aside>
   );
