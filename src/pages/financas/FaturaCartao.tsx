@@ -331,7 +331,6 @@ export default function FaturaCartao() {
             const strMes = mRaw.trim().toLowerCase();
             const mesEncontrado = mesesNomes.find(m => m.toLowerCase() === strMes || m.toLowerCase() === strMes.substring(0,3));
             
-            // Corrige o ano com 2 dígitos na fatura (ex: "Ago/26" vira "Ago/2026")
             let anoFormFatura = aRaw.trim();
             if (anoFormFatura.length === 2) anoFormFatura = "20" + anoFormFatura;
 
@@ -477,7 +476,8 @@ export default function FaturaCartao() {
                       <td className="py-4">
                         <div className="flex flex-col">
                           <span className="font-semibold text-white">{t.descricao}</span>
-                          {t.observacao && <span className="text-[10px] text-zinc-500 flex items-center gap-1 mt-0.5 truncate max-w-[300px]"><FileText className="w-3 h-3 flex-shrink-0" /> {t.observacao}</span>}
+                          {/* AUMENTO DA FONTE AQUI DE text-[10px] PARA text-xs */}
+                          {t.observacao && <span className="text-xs text-zinc-400 flex items-center gap-1 mt-1 truncate max-w-[350px]"><FileText className="w-3.5 h-3.5 flex-shrink-0" /> {t.observacao}</span>}
                         </div>
                       </td>
                       <td className="py-4">
