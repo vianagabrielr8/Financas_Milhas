@@ -1,12 +1,14 @@
-import { useState, useMemo, useRef } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { ChevronLeft, ChevronRight, Calendar, DollarSign, Receipt, FileText, Trash2, Edit2, Plus, CreditCard, ChevronDown, Search, CornerDownRight, Upload, Download } from 'lucide-react';
+import { useParams, Link } from 'react-router-dom';
+import { ChevronLeft, ChevronRight, Calendar, DollarSign, Receipt, FileText, Trash2, Edit2, Plus, CreditCard, ChevronDown, Search, CornerDownRight, Upload, Download, Briefcase } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { Link } from 'react-router-dom';
 
 export default function FaturaCartao() {
+  const { id: urlCardId } = useParams(); // LÊ O CARTÃO CLICADO NA TELA ANTERIOR
+  
   const mesesNomes = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
   const [mesSelecionado, setMesSelecionado] = useState(mesesNomes[new Date().getMonth()]);
   const [anoSelecionado, setAnoSelecionado] = useState(new Date().getFullYear());
@@ -20,6 +22,7 @@ export default function FaturaCartao() {
   const [formValor, setFormValor] = useState('');
   const [formData, setFormData] = useState(new Date().toISOString().split('T')[0]);
   const [formFaturaDestino, setFormFaturaDestino] = useState(`${mesSelecionado}/${anoSelecionado}`); 
+  const [formCentroCusto, setFormCentroCusto] = useState(''); // NOVO ESTADO
   const [formParcelado, setFormParcelado] = useState(false);
   const [formParcelas, setFormParcelas] = useState(2);
   const [formObservacao, setFormObservacao] = useState('');
@@ -30,7 +33,6 @@ export default function FaturaCartao() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Gera as opções de Fatura (2 meses para trás, 10 para frente)
   const opcoesFatura = useMemo(() => {
     return Array.from({length: 13}).map((_, i) => {
       const d = new Date();
@@ -44,8 +46,27 @@ export default function FaturaCartao() {
     queryFn: async () => {
       const { data, error } = await supabase.from('cartao_pessoal').select('*').order('nome');
       if (error) throw error;
-      if (data && data.length > 0 && !cartaoAtivo) setCartaoAtivo(data[0]); 
       return data || [];
+    }
+  });
+
+  // CORREÇÃO DO BUG DE ROTEAMENTO
+  useEffect(() => {
+    if (cartoes.length > 0) {
+      if (urlCardId) {
+        const cardEncontrado = cartoes.find((c: any) => c.id === urlCardId);
+        setCartaoAtivo(cardEncontrado || cartoes[0]);
+      } else if (!cartaoAtivo) {
+        setCartaoAtivo(cartoes[0]);
+      }
+    }
+  }, [cartoes, urlCardId]);
+
+  const { data: centrosCusto = [] } = useQuery({
+    queryKey: ['centros_custo_projeto'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('centro_custo_projeto').select('*').order('nome');
+      if (error) throw error; return data || [];
     }
   });
 
@@ -65,7 +86,6 @@ export default function FaturaCartao() {
     }
   });
 
-  // A busca agora é cirúrgica: pega exatamente o que está carimbado no mes_fatura
   const faturaAtual = `${mesSelecionado}/${anoSelecionado}`;
 
   const { data: transacoes = [], refetch } = useQuery({
@@ -74,15 +94,12 @@ export default function FaturaCartao() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('transacao_pessoal')
-        .select('*')
+        .select('*, centro_custo_projeto(nome)') // Traz o nome do centro de custo na query
         .eq('cartao_id', cartaoAtivo.id)
         .eq('mes_fatura', faturaAtual)
         .order('data', { ascending: false });
       
-      if (error) {
-        console.warn("Se der erro, verifique se você criou a coluna 'mes_fatura' no Supabase.");
-        return [];
-      }
+      if (error) throw error;
       return data || [];
     }
   });
@@ -105,6 +122,7 @@ export default function FaturaCartao() {
     setFormDescricao('');
     setFormValor('');
     setCategoriaSelecionada(null);
+    setFormCentroCusto('');
     setFormParcelado(false);
     setFormObservacao('');
     setFormData(new Date().toISOString().split('T')[0]);
@@ -123,6 +141,7 @@ export default function FaturaCartao() {
     setFormData(t.data); 
     setFormObservacao(t.observacao || '');
     setFormFaturaDestino(t.mes_fatura || faturaAtual);
+    setFormCentroCusto(t.centro_custo_id || '');
     
     if (t.categoria_id) {
       setCategoriaSelecionada({
@@ -138,7 +157,6 @@ export default function FaturaCartao() {
     setModalAberto(true);
   };
 
-  // Helper para avançar os meses no parcelamento
   const avancarMesFatura = (faturaBase: string, addMeses: number) => {
     const [mes, anoStr] = faturaBase.split('/');
     let index = mesesNomes.indexOf(mes) + addMeses;
@@ -154,6 +172,7 @@ export default function FaturaCartao() {
     e.preventDefault();
     if (!cartaoAtivo) return alert('Você precisa ter um cartão ativo.');
     if (!categoriaSelecionada) return alert('Selecione uma categoria para a despesa.');
+    if (!formCentroCusto) return alert('Selecione um Centro de Custo.');
     if (Number(formValor) <= 0) return alert('O valor deve ser maior que zero.');
 
     const valorOriginal = Number(formValor);
@@ -163,11 +182,12 @@ export default function FaturaCartao() {
       const { error } = await supabase.from('transacao_pessoal').update({
         descricao: formDescricao,
         valor: valorOriginal,
-        data: formData, // Data da compra IMUTÁVEL
-        mes_fatura: formFaturaDestino, // Você manda para onde quiser
+        data: formData,
+        mes_fatura: formFaturaDestino,
         observacao: formObservacao,
         categoria_id: categoriaSelecionada.catId,
         subcategoria_id: categoriaSelecionada.subId || null,
+        centro_custo_id: formCentroCusto,
       }).eq('id', transacaoEditandoId);
 
       if (error) alert('Erro ao editar: ' + error.message);
@@ -179,7 +199,7 @@ export default function FaturaCartao() {
       return;
     }
 
-    // CRIAÇÃO E PARCELAMENTO
+    // CRIAÇÃO
     const transacoesParaInserir = [];
     const qtdParcelas = formParcelado ? formParcelas : 1;
     const valorParcela = valorOriginal / qtdParcelas;
@@ -190,12 +210,13 @@ export default function FaturaCartao() {
         valor: valorParcela,
         situacao: 'PENDENTE', 
         tipo: 'DESPESA',
-        data: formData, // Fica sempre com a data real da compra
-        mes_fatura: avancarMesFatura(formFaturaDestino, i), // Joga pras próximas faturas
+        data: formData, 
+        mes_fatura: avancarMesFatura(formFaturaDestino, i),
         observacao: formObservacao,
         cartao_id: cartaoAtivo.id,
         categoria_id: categoriaSelecionada.catId,
         subcategoria_id: categoriaSelecionada.subId || null, 
+        centro_custo_id: formCentroCusto,
       });
     }
 
@@ -279,7 +300,6 @@ export default function FaturaCartao() {
             if (catEncontrada) categoriaMatchId = catEncontrada.id;
           }
 
-          // Adivinha a fatura base usando o ciclo de fechamento
           let mesIdx = dataCompraObj.getUTCMonth();
           let ano = dataCompraObj.getUTCFullYear();
           const diaFechamento = cartaoAtivo?.dia_fechamento || 31;
@@ -303,7 +323,8 @@ export default function FaturaCartao() {
               categoria_id: categoriaMatchId,
               tipo: 'DESPESA',
               situacao: 'PENDENTE',
-              observacao: obsRaw ? obsRaw.trim() : 'Importado via CSV'
+              observacao: obsRaw ? obsRaw.trim() : 'Importado via CSV',
+              centro_custo_id: null // Na importação ele entra vazio para você classificar depois editando
             });
           }
         }
@@ -316,10 +337,10 @@ export default function FaturaCartao() {
             refetch();
           }
         } else {
-            alert("Nenhuma transação válida encontrada. Verifique as colunas do arquivo.");
+            alert("Nenhuma transação válida encontrada.");
         }
       } catch (err) {
-        alert("Erro ao ler o arquivo CSV. Verifique se o formato está idêntico ao modelo.");
+        alert("Erro ao ler o arquivo CSV.");
       }
     };
     reader.readAsText(file);
@@ -398,7 +419,7 @@ export default function FaturaCartao() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm text-left">
               <thead className="text-[11px] text-zinc-400 font-bold uppercase border-b border-white/5">
-                <tr><th className="pb-3">Data</th><th className="pb-3">Descrição</th><th className="pb-3">Categoria</th><th className="pb-3 text-right">Valor</th><th className="pb-3 text-center">Ações</th></tr>
+                <tr><th className="pb-3">Data</th><th className="pb-3">Descrição</th><th className="pb-3">Categoria & C. Custo</th><th className="pb-3 text-right">Valor</th><th className="pb-3 text-center">Ações</th></tr>
               </thead>
               <tbody className="divide-y divide-white/5">
                 {transacoes.length === 0 ? (
@@ -414,12 +435,15 @@ export default function FaturaCartao() {
                         </div>
                       </td>
                       <td className="py-4">
-                        <span className={cn(
-                          "border px-2.5 py-1 rounded-full text-xs inline-block max-w-[200px] truncate", 
-                          !t.categoria_id ? "bg-amber-500/10 border-amber-500/20 text-amber-500 font-bold" : "bg-[#1a1a20] border-white/5 text-zinc-300"
-                        )}>
-                          {renderNomeCategoria(t.categoria_id, t.subcategoria_id)}
-                        </span>
+                        <div className="flex flex-col gap-1">
+                          <span className={cn("border px-2.5 py-1 rounded-full text-[10px] inline-block max-w-fit truncate", !t.categoria_id ? "bg-amber-500/10 border-amber-500/20 text-amber-500 font-bold" : "bg-[#1a1a20] border-white/5 text-zinc-300")}>
+                            {renderNomeCategoria(t.categoria_id, t.subcategoria_id)}
+                          </span>
+                          <span className={cn("border px-2.5 py-1 rounded-full text-[10px] font-bold inline-block max-w-fit truncate flex items-center gap-1", !t.centro_custo_id ? "bg-red-500/10 border-red-500/20 text-red-400" : "bg-purple-500/10 border-purple-500/20 text-purple-400")}>
+                            <Briefcase className="w-3 h-3" />
+                            {t.centro_custo_projeto?.nome || 'CC Pendente'}
+                          </span>
+                        </div>
                       </td>
                       <td className="py-4 text-right font-bold text-[#e74c3c] whitespace-nowrap">- R$ {Number(t.valor).toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
                       <td className="py-4 text-center">
@@ -492,67 +516,51 @@ export default function FaturaCartao() {
                 </div>
 
                 <div className="space-y-5">
-                  <div className="relative">
-                    <label className="text-zinc-400 text-xs font-bold uppercase block mb-1.5">Categoria</label>
-                    
-                    <button 
-                      type="button"
-                      onClick={() => setDropdownCatAberto(!dropdownCatAberto)}
-                      className={cn("w-full bg-[#1e1e24] text-left border rounded-xl p-3 flex justify-between items-center transition-all", dropdownCatAberto ? "border-[#10b981]" : "border-white/10 hover:border-white/20")}
-                    >
-                      <span className={categoriaSelecionada ? "text-white font-medium" : "text-amber-500 font-bold"}>
-                        {categoriaSelecionada ? categoriaSelecionada.nomeDisplay : '⚠️ A Classificar'}
-                      </span>
-                      <ChevronDown className="w-4 h-4 text-zinc-500" />
-                    </button>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="relative">
+                      <label className="text-zinc-400 text-[10px] font-bold uppercase block mb-1.5">Categoria</label>
+                      <button type="button" onClick={() => setDropdownCatAberto(!dropdownCatAberto)} className={cn("w-full bg-[#1e1e24] text-left border rounded-xl p-3 flex justify-between items-center transition-all h-[46px]", dropdownCatAberto ? "border-[#10b981]" : "border-white/10 hover:border-white/20")}>
+                        <span className={cn("truncate text-sm", categoriaSelecionada ? "text-white font-medium" : "text-amber-500 font-bold")}>
+                          {categoriaSelecionada ? categoriaSelecionada.nomeDisplay : '⚠️ Selecione'}
+                        </span>
+                        <ChevronDown className="w-4 h-4 text-zinc-500 flex-shrink-0 ml-2" />
+                      </button>
 
-                    {dropdownCatAberto && (
-                      <>
-                        <div className="fixed inset-0 z-40" onClick={() => setDropdownCatAberto(false)}></div>
-                        <div className="absolute top-[calc(100%+8px)] left-0 w-full bg-[#1e1e24] border border-white/10 rounded-xl shadow-2xl z-50 overflow-hidden flex flex-col max-h-64">
-                          <div className="p-2 border-b border-white/5 flex items-center gap-2 bg-[#1a1a20]">
-                            <Search className="w-4 h-4 text-zinc-500 ml-2" />
-                            <input 
-                              type="text" autoFocus placeholder="Buscar categoria..." 
-                              value={buscaCat} onChange={(e) => setBuscaCat(e.target.value)}
-                              className="w-full bg-transparent text-sm text-white placeholder-zinc-500 p-1 focus:outline-none"
-                            />
+                      {dropdownCatAberto && (
+                        <>
+                          <div className="fixed inset-0 z-40" onClick={() => setDropdownCatAberto(false)}></div>
+                          <div className="absolute top-[calc(100%+8px)] left-0 w-[300px] bg-[#1e1e24] border border-white/10 rounded-xl shadow-2xl z-50 overflow-hidden flex flex-col max-h-64">
+                            <div className="p-2 border-b border-white/5 flex items-center gap-2 bg-[#1a1a20]">
+                              <Search className="w-4 h-4 text-zinc-500 ml-2" />
+                              <input type="text" autoFocus placeholder="Buscar categoria..." value={buscaCat} onChange={(e) => setBuscaCat(e.target.value)} className="w-full bg-transparent text-sm text-white placeholder-zinc-500 p-1 focus:outline-none" />
+                            </div>
+                            <div className="overflow-y-auto p-1 custom-scrollbar flex-1">
+                              {categoriasFiltradas.length === 0 ? <p className="p-3 text-xs text-center text-zinc-500">Nenhuma categoria encontrada.</p> : categoriasFiltradas.map((cat: any) => {
+                                  const subsDaCategoria = subcategorias.filter((sub: any) => sub.categoria_id === cat.id);
+                                  return (
+                                    <div key={cat.id} className="mb-1">
+                                      <button type="button" onClick={() => { setCategoriaSelecionada({catId: cat.id, nomeDisplay: cat.nome}); setDropdownCatAberto(false); }} className="w-full text-left px-3 py-2 text-sm font-semibold text-white hover:bg-white/5 rounded-lg transition-colors flex items-center justify-between">{cat.nome}</button>
+                                      {subsDaCategoria.map((sub: any) => (
+                                        <button key={sub.id} type="button" onClick={() => { setCategoriaSelecionada({catId: cat.id, subId: sub.id, nomeDisplay: `${cat.nome} • ${sub.nome}`}); setDropdownCatAberto(false); }} className="w-full text-left pl-8 pr-3 py-1.5 text-sm text-zinc-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors flex items-center gap-2 mt-0.5">
+                                          <CornerDownRight className="w-3 h-3 text-zinc-600" />{sub.nome}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  );
+                                })}
+                            </div>
                           </div>
-                          
-                          <div className="overflow-y-auto p-1 custom-scrollbar flex-1">
-                            {categoriasFiltradas.length === 0 ? (
-                               <p className="p-3 text-xs text-center text-zinc-500">Nenhuma categoria encontrada.</p>
-                            ) : (
-                              categoriasFiltradas.map((cat: any) => {
-                                const subsDaCategoria = subcategorias.filter((sub: any) => sub.categoria_id === cat.id);
-                                return (
-                                  <div key={cat.id} className="mb-1">
-                                    <button
-                                      type="button"
-                                      onClick={() => { setCategoriaSelecionada({catId: cat.id, nomeDisplay: cat.nome}); setDropdownCatAberto(false); }}
-                                      className="w-full text-left px-3 py-2 text-sm font-semibold text-white hover:bg-white/5 rounded-lg transition-colors flex items-center justify-between"
-                                    >
-                                      {cat.nome}
-                                    </button>
-                                    
-                                    {subsDaCategoria.map((sub: any) => (
-                                      <button
-                                        key={sub.id} type="button"
-                                        onClick={() => { setCategoriaSelecionada({catId: cat.id, subId: sub.id, nomeDisplay: `${cat.nome} • ${sub.nome}`}); setDropdownCatAberto(false); }}
-                                        className="w-full text-left pl-8 pr-3 py-1.5 text-sm text-zinc-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors flex items-center gap-2 mt-0.5"
-                                      >
-                                        <CornerDownRight className="w-3 h-3 text-zinc-600" />
-                                        {sub.nome}
-                                      </button>
-                                    ))}
-                                  </div>
-                                );
-                              })
-                            )}
-                          </div>
-                        </div>
-                      </>
-                    )}
+                        </>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="text-zinc-400 text-[10px] font-bold uppercase block mb-1.5">Centro de Custo</label>
+                      <select required value={formCentroCusto} onChange={(e) => setFormCentroCusto(e.target.value)} className={cn("w-full bg-[#1e1e24] text-white border rounded-xl p-3 focus:outline-none transition-all text-sm h-[46px] cursor-pointer", formCentroCusto ? "border-white/10" : "border-red-500/50")}>
+                        <option value="" disabled>⚠️ Selecione</option>
+                        {centrosCusto.map((cc: any) => <option key={cc.id} value={cc.id}>{cc.nome}</option>)}
+                      </select>
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-1 gap-4">
