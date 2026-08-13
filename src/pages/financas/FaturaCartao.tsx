@@ -14,10 +14,8 @@ export default function FaturaCartao() {
   const [cartaoAtivo, setCartaoAtivo] = useState<any>(null);
   const [modalAberto, setModalAberto] = useState(false);
   
-  // Estado para Edição
   const [transacaoEditandoId, setTransacaoEditandoId] = useState<string | null>(null);
 
-  // Estados do Formulário
   const [formDescricao, setFormDescricao] = useState('');
   const [formValor, setFormValor] = useState('');
   const [formData, setFormData] = useState(new Date().toISOString().split('T')[0]);
@@ -26,12 +24,10 @@ export default function FaturaCartao() {
   const [formParcelas, setFormParcelas] = useState(2);
   const [formObservacao, setFormObservacao] = useState('');
   
-  // Estados do Seletor de Categoria
   const [categoriaSelecionada, setCategoriaSelecionada] = useState<{catId: string, subId?: string, nomeDisplay: string} | null>(null);
   const [dropdownCatAberto, setDropdownCatAberto] = useState(false);
   const [buscaCat, setBuscaCat] = useState('');
 
-  // Ref para o Input de Arquivo (CSV)
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: cartoes = [], isLoading: carregandoCartoes } = useQuery({
@@ -118,7 +114,6 @@ export default function FaturaCartao() {
     setFormData(t.data);
     setFormObservacao(t.observacao || '');
     
-    // Identifica fatura alvo pela data cadastrada no banco
     const dataObj = new Date(`${t.data}T12:00:00Z`);
     setFormFaturaDestino(mesesNomes[dataObj.getUTCMonth()]);
     
@@ -144,7 +139,6 @@ export default function FaturaCartao() {
 
     const valorOriginal = Number(formValor);
     
-    // MODO EDIÇÃO
     if (transacaoEditandoId) {
       const dataOriginal = formData.split('-');
       let mesIndexAlvo = mesesNomes.indexOf(formFaturaDestino);
@@ -180,7 +174,6 @@ export default function FaturaCartao() {
       return;
     }
 
-    // MODO CRIAÇÃO (Permite Parcelamento)
     const transacoesParaInserir = [];
     const qtdParcelas = formParcelado ? formParcelas : 1;
     const valorParcela = valorOriginal / qtdParcelas;
@@ -249,10 +242,14 @@ export default function FaturaCartao() {
     return cat.nome;
   };
 
-  // --- LÓGICA DE IMPORTAÇÃO CSV ---
   const baixarModeloCSV = () => {
-    const conteudo = "Data;Descricao;Valor\n01/08/2026;Uber;26,22\n15/08/2026;Restaurante;145,50";
-    const blob = new Blob([conteudo], { type: 'text/csv;charset=utf-8;' });
+    const conteudo = "Data;Descricao;Valor;Categoria (Opcional);Parcelas (Opcional);Observacao (Opcional)\n" +
+                     "01/08/2026;Uber;26,22;Transporte;1;Corrida para o cliente\n" +
+                     "15/08/2026;Restaurante;145,50;Alimentação;1;Almoço\n" +
+                     "20/08/2026;Seguro Auto;1200,00;Transporte;10;Renovação anual";
+    
+    // Adiciona o BOM para o Excel ler acentos (UTF-8) corretamente
+    const blob = new Blob(["\uFEFF" + conteudo], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.setAttribute("href", url);
@@ -277,14 +274,15 @@ export default function FaturaCartao() {
           const colunas = rows[i].split(';');
           if (colunas.length < 3) continue;
 
-          const [dataRaw, desc, valorRaw] = colunas;
+          const [dataRaw, desc, valorRaw, catRaw, parcelasRaw, obsRaw] = colunas;
           
-          // Tratamento da Data (DD/MM/YYYY -> YYYY-MM-DD)
+          // Data
           const partesData = dataRaw.split('/');
           if (partesData.length !== 3) continue;
-          const dataFomatada = `${partesData[2]}-${partesData[1]}-${partesData[0]}`;
+          const dataCompraObj = new Date(`${partesData[2]}-${partesData[1]}-${partesData[0]}T12:00:00Z`);
+          if (isNaN(dataCompraObj.getTime())) continue;
 
-          // Tratamento do Valor (1.500,00 -> 1500.00)
+          // Valor
           let cleanVal = valorRaw.replace('R$', '').trim();
           if (cleanVal.includes('.') && cleanVal.includes(',')) {
              cleanVal = cleanVal.replace(/\./g, '').replace(',', '.');
@@ -292,16 +290,33 @@ export default function FaturaCartao() {
              cleanVal = cleanVal.replace(',', '.');
           }
           const valorFinal = parseFloat(cleanVal);
+          if (isNaN(valorFinal)) continue;
 
-          if (!isNaN(valorFinal)) {
+          // Categoria (Busca Inteligente)
+          let categoriaMatchId = null;
+          if (catRaw) {
+            const catDigitada = catRaw.trim().toLowerCase();
+            const catEncontrada = categorias.find((c: any) => c.nome.toLowerCase() === catDigitada);
+            if (catEncontrada) categoriaMatchId = catEncontrada.id;
+          }
+
+          // Parcelas
+          const parcelas = parcelasRaw && parseInt(parcelasRaw) > 0 ? parseInt(parcelasRaw) : 1;
+          const valorParcela = valorFinal / parcelas;
+
+          for (let p = 0; p < parcelas; p++) {
+            const dataFatura = new Date(dataCompraObj);
+            dataFatura.setUTCMonth(dataFatura.getUTCMonth() + p);
+            
             transacoesImportadas.push({
               cartao_id: cartaoAtivo.id,
-              data: dataFomatada,
-              descricao: desc.trim(),
-              valor: valorFinal,
+              data: dataFatura.toISOString().split('T')[0],
+              descricao: parcelas > 1 ? `${desc.trim()} (${p + 1}/${parcelas})` : desc.trim(),
+              valor: valorParcela,
+              categoria_id: categoriaMatchId,
               tipo: 'DESPESA',
               situacao: 'PENDENTE',
-              observacao: 'Importado via CSV'
+              observacao: obsRaw ? obsRaw.trim() : 'Importado via CSV'
             });
           }
         }
@@ -310,16 +325,18 @@ export default function FaturaCartao() {
           const { error } = await supabase.from('transacao_pessoal').insert(transacoesImportadas);
           if (error) alert('Erro ao importar para o banco: ' + error.message);
           else {
-            alert(`${transacoesImportadas.length} transações importadas com sucesso! Não esqueça de classificar as categorias.`);
+            alert(`${transacoesImportadas.length} transações importadas com sucesso!`);
             refetch();
           }
+        } else {
+            alert("Nenhuma transação válida encontrada. Verifique o formato do arquivo.");
         }
       } catch (err) {
         alert("Erro ao ler o arquivo CSV. Verifique se o formato está idêntico ao modelo.");
       }
     };
     reader.readAsText(file);
-    if (fileInputRef.current) fileInputRef.current.value = ''; // reseta o input
+    if (fileInputRef.current) fileInputRef.current.value = ''; 
   };
 
   if (carregandoCartoes) return <div className="p-6 text-zinc-400">Carregando dados...</div>;
@@ -334,7 +351,6 @@ export default function FaturaCartao() {
   return (
     <div className="space-y-6 max-w-[1600px] mx-auto text-zinc-100 p-4 md:p-6 pb-24 relative">
       
-      {/* INPUT HIDDEN PARA O CSV */}
       <input 
         type="file" 
         accept=".csv" 
@@ -343,7 +359,6 @@ export default function FaturaCartao() {
         className="hidden" 
       />
 
-      {/* HEADER */}
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div className="flex items-center gap-4 flex-wrap">
           <Link to="/financas/cartoes">
@@ -379,7 +394,6 @@ export default function FaturaCartao() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
-        {/* LADO ESQUERDO: TABELA DE TRANSAÇÕES */}
         <div className="lg:col-span-2 bg-[#1e1e24] border border-white/5 rounded-2xl p-6">
           <div className="flex items-center justify-center gap-4 mb-8">
             <Button variant="ghost" size="icon" onClick={() => setAnoSelecionado(a => a - 1)} className="text-[#10b981] hover:bg-[#10b981]/10"><ChevronLeft className="w-5 h-5" /></Button>
@@ -435,7 +449,6 @@ export default function FaturaCartao() {
           </div>
         </div>
 
-        {/* LADO DIREITO: RESUMO */}
         <div className="space-y-4">
           <div className="bg-[#1e1e24] border border-white/5 rounded-2xl p-5 flex justify-between items-center">
             <div><p className="text-zinc-400 text-xs mb-1">Valor da fatura</p><p className="text-2xl font-bold text-white">R$ {totalFatura.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</p></div>
@@ -456,7 +469,6 @@ export default function FaturaCartao() {
         </div>
       </div>
 
-      {/* MODAL NOVA DESPESA / EDIÇÃO */}
       {modalAberto && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-[#1a1a20] rounded-2xl w-full max-w-2xl border border-white/10 shadow-2xl flex flex-col max-h-[90vh]">
@@ -472,7 +484,6 @@ export default function FaturaCartao() {
             <div className="p-6 overflow-y-auto custom-scrollbar">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 
-                {/* COLUNA ESQUERDA */}
                 <div className="space-y-5">
                   <div>
                     <label className="text-zinc-400 text-xs font-bold uppercase block mb-1.5">Valor Total</label>
@@ -550,7 +561,6 @@ export default function FaturaCartao() {
                   </div>
                 </div>
 
-                {/* COLUNA DIREITA */}
                 <div className="space-y-5">
                   <div className="grid grid-cols-2 gap-4">
                     <div>
@@ -594,7 +604,6 @@ export default function FaturaCartao() {
               </div>
             </div>
 
-            {/* FOOTER MODAL */}
             <div className="p-6 border-t border-white/10 flex justify-end gap-3 shrink-0 bg-[#1a1a20]">
               <button type="button" onClick={() => setModalAberto(false)} className="px-6 py-2.5 text-sm text-zinc-400 font-bold hover:text-white transition-colors">CANCELAR</button>
               <button onClick={handleSalvarDespesa} className="bg-[#10b981] text-black hover:bg-[#059669] px-8 py-2.5 rounded-lg text-sm font-bold transition-all">
