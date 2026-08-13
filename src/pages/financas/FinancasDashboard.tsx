@@ -6,7 +6,6 @@ import { Landmark, ArrowUpCircle, ArrowDownCircle, CalendarDays, Wallet, Layers,
 export default function FinancasDashboard() {
   const mesesNomes = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
   
-  // Gera os últimos 6 e os próximos 6 meses dinamicamente
   const opcoesMeses = useMemo(() => {
     return Array.from({length: 13}).map((_, i) => {
       const d = new Date();
@@ -21,7 +20,6 @@ export default function FinancasDashboard() {
   });
   const [filtroCentro, setFiltroCentro] = useState('Todos (Visão Global)');
 
-  // Busca os Centros de Custo dinâmicos do banco
   const { data: centrosCusto = [] } = useQuery({
     queryKey: ['centros_custo_dashboard'],
     queryFn: async () => {
@@ -30,35 +28,41 @@ export default function FinancasDashboard() {
     }
   });
 
-  // Busca Transações INTELIGENTE: Puxa dinheiro do mês atual + Cartões da Fatura Atual
+  // Busca SIMPLIFICADA: Puxa tudo e a gente filtra no código
   const { data: transacoes = [] } = useQuery({
-    queryKey: ['transacoes_dashboard', filtroMes],
+    queryKey: ['transacoes_dashboard_geral'],
     queryFn: async () => {
-      const [mesNome, anoStr] = filtroMes.split('/');
-      const mesNumber = mesesNomes.indexOf(mesNome) + 1;
-      const dataInicio = `${anoStr}-${String(mesNumber).padStart(2, '0')}-01`;
-      const ultimoDia = new Date(Number(anoStr), mesNumber, 0).getDate();
-      const dataFim = `${anoStr}-${String(mesNumber).padStart(2, '0')}-${ultimoDia}`;
-
       const { data, error } = await supabase
         .from('transacao_pessoal')
-        .select('*, categoria_pessoal(nome, cor), centro_custo_projeto(nome, cor)')
-        .or(`and(cartao_id.is.null,data.gte.${dataInicio},data.lte.${dataFim}),and(cartao_id.not.is.null,mes_fatura.eq.${filtroMes})`);
-        
+        .select('*, categoria_pessoal(nome, cor), centro_custo_projeto(nome, cor)');
       if (error) throw error;
       return data || [];
     }
   });
 
-  // Cálculos Dinâmicos
   const { faturamento, gastoConsumido, faturasAtivas, despesasPorCategoria, custoPorUnidade } = useMemo(() => {
     let fat = 0;
     let gas = 0;
     let faturas = 0;
     
+    // Filtro Inteligente no JS
+    const [mesNome, anoStr] = filtroMes.split('/');
+    const mesNumber = String(mesesNomes.indexOf(mesNome) + 1).padStart(2, '0');
+    const anoMesMascara = `${anoStr}-${mesNumber}`; // Ex: "2026-09"
+
     const transacoesFiltradas = transacoes.filter((t: any) => {
       const centroNome = t.centro_custo_projeto?.nome || 'Sem Centro';
-      return filtroCentro === 'Todos (Visão Global)' || centroNome === filtroCentro;
+      const bateuCentro = filtroCentro === 'Todos (Visão Global)' || centroNome === filtroCentro;
+      
+      // REGRA: Se tem cartão, olha pro mes_fatura. Se não tem cartão, olha pra data.
+      let bateuMes = false;
+      if (t.cartao_id) {
+        bateuMes = t.mes_fatura === filtroMes;
+      } else {
+        bateuMes = t.data && t.data.startsWith(anoMesMascara);
+      }
+
+      return bateuCentro && bateuMes;
     });
 
     const mapCategorias: Record<string, { valor: number, cor: string }> = {};
@@ -107,7 +111,7 @@ export default function FinancasDashboard() {
       despesasPorCategoria: arrayCategorias,
       custoPorUnidade: arrayCentros
     };
-  }, [transacoes, filtroCentro]);
+  }, [transacoes, filtroCentro, filtroMes]);
 
   return (
     <div className="space-y-6 max-w-[1600px] mx-auto text-zinc-100 p-6">
@@ -150,7 +154,7 @@ export default function FinancasDashboard() {
         </div>
         <div className="bg-[#1e1e24] border border-white/5 rounded-xl p-5">
           <div className="flex justify-between items-start">
-            <div><p className="text-zinc-400 text-xs font-medium mb-1">Faturas Ativas de Cartões</p><p className="text-xl font-bold text-amber-500">R$ {faturasAtivas.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p></div>
+            <div><p className="text-zinc-400 text-xs font-medium mb-1">Faturas Ativas</p><p className="text-xl font-bold text-amber-500">R$ {faturasAtivas.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p></div>
             <div className="h-8 w-8 rounded-full bg-amber-500/10 flex items-center justify-center"><Wallet className="w-4 h-4 text-amber-500" /></div>
           </div>
         </div>
@@ -202,10 +206,6 @@ export default function FinancasDashboard() {
                 </div>
               ))
             )}
-          </div>
-
-          <div className="text-[10px] text-zinc-500 text-center flex items-center justify-center gap-1.5 mt-auto pt-4 border-t border-white/5">
-            <AlertTriangle className="w-3.5 h-3.5 text-amber-500" /> O caixa de Terceiros deve fechar zerado.
           </div>
         </div>
       </div>
