@@ -244,10 +244,10 @@ export default function FaturaCartao() {
   };
 
   const baixarModeloCSV = () => {
-    const conteudo = "Data;Descricao;Valor;Categoria (Opcional);Centro Custo (Opcional);Parcelas (Opcional);Observacao (Opcional)\n" +
-                     "30/07/2026;Uber;26,22;Transporte;360 Gestão;1;Corrida para o cliente\n" +
-                     "15/08/2026;Restaurante;145,50;Alimentação;Familiar;1;Almoço\n" +
-                     "20/08/2026;Seguro Auto;1200,00;Transporte;Familiar;10;Renovação anual";
+    const conteudo = "Data;Descricao;Valor;Fatura Alvo (Ex: Ago/2026);Categoria (Opcional);Centro Custo (Opcional);Parcelas (Opcional);Observacao (Opcional)\n" +
+                     "30/07/2026;Uber;26,22;Ago/2026;Transporte;360 Gestão;1;Corrida para o cliente\n" +
+                     "15/08/2026;Restaurante;145,50;;Alimentação;Familiar;1;Sem fatura alvo usa a regra do cartao\n" +
+                     "20/08/2026;Seguro Auto;1200,00;Set/2026;Transporte;Familiar;10;Renovação anual";
     
     const blob = new Blob(["\uFEFF" + conteudo], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -269,19 +269,30 @@ export default function FaturaCartao() {
         const text = target?.result as string;
         const rows = text.split('\n').map(r => r.trim()).filter(r => r);
         const transacoesImportadas = [];
+        let errosData = 0;
 
         for(let i = 1; i < rows.length; i++) {
           const colunas = rows[i].split(';');
-          // Agora exigimos pelo menos as 3 primeiras colunas, mas o CSV tem até 7
           if (colunas.length < 3) continue;
 
-          // Ajustado para receber o "ccRaw" (Centro de Custo)
-          const [dataRaw, desc, valorRaw, catRaw, ccRaw, parcelasRaw, obsRaw] = colunas;
+          // Agora a coluna índice 3 é a Fatura Alvo
+          const [dataRaw, desc, valorRaw, faturaRaw, catRaw, ccRaw, parcelasRaw, obsRaw] = colunas;
           
           const partesData = dataRaw.split('/');
-          if (partesData.length !== 3) continue;
-          const dataCompraObj = new Date(`${partesData[2]}-${partesData[1]}-${partesData[0]}T12:00:00Z`);
-          if (isNaN(dataCompraObj.getTime())) continue;
+          if (partesData.length !== 3) {
+            errosData++;
+            continue;
+          }
+          
+          // Prevenção se o Excel comer o ano (ex: 26 em vez de 2026)
+          let anoForm = partesData[2].trim();
+          if (anoForm.length === 2) anoForm = "20" + anoForm;
+
+          const dataCompraObj = new Date(`${anoForm}-${partesData[1]}-${partesData[0]}T12:00:00Z`);
+          if (isNaN(dataCompraObj.getTime())) {
+            errosData++;
+            continue;
+          }
 
           let cleanVal = valorRaw.replace('R$', '').trim();
           if (cleanVal.includes('.') && cleanVal.includes(',')) {
@@ -292,15 +303,23 @@ export default function FaturaCartao() {
           const valorFinal = parseFloat(cleanVal);
           if (isNaN(valorFinal)) continue;
 
-          // Match Categoria
+          // Match Categoria + Subcategoria Aprimorado
           let categoriaMatchId = null;
+          let subcategoriaMatchId = null;
           if (catRaw) {
-            const catDigitada = catRaw.trim().toLowerCase();
-            const catEncontrada = categorias.find((c: any) => c.nome.toLowerCase() === catDigitada);
-            if (catEncontrada) categoriaMatchId = catEncontrada.id;
+            const termo = catRaw.trim().toLowerCase();
+            const catEncontrada = categorias.find((c: any) => c.nome.toLowerCase() === termo);
+            if (catEncontrada) {
+              categoriaMatchId = catEncontrada.id;
+            } else {
+              const subEncontrada = subcategorias.find((s: any) => s.nome.toLowerCase() === termo);
+              if (subEncontrada) {
+                categoriaMatchId = subEncontrada.categoria_id;
+                subcategoriaMatchId = subEncontrada.id;
+              }
+            }
           }
 
-          // Match Centro de Custo
           let ccMatchId = null;
           if (ccRaw) {
             const ccDigitado = ccRaw.trim().toLowerCase();
@@ -308,15 +327,29 @@ export default function FaturaCartao() {
             if (ccEncontrado) ccMatchId = ccEncontrado.id;
           }
 
-          let mesIdx = dataCompraObj.getUTCMonth();
-          let ano = dataCompraObj.getUTCFullYear();
-          const diaFechamento = cartaoAtivo?.dia_fechamento || 31;
+          // Lógica de Identificação da Fatura
+          let faturaBaseImportacao = "";
           
-          if (dataCompraObj.getUTCDate() > diaFechamento) {
-            mesIdx++;
-            if (mesIdx > 11) { mesIdx = 0; ano++; }
+          if (faturaRaw && faturaRaw.trim().includes('/')) {
+            const [mRaw, aRaw] = faturaRaw.split('/');
+            const strMes = mRaw.trim().toLowerCase();
+            const mesEncontrado = mesesNomes.find(m => m.toLowerCase() === strMes || m.toLowerCase() === strMes.substring(0,3));
+            if (mesEncontrado) {
+              faturaBaseImportacao = `${mesEncontrado}/${aRaw.trim()}`;
+            }
           }
-          const faturaBaseImportacao = `${mesesNomes[mesIdx]}/${ano}`;
+
+          if (!faturaBaseImportacao) {
+            let mesIdx = dataCompraObj.getUTCMonth();
+            let anoObj = dataCompraObj.getUTCFullYear();
+            const diaFechamento = cartaoAtivo?.dia_fechamento || 31;
+            
+            if (dataCompraObj.getUTCDate() > diaFechamento) {
+              mesIdx++;
+              if (mesIdx > 11) { mesIdx = 0; anoObj++; }
+            }
+            faturaBaseImportacao = `${mesesNomes[mesIdx]}/${anoObj}`;
+          }
 
           const parcelas = parcelasRaw && parseInt(parcelasRaw) > 0 ? parseInt(parcelasRaw) : 1;
           const valorParcela = valorFinal / parcelas;
@@ -329,7 +362,8 @@ export default function FaturaCartao() {
               descricao: parcelas > 1 ? `${desc.trim()} (${p + 1}/${parcelas})` : desc.trim(),
               valor: valorParcela,
               categoria_id: categoriaMatchId,
-              centro_custo_id: ccMatchId, // Agora o CSV puxa o Centro de Custo!
+              subcategoria_id: subcategoriaMatchId,
+              centro_custo_id: ccMatchId, 
               tipo: 'DESPESA',
               situacao: 'PENDENTE',
               observacao: obsRaw ? obsRaw.trim() : 'Importado via CSV',
@@ -339,13 +373,16 @@ export default function FaturaCartao() {
 
         if (transacoesImportadas.length > 0) {
           const { error } = await supabase.from('transacao_pessoal').insert(transacoesImportadas);
-          if (error) alert('Erro ao importar para o banco: ' + error.message);
-          else {
-            alert(`${transacoesImportadas.length} transações importadas com sucesso!`);
+          if (error) {
+            alert('Erro ao importar para o banco: ' + error.message);
+          } else {
+            let msg = `${transacoesImportadas.length} transações importadas com sucesso!`;
+            if (errosData > 0) msg += `\n⚠️ Atenção: ${errosData} linha(s) foram ignoradas porque a data não estava no formato correto (DD/MM/AAAA).`;
+            alert(msg);
             refetch();
           }
         } else {
-            alert("Nenhuma transação válida encontrada. Verifique as colunas do arquivo.");
+            alert("Nenhuma transação válida encontrada. O Excel pode ter corrompido as datas. Verifique as colunas do arquivo.");
         }
       } catch (err) {
         alert("Erro ao ler o arquivo CSV.");
