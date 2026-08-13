@@ -6,9 +6,24 @@ export const Header = () => {
   
   const getPageTitle = () => {
     const path = location.pathname;
+    
+    // 1. Casos Específicos (Ignorando os IDs da URL)
     if (path === '/' || path === '/financas') return 'Dashboard';
-    const cleanPath = path.replace('/financas/', '').replace('/', '');
-    return cleanPath.charAt(0).toUpperCase() + cleanPath.slice(1).replace('-', ' ');
+    if (path.startsWith('/financas/cartoes/')) return 'Fatura do Cartão';
+    if (path.startsWith('/milhas/estoque/')) return 'Detalhes do Programa';
+
+    // 2. Fallback Genérico para as outras rotas
+    const segmentos = path.split('/').filter(Boolean);
+    if (segmentos.length === 0) return 'Dashboard';
+    
+    // Pega o último pedaço da URL (ex: 'contas-pagar')
+    const ultimoSegmento = segmentos[segmentos.length - 1];
+    
+    // Remove os hífens e capitaliza a primeira letra de cada palavra
+    return ultimoSegmento
+      .split('-')
+      .map(palavra => palavra.charAt(0).toUpperCase() + palavra.slice(1))
+      .join(' ');
   };
 
   return (
