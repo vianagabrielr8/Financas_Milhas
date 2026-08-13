@@ -275,7 +275,6 @@ export default function FaturaCartao() {
           const colunas = rows[i].split(';');
           if (colunas.length < 3) continue;
 
-          // Agora a coluna índice 3 é a Fatura Alvo
           const [dataRaw, desc, valorRaw, faturaRaw, catRaw, ccRaw, parcelasRaw, obsRaw] = colunas;
           
           const partesData = dataRaw.split('/');
@@ -284,7 +283,6 @@ export default function FaturaCartao() {
             continue;
           }
           
-          // Prevenção se o Excel comer o ano (ex: 26 em vez de 2026)
           let anoForm = partesData[2].trim();
           if (anoForm.length === 2) anoForm = "20" + anoForm;
 
@@ -303,7 +301,6 @@ export default function FaturaCartao() {
           const valorFinal = parseFloat(cleanVal);
           if (isNaN(valorFinal)) continue;
 
-          // Match Categoria + Subcategoria Aprimorado
           let categoriaMatchId = null;
           let subcategoriaMatchId = null;
           if (catRaw) {
@@ -327,15 +324,19 @@ export default function FaturaCartao() {
             if (ccEncontrado) ccMatchId = ccEncontrado.id;
           }
 
-          // Lógica de Identificação da Fatura
           let faturaBaseImportacao = "";
           
           if (faturaRaw && faturaRaw.trim().includes('/')) {
             const [mRaw, aRaw] = faturaRaw.split('/');
             const strMes = mRaw.trim().toLowerCase();
             const mesEncontrado = mesesNomes.find(m => m.toLowerCase() === strMes || m.toLowerCase() === strMes.substring(0,3));
+            
+            // Corrige o ano com 2 dígitos na fatura (ex: "Ago/26" vira "Ago/2026")
+            let anoFormFatura = aRaw.trim();
+            if (anoFormFatura.length === 2) anoFormFatura = "20" + anoFormFatura;
+
             if (mesEncontrado) {
-              faturaBaseImportacao = `${mesEncontrado}/${aRaw.trim()}`;
+              faturaBaseImportacao = `${mesEncontrado}/${anoFormFatura}`;
             }
           }
 
@@ -377,12 +378,12 @@ export default function FaturaCartao() {
             alert('Erro ao importar para o banco: ' + error.message);
           } else {
             let msg = `${transacoesImportadas.length} transações importadas com sucesso!`;
-            if (errosData > 0) msg += `\n⚠️ Atenção: ${errosData} linha(s) foram ignoradas porque a data não estava no formato correto (DD/MM/AAAA).`;
+            if (errosData > 0) msg += `\n⚠️ Atenção: ${errosData} linha(s) ignoradas pois a data estava incorreta.`;
             alert(msg);
             refetch();
           }
         } else {
-            alert("Nenhuma transação válida encontrada. O Excel pode ter corrompido as datas. Verifique as colunas do arquivo.");
+            alert("Nenhuma transação válida encontrada. Verifique se digitou as colunas corretamente.");
         }
       } catch (err) {
         alert("Erro ao ler o arquivo CSV.");
