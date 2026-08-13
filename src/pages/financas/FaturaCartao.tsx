@@ -1,7 +1,7 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { ChevronLeft, ChevronRight, Calendar, DollarSign, Receipt, FileText, Trash2, Plus, CreditCard, ChevronDown, Search, CornerDownRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Calendar, DollarSign, Receipt, FileText, Trash2, Edit2, Plus, CreditCard, ChevronDown, Search, CornerDownRight, Upload, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { Link } from 'react-router-dom';
@@ -13,20 +13,26 @@ export default function FaturaCartao() {
 
   const [cartaoAtivo, setCartaoAtivo] = useState<any>(null);
   const [modalAberto, setModalAberto] = useState(false);
+  
+  // Estado para Edição
+  const [transacaoEditandoId, setTransacaoEditandoId] = useState<string | null>(null);
 
   // Estados do Formulário
   const [formDescricao, setFormDescricao] = useState('');
   const [formValor, setFormValor] = useState('');
   const [formData, setFormData] = useState(new Date().toISOString().split('T')[0]);
-  const [formFaturaDestino, setFormFaturaDestino] = useState(mesSelecionado); // Novo Estado
+  const [formFaturaDestino, setFormFaturaDestino] = useState(mesSelecionado); 
   const [formParcelado, setFormParcelado] = useState(false);
   const [formParcelas, setFormParcelas] = useState(2);
   const [formObservacao, setFormObservacao] = useState('');
   
-  // Estados do Novo Seletor de Categoria
+  // Estados do Seletor de Categoria
   const [categoriaSelecionada, setCategoriaSelecionada] = useState<{catId: string, subId?: string, nomeDisplay: string} | null>(null);
   const [dropdownCatAberto, setDropdownCatAberto] = useState(false);
   const [buscaCat, setBuscaCat] = useState('');
+
+  // Ref para o Input de Arquivo (CSV)
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: cartoes = [], isLoading: carregandoCartoes } = useQuery({
     queryKey: ['cartoes_pessoais'],
@@ -89,8 +95,44 @@ export default function FaturaCartao() {
     });
   }, [categorias, subcategorias, buscaCat]);
 
+  const resetarFormulario = () => {
+    setTransacaoEditandoId(null);
+    setFormDescricao('');
+    setFormValor('');
+    setCategoriaSelecionada(null);
+    setFormParcelado(false);
+    setFormObservacao('');
+    setFormData(new Date().toISOString().split('T')[0]);
+    setFormFaturaDestino(mesSelecionado);
+  };
+
   const abrirModalNovaDespesa = () => {
-    setFormFaturaDestino(mesSelecionado); // Sincroniza com a aba que você está olhando
+    resetarFormulario();
+    setModalAberto(true);
+  };
+
+  const abrirModalEdicao = (t: any) => {
+    setTransacaoEditandoId(t.id);
+    setFormDescricao(t.descricao);
+    setFormValor(Math.abs(Number(t.valor)).toString());
+    setFormData(t.data);
+    setFormObservacao(t.observacao || '');
+    
+    // Identifica fatura alvo pela data cadastrada no banco
+    const dataObj = new Date(`${t.data}T12:00:00Z`);
+    setFormFaturaDestino(mesesNomes[dataObj.getUTCMonth()]);
+    
+    if (t.categoria_id) {
+      setCategoriaSelecionada({
+        catId: t.categoria_id,
+        subId: t.subcategoria_id,
+        nomeDisplay: renderNomeCategoria(t.categoria_id, t.subcategoria_id)
+      });
+    } else {
+      setCategoriaSelecionada(null);
+    }
+    
+    setFormParcelado(false); 
     setModalAberto(true);
   };
 
@@ -100,15 +142,52 @@ export default function FaturaCartao() {
     if (!categoriaSelecionada) return alert('Selecione uma categoria para a despesa.');
     if (Number(formValor) <= 0) return alert('O valor deve ser maior que zero.');
 
+    const valorOriginal = Number(formValor);
+    
+    // MODO EDIÇÃO
+    if (transacaoEditandoId) {
+      const dataOriginal = formData.split('-');
+      let mesIndexAlvo = mesesNomes.indexOf(formFaturaDestino);
+      const mesAlvoStr = String(mesIndexAlvo + 1).padStart(2, '0');
+      
+      let dataLancamento = `${dataOriginal[0]}-${mesAlvoStr}-${dataOriginal[2]}`;
+      const testeData = new Date(`${dataLancamento}T12:00:00Z`);
+      if (isNaN(testeData.getTime()) || testeData.getUTCMonth() !== mesIndexAlvo) {
+        dataLancamento = `${dataOriginal[0]}-${mesAlvoStr}-01`;
+      }
+
+      let observacaoFinal = formObservacao;
+      const mesOriginalIndex = new Date(`${formData}T12:00:00Z`).getUTCMonth();
+      if (mesesNomes[mesOriginalIndex] !== formFaturaDestino) {
+        observacaoFinal = `Compra original em: ${dataOriginal[2]}/${dataOriginal[1]}/${dataOriginal[0]}. ${formObservacao}`.trim();
+      }
+
+      const { error } = await supabase.from('transacao_pessoal').update({
+        descricao: formDescricao,
+        valor: valorOriginal,
+        data: dataLancamento,
+        observacao: observacaoFinal,
+        categoria_id: categoriaSelecionada.catId,
+        subcategoria_id: categoriaSelecionada.subId || null,
+      }).eq('id', transacaoEditandoId);
+
+      if (error) alert('Erro ao editar: ' + error.message);
+      else {
+        setModalAberto(false);
+        resetarFormulario();
+        refetch();
+      }
+      return;
+    }
+
+    // MODO CRIAÇÃO (Permite Parcelamento)
     const transacoesParaInserir = [];
     const qtdParcelas = formParcelado ? formParcelas : 1;
-    const valorParcela = Number(formValor) / qtdParcelas;
-
-    const dataOriginal = formData.split('-'); // [YYYY, MM, DD]
+    const valorParcela = valorOriginal / qtdParcelas;
+    const dataOriginal = formData.split('-'); 
     const diaCompra = dataOriginal[2];
 
     for (let i = 0; i < qtdParcelas; i++) {
-      // Magia para forçar o lançamento na fatura escolhida
       let mesIndexAlvo = mesesNomes.indexOf(formFaturaDestino) + i;
       let anoAlvo = anoSelecionado;
       
@@ -120,18 +199,15 @@ export default function FaturaCartao() {
       const mesAlvoStr = String(mesIndexAlvo + 1).padStart(2, '0');
       let dataLancamento = `${anoAlvo}-${mesAlvoStr}-${diaCompra}`;
       
-      // Ajuste se o dia da compra não existir no mês alvo (ex: 31 de Fevereiro)
-      const testeData = new Date(`${anoAlvo}-${mesAlvoStr}-${diaCompra}T12:00:00Z`);
+      const testeData = new Date(`${dataLancamento}T12:00:00Z`);
       if (isNaN(testeData.getTime()) || testeData.getUTCMonth() !== mesIndexAlvo) {
         dataLancamento = `${anoAlvo}-${mesAlvoStr}-01`;
       }
 
-      // Preservar a data oficial na observação caso tenha alterado o mês da fatura
       let observacaoFinal = formObservacao;
       const mesOriginalIndex = new Date(`${formData}T12:00:00Z`).getUTCMonth();
       if (mesesNomes[mesOriginalIndex] !== formFaturaDestino || formParcelado) {
-        const dataFormatada = `${dataOriginal[2]}/${dataOriginal[1]}/${dataOriginal[0]}`;
-        observacaoFinal = `Compra original em: ${dataFormatada}. ${formObservacao}`.trim();
+        observacaoFinal = `Compra original em: ${dataOriginal[2]}/${dataOriginal[1]}/${dataOriginal[0]}. ${formObservacao}`.trim();
       }
 
       transacoesParaInserir.push({
@@ -148,16 +224,10 @@ export default function FaturaCartao() {
     }
 
     const { error } = await supabase.from('transacao_pessoal').insert(transacoesParaInserir);
-
-    if (error) {
-      alert('Erro ao salvar: ' + error.message);
-    } else {
+    if (error) alert('Erro ao salvar: ' + error.message);
+    else {
       setModalAberto(false);
-      setFormDescricao('');
-      setFormValor('');
-      setCategoriaSelecionada(null);
-      setFormParcelado(false);
-      setFormObservacao('');
+      resetarFormulario();
       refetch();
     }
   };
@@ -169,13 +239,87 @@ export default function FaturaCartao() {
   };
 
   const renderNomeCategoria = (catId: string, subId?: string) => {
+    if (!catId) return 'A Classificar';
     const cat = categorias.find((c: any) => c.id === catId);
-    if (!cat) return 'Sem categoria';
+    if (!cat) return 'A Classificar';
     if (subId) {
       const sub = subcategorias.find((s: any) => s.id === subId);
       return sub ? `${cat.nome} • ${sub.nome}` : cat.nome;
     }
     return cat.nome;
+  };
+
+  // --- LÓGICA DE IMPORTAÇÃO CSV ---
+  const baixarModeloCSV = () => {
+    const conteudo = "Data;Descricao;Valor\n01/08/2026;Uber;26,22\n15/08/2026;Restaurante;145,50";
+    const blob = new Blob([conteudo], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", "modelo_importacao_fatura.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleImportarCSV = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !cartaoAtivo) return;
+
+    const reader = new FileReader();
+    reader.onload = async ({ target }) => {
+      try {
+        const text = target?.result as string;
+        const rows = text.split('\n').map(r => r.trim()).filter(r => r);
+        const transacoesImportadas = [];
+
+        for(let i = 1; i < rows.length; i++) {
+          const colunas = rows[i].split(';');
+          if (colunas.length < 3) continue;
+
+          const [dataRaw, desc, valorRaw] = colunas;
+          
+          // Tratamento da Data (DD/MM/YYYY -> YYYY-MM-DD)
+          const partesData = dataRaw.split('/');
+          if (partesData.length !== 3) continue;
+          const dataFomatada = `${partesData[2]}-${partesData[1]}-${partesData[0]}`;
+
+          // Tratamento do Valor (1.500,00 -> 1500.00)
+          let cleanVal = valorRaw.replace('R$', '').trim();
+          if (cleanVal.includes('.') && cleanVal.includes(',')) {
+             cleanVal = cleanVal.replace(/\./g, '').replace(',', '.');
+          } else if (cleanVal.includes(',')) {
+             cleanVal = cleanVal.replace(',', '.');
+          }
+          const valorFinal = parseFloat(cleanVal);
+
+          if (!isNaN(valorFinal)) {
+            transacoesImportadas.push({
+              cartao_id: cartaoAtivo.id,
+              data: dataFomatada,
+              descricao: desc.trim(),
+              valor: valorFinal,
+              tipo: 'DESPESA',
+              situacao: 'PENDENTE',
+              observacao: 'Importado via CSV'
+            });
+          }
+        }
+
+        if (transacoesImportadas.length > 0) {
+          const { error } = await supabase.from('transacao_pessoal').insert(transacoesImportadas);
+          if (error) alert('Erro ao importar para o banco: ' + error.message);
+          else {
+            alert(`${transacoesImportadas.length} transações importadas com sucesso! Não esqueça de classificar as categorias.`);
+            refetch();
+          }
+        }
+      } catch (err) {
+        alert("Erro ao ler o arquivo CSV. Verifique se o formato está idêntico ao modelo.");
+      }
+    };
+    reader.readAsText(file);
+    if (fileInputRef.current) fileInputRef.current.value = ''; // reseta o input
   };
 
   if (carregandoCartoes) return <div className="p-6 text-zinc-400">Carregando dados...</div>;
@@ -190,6 +334,15 @@ export default function FaturaCartao() {
   return (
     <div className="space-y-6 max-w-[1600px] mx-auto text-zinc-100 p-4 md:p-6 pb-24 relative">
       
+      {/* INPUT HIDDEN PARA O CSV */}
+      <input 
+        type="file" 
+        accept=".csv" 
+        ref={fileInputRef} 
+        onChange={handleImportarCSV} 
+        className="hidden" 
+      />
+
       {/* HEADER */}
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div className="flex items-center gap-4 flex-wrap">
@@ -210,9 +363,18 @@ export default function FaturaCartao() {
             </div>
           )}
         </div>
-        <Button onClick={abrirModalNovaDespesa} className="bg-[#10b981] hover:bg-[#059669] text-black font-bold flex items-center gap-2">
-          <Plus className="w-4 h-4" /> Nova Despesa
-        </Button>
+        
+        <div className="flex items-center gap-3">
+          <Button onClick={baixarModeloCSV} variant="outline" className="border-white/10 bg-transparent hover:bg-white/5 text-zinc-400 hover:text-white text-xs font-bold h-9">
+            <Download className="w-4 h-4 mr-2" /> Modelo CSV
+          </Button>
+          <Button onClick={() => fileInputRef.current?.click()} variant="outline" className="border-[#10b981]/50 text-[#10b981] hover:bg-[#10b981]/10 bg-transparent text-xs font-bold h-9">
+            <Upload className="w-4 h-4 mr-2" /> Importar Planilha
+          </Button>
+          <Button onClick={abrirModalNovaDespesa} className="bg-[#10b981] hover:bg-[#059669] text-black font-bold flex items-center gap-2 h-9">
+            <Plus className="w-4 h-4" /> Nova Despesa
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -251,13 +413,19 @@ export default function FaturaCartao() {
                         </div>
                       </td>
                       <td className="py-4">
-                        <span className="bg-[#1a1a20] border border-white/5 px-2.5 py-1 rounded-full text-xs text-zinc-300 inline-block max-w-[200px] truncate">
+                        <span className={cn(
+                          "border px-2.5 py-1 rounded-full text-xs inline-block max-w-[200px] truncate", 
+                          !t.categoria_id ? "bg-amber-500/10 border-amber-500/20 text-amber-500 font-bold" : "bg-[#1a1a20] border-white/5 text-zinc-300"
+                        )}>
                           {renderNomeCategoria(t.categoria_id, t.subcategoria_id)}
                         </span>
                       </td>
                       <td className="py-4 text-right font-bold text-[#e74c3c] whitespace-nowrap">- R$ {Number(t.valor).toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
                       <td className="py-4 text-center">
-                        <Button variant="ghost" size="icon" onClick={() => deletarTransacao(t.id)} className="h-8 w-8 text-zinc-500 hover:text-red-400"><Trash2 className="w-4 h-4" /></Button>
+                        <div className="flex justify-center gap-1">
+                          <Button variant="ghost" size="icon" onClick={() => abrirModalEdicao(t)} className="h-8 w-8 text-zinc-500 hover:text-white"><Edit2 className="w-4 h-4" /></Button>
+                          <Button variant="ghost" size="icon" onClick={() => deletarTransacao(t.id)} className="h-8 w-8 text-zinc-500 hover:text-red-400"><Trash2 className="w-4 h-4" /></Button>
+                        </div>
                       </td>
                     </tr>
                   ))
@@ -288,13 +456,16 @@ export default function FaturaCartao() {
         </div>
       </div>
 
-      {/* MODAL NOVA DESPESA */}
+      {/* MODAL NOVA DESPESA / EDIÇÃO */}
       {modalAberto && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-[#1a1a20] rounded-2xl w-full max-w-2xl border border-white/10 shadow-2xl flex flex-col max-h-[90vh]">
             
             <div className="px-6 py-5 border-b border-white/10 flex justify-between items-center shrink-0">
-              <h2 className="text-xl text-white font-bold flex items-center gap-2"><CreditCard className="text-[#10b981]" size={20} /> Lançar Despesa</h2>
+              <h2 className="text-xl text-white font-bold flex items-center gap-2">
+                <CreditCard className="text-[#10b981]" size={20} /> 
+                {transacaoEditandoId ? 'Editar Despesa' : 'Lançar Despesa'}
+              </h2>
               <button onClick={() => setModalAberto(false)} className="text-zinc-500 hover:text-white transition-colors">✕</button>
             </div>
             
@@ -323,8 +494,8 @@ export default function FaturaCartao() {
                       onClick={() => setDropdownCatAberto(!dropdownCatAberto)}
                       className={cn("w-full bg-[#1e1e24] text-left border rounded-xl p-3 flex justify-between items-center transition-all", dropdownCatAberto ? "border-[#10b981]" : "border-white/10 hover:border-white/20")}
                     >
-                      <span className={categoriaSelecionada ? "text-white font-medium" : "text-zinc-500"}>
-                        {categoriaSelecionada ? categoriaSelecionada.nomeDisplay : 'Selecionar categoria...'}
+                      <span className={categoriaSelecionada ? "text-white font-medium" : "text-amber-500 font-bold"}>
+                        {categoriaSelecionada ? categoriaSelecionada.nomeDisplay : '⚠️ A Classificar'}
                       </span>
                       <ChevronDown className="w-4 h-4 text-zinc-500" />
                     </button>
@@ -394,24 +565,27 @@ export default function FaturaCartao() {
                     </div>
                   </div>
 
-                  <div className="p-4 bg-[#1e1e24] border border-white/10 rounded-xl">
-                    <div className="flex items-center justify-between mb-4">
-                      <div>
-                        <span className="text-sm font-bold text-white block">Parcelar Compra?</span>
-                        <span className="text-xs text-zinc-500">Dividir nas próximas faturas</span>
+                  {!transacaoEditandoId && (
+                    <div className="p-4 bg-[#1e1e24] border border-white/10 rounded-xl">
+                      <div className="flex items-center justify-between mb-4">
+                        <div>
+                          <span className="text-sm font-bold text-white block">Parcelar Compra?</span>
+                          <span className="text-xs text-zinc-500">Dividir nas próximas faturas</span>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                          <input type="checkbox" className="sr-only peer" checked={formParcelado} onChange={(e) => setFormParcelado(e.target.checked)}/>
+                          <div className="w-11 h-6 bg-zinc-700 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#10b981]"></div>
+                        </label>
                       </div>
-                      <label className="relative inline-flex items-center cursor-pointer">
-                        <input type="checkbox" className="sr-only peer" checked={formParcelado} onChange={(e) => setFormParcelado(e.target.checked)}/>
-                        <div className="w-11 h-6 bg-zinc-700 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#10b981]"></div>
-                      </label>
+                      {formParcelado && (
+                        <div className="border-t border-white/10 pt-4">
+                          <label className="text-zinc-400 text-xs font-bold uppercase block mb-1.5">Qtd Parcelas</label>
+                          <input type="number" min="2" max="48" value={formParcelas} onChange={(e) => setFormParcelas(Number(e.target.value))} className="w-full bg-[#1a1a20] text-white border border-white/10 rounded-lg p-2.5 focus:border-[#10b981] focus:outline-none" />
+                        </div>
+                      )}
                     </div>
-                    {formParcelado && (
-                      <div className="border-t border-white/10 pt-4">
-                        <label className="text-zinc-400 text-xs font-bold uppercase block mb-1.5">Qtd Parcelas</label>
-                        <input type="number" min="2" max="48" value={formParcelas} onChange={(e) => setFormParcelas(Number(e.target.value))} className="w-full bg-[#1a1a20] text-white border border-white/10 rounded-lg p-2.5 focus:border-[#10b981] focus:outline-none" />
-                      </div>
-                    )}
-                  </div>
+                  )}
+
                   <div>
                     <label className="text-zinc-400 text-xs font-bold uppercase block mb-1.5">Observações (Opcional)</label>
                     <textarea value={formObservacao} onChange={(e) => setFormObservacao(e.target.value)} rows={3} className="w-full bg-[#1e1e24] text-white border border-white/10 rounded-xl p-3 focus:border-[#10b981] focus:outline-none transition-all resize-none" placeholder="Ex: Presente do Bento..." />
@@ -423,7 +597,9 @@ export default function FaturaCartao() {
             {/* FOOTER MODAL */}
             <div className="p-6 border-t border-white/10 flex justify-end gap-3 shrink-0 bg-[#1a1a20]">
               <button type="button" onClick={() => setModalAberto(false)} className="px-6 py-2.5 text-sm text-zinc-400 font-bold hover:text-white transition-colors">CANCELAR</button>
-              <button onClick={handleSalvarDespesa} className="bg-[#10b981] text-black hover:bg-[#059669] px-8 py-2.5 rounded-lg text-sm font-bold transition-all">SALVAR COMPRA</button>
+              <button onClick={handleSalvarDespesa} className="bg-[#10b981] text-black hover:bg-[#059669] px-8 py-2.5 rounded-lg text-sm font-bold transition-all">
+                {transacaoEditandoId ? 'SALVAR ALTERAÇÕES' : 'SALVAR COMPRA'}
+              </button>
             </div>
 
           </div>
