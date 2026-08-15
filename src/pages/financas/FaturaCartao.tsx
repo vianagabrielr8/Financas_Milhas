@@ -2,7 +2,11 @@ import { useState, useMemo, useRef, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useParams, Link } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Calendar, DollarSign, Receipt, FileText, Trash2, Edit2, Plus, CreditCard, ChevronDown, Search, CornerDownRight, Upload, Download, Briefcase } from 'lucide-react';
+import { 
+  ChevronLeft, ChevronRight, Calendar, DollarSign, Receipt, 
+  FileText, Trash2, Edit2, Plus, CreditCard, ChevronDown, 
+  Search, CornerDownRight, Upload, Download, Briefcase, AlertTriangle, X 
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -16,6 +20,10 @@ export default function FaturaCartao() {
   const [cartaoAtivo, setCartaoAtivo] = useState<any>(null);
   const [modalAberto, setModalAberto] = useState(false);
   
+  // Modal de Exclusão de Parcelas
+  const [modalExclusaoAberto, setModalExclusaoAberto] = useState(false);
+  const [transacaoParaExcluir, setTransacaoParaExcluir] = useState<any>(null);
+
   const [transacaoEditandoId, setTransacaoEditandoId] = useState<string | null>(null);
 
   const [formDescricao, setFormDescricao] = useState('');
@@ -106,15 +114,19 @@ export default function FaturaCartao() {
   const totalFatura = transacoes.reduce((acc, curr) => acc + Number(curr.valor), 0);
 
   const categoriasFiltradas = useMemo(() => {
+    let baseCategorias = categorias;
+    if (formCentroCusto) {
+      baseCategorias = categorias.filter((cat: any) => !cat.centro_custo_id || cat.centro_custo_id === formCentroCusto);
+    }
     const termo = buscaCat.toLowerCase();
-    if (!termo) return categorias;
-    return categorias.filter((cat: any) => {
+    if (!termo) return baseCategorias;
+    return baseCategorias.filter((cat: any) => {
       const matchCat = cat.nome.toLowerCase().includes(termo);
       const subs = subcategorias.filter((sub: any) => sub.categoria_id === cat.id);
       const matchSub = subs.some((sub: any) => sub.nome.toLowerCase().includes(termo));
       return matchCat || matchSub;
     });
-  }, [categorias, subcategorias, buscaCat]);
+  }, [categorias, subcategorias, buscaCat, formCentroCusto]);
 
   const resetarFormulario = () => {
     setTransacaoEditandoId(null);
@@ -225,9 +237,63 @@ export default function FaturaCartao() {
     }
   };
 
-  const deletarTransacao = async (id: string) => {
-    if(!window.confirm('Excluir esta transação?')) return;
+  // Gerenciamento de Exclusão de Transações
+  const iniciarExclusao = (t: any) => {
+    const regexParcela = /\((\d+)\/(\d+)\)$/;
+    if (regexParcela.test(t.descricao)) {
+      setTransacaoParaExcluir(t);
+      setModalExclusaoAberto(true);
+    } else {
+      if (window.confirm(`Deseja excluir "${t.descricao}"?`)) {
+        executarExclusaoSimples(t.id);
+      }
+    }
+  };
+
+  const executarExclusaoSimples = async (id: string) => {
     await supabase.from('transacao_pessoal').delete().eq('id', id);
+    refetch();
+  };
+
+  const executarExclusaoParcelada = async (modo: 'APENAS_ESTA' | 'DESTA_EM_DIANTE' | 'TODAS') => {
+    if (!transacaoParaExcluir) return;
+
+    const regexParcela = /^(.*?)\s*\((\d+)\/(\d+)\)$/;
+    const match = transacaoParaExcluir.descricao.match(regexParcela);
+
+    if (!match) {
+      await executarExclusaoSimples(transacaoParaExcluir.id);
+      setModalExclusaoAberto(false);
+      return;
+    }
+
+    const [, nomeBase, parcelaAtualStr, totalParcelasStr] = match;
+    const parcelaAtual = parseInt(parcelaAtualStr, 10);
+    const totalParcelas = parseInt(totalParcelasStr, 10);
+
+    if (modo === 'APENAS_ESTA') {
+      await supabase.from('transacao_pessoal').delete().eq('id', transacaoParaExcluir.id);
+    } else if (modo === 'TODAS') {
+      const descricoes = Array.from({ length: totalParcelas }, (_, i) => `${nomeBase.trim()} (${i + 1}/${totalParcelas})`);
+      await supabase
+        .from('transacao_pessoal')
+        .delete()
+        .eq('cartao_id', transacaoParaExcluir.cartao_id)
+        .in('descricao', descricoes);
+    } else if (modo === 'DESTA_EM_DIANTE') {
+      const descricoes = [];
+      for (let i = parcelaAtual; i <= totalParcelas; i++) {
+        descricoes.push(`${nomeBase.trim()} (${i}/${totalParcelas})`);
+      }
+      await supabase
+        .from('transacao_pessoal')
+        .delete()
+        .eq('cartao_id', transacaoParaExcluir.cartao_id)
+        .in('descricao', descricoes);
+    }
+
+    setModalExclusaoAberto(false);
+    setTransacaoParaExcluir(null);
     refetch();
   };
 
@@ -243,10 +309,10 @@ export default function FaturaCartao() {
   };
 
   const baixarModeloCSV = () => {
-    const conteudo = "Data;Descricao;Valor;Fatura Alvo (Ex: Ago/2026);Categoria (Opcional);Centro Custo (Opcional);Parcelas (Opcional);Observacao (Opcional)\n" +
-                     "30/07/2026;Uber;26,22;Ago/2026;Transporte;360 Gestão;1;Corrida para o cliente\n" +
-                     "15/08/2026;Restaurante;145,50;;Alimentação;Familiar;1;Sem fatura alvo usa a regra do cartao\n" +
-                     "20/08/2026;Seguro Auto;1200,00;Set/2026;Transporte;Familiar;10;Renovação anual";
+    const conteudo = "Data;Descricao;Valor;Fatura Alvo (Ex: Set/2026);Categoria (Opcional);Centro Custo;Parcelas (Opcional);Observacao (Opcional)\n" +
+                     "30/08/2026;Uber;26,22;Set/2026;Transporte;360 Gestão;1;Corrida cliente\n" +
+                     "15/08/2026;Supermercado;450,00;Set/2026;Alimentação;Familiar;1;Compras do mês\n" +
+                     "20/08/2026;Curso de Formação;1200,00;Set/2026;Educação;Familiar;4;Capacitação";
     
     const blob = new Blob(["\uFEFF" + conteudo], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -258,7 +324,6 @@ export default function FaturaCartao() {
     document.body.removeChild(link);
   };
 
-  // LOGICA DE IMPORTAÇÃO PARCIAL COM GERAÇÃO DE LOG DE ERRO
   const handleImportarCSV = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !cartaoAtivo) return;
@@ -272,8 +337,7 @@ export default function FaturaCartao() {
         const transacoesImportadas = [];
         const linhasComErro = [];
         
-        // Cabeçalho da Planilha de Erro
-        linhasComErro.push("Data;Descricao;Valor;Fatura Alvo (Ex: Ago/2026);Categoria (Opcional);Centro Custo (Opcional);Parcelas (Opcional);Observacao (Opcional);MOTIVO DO ERRO");
+        linhasComErro.push("Data;Descricao;Valor;Fatura Alvo;Categoria;Centro Custo;Parcelas;Observacao;MOTIVO DO ERRO");
 
         for(let i = 1; i < rows.length; i++) {
           const linhaOriginal = rows[i];
@@ -287,12 +351,10 @@ export default function FaturaCartao() {
 
           const [dataRaw, desc, valorRaw, faturaRaw, catRaw, ccRaw, parcelasRaw, obsRaw] = colunas;
           
-          // 1. Validação de Descrição
           if (!desc || desc.trim() === '') {
              motivosErro.push("A descrição é obrigatória");
           }
 
-          // 2. Validação da Data
           let dataCompraObj: any = null;
           const partesData = dataRaw.split('/');
           if (partesData.length !== 3) {
@@ -302,11 +364,10 @@ export default function FaturaCartao() {
             if (anoForm.length === 2) anoForm = "20" + anoForm;
             dataCompraObj = new Date(`${anoForm}-${partesData[1]}-${partesData[0]}T12:00:00Z`);
             if (isNaN(dataCompraObj.getTime())) {
-              motivosErro.push("Data inexistente/inválida");
+              motivosErro.push("Data inexistente ou inválida");
             }
           }
 
-          // 3. Validação do Valor
           let cleanVal = valorRaw?.replace('R$', '').trim() || '';
           if (cleanVal.includes('.') && cleanVal.includes(',')) {
              cleanVal = cleanVal.replace(/\./g, '').replace(',', '.');
@@ -315,60 +376,70 @@ export default function FaturaCartao() {
           }
           const valorFinal = parseFloat(cleanVal);
           if (isNaN(valorFinal) || valorFinal <= 0) {
-             motivosErro.push("Valor inválido (Use formato 00,00)");
+             motivosErro.push("Valor inválido");
           }
 
-          // 4. Validação da Categoria (Opcional)
+          let ccMatchId = null;
+          let ccEncontradoObj: any = null;
+          if (ccRaw && ccRaw.trim() !== '') {
+            const ccDigitado = ccRaw.trim().toLowerCase();
+            ccEncontradoObj = centrosCusto.find((c: any) => c.nome.toLowerCase() === ccDigitado);
+            if (ccEncontradoObj) {
+              ccMatchId = ccEncontradoObj.id;
+            } else {
+              motivosErro.push(`Centro de Custo '${ccRaw.trim()}' não cadastrado`);
+            }
+          } else {
+            motivosErro.push("Centro de Custo é obrigatório");
+          }
+
           let categoriaMatchId = null;
           let subcategoriaMatchId = null;
           if (catRaw && catRaw.trim() !== '') {
             const termo = catRaw.trim().toLowerCase();
             const catEncontrada = categorias.find((c: any) => c.nome.toLowerCase() === termo);
+            
             if (catEncontrada) {
-              categoriaMatchId = catEncontrada.id;
+              if (ccMatchId && catEncontrada.centro_custo_id && catEncontrada.centro_custo_id !== ccMatchId) {
+                motivosErro.push(`Categoria '${catEncontrada.nome}' não pertence ao CC '${ccEncontradoObj?.nome}'`);
+              } else {
+                categoriaMatchId = catEncontrada.id;
+              }
             } else {
               const subEncontrada = subcategorias.find((s: any) => s.nome.toLowerCase() === termo);
               if (subEncontrada) {
-                categoriaMatchId = subEncontrada.categoria_id;
-                subcategoriaMatchId = subEncontrada.id;
+                const catPai = categorias.find((c: any) => c.id === subEncontrada.categoria_id);
+                if (ccMatchId && catPai?.centro_custo_id && catPai.centro_custo_id !== ccMatchId) {
+                  motivosErro.push(`Subcategoria '${subEncontrada.nome}' não pertence ao CC '${ccEncontradoObj?.nome}'`);
+                } else {
+                  categoriaMatchId = subEncontrada.categoria_id;
+                  subcategoriaMatchId = subEncontrada.id;
+                }
               } else {
-                motivosErro.push(`Categoria '${catRaw.trim()}' não encontrada`);
+                motivosErro.push(`Categoria/Subcategoria '${catRaw.trim()}' não encontrada`);
               }
             }
           }
 
-          // 5. Validação Centro de Custo (Se informado)
-          let ccMatchId = null;
-          if (ccRaw && ccRaw.trim() !== '') {
-            const ccDigitado = ccRaw.trim().toLowerCase();
-            const ccEncontrado = centrosCusto.find((c: any) => c.nome.toLowerCase() === ccDigitado);
-            if (ccEncontrado) {
-              ccMatchId = ccEncontrado.id;
-            } else {
-              motivosErro.push(`Centro de Custo '${ccRaw.trim()}' não encontrado`);
-            }
-          }
-
-          // 6. Validação Fatura Alvo
           let faturaBaseImportacao = "";
           if (faturaRaw && faturaRaw.trim() !== '') {
-            if (faturaRaw.includes('/')) {
-              const [mRaw, aRaw] = faturaRaw.split('/');
-              const strMes = mRaw.trim().toLowerCase();
-              const mesEncontrado = mesesNomes.find(m => m.toLowerCase() === strMes || m.toLowerCase() === strMes.substring(0,3));
-              let anoFormFatura = aRaw.trim();
+            const faturaNormalizada = faturaRaw.trim().replace(/\s+/g, '');
+            if (faturaNormalizada.includes('/')) {
+              const [mRaw, aRaw] = faturaNormalizada.split('/');
+              const strMes = mRaw.toLowerCase().substring(0, 3);
+              const mesEncontrado = mesesNomes.find(m => m.toLowerCase().startsWith(strMes));
+              let anoFormFatura = aRaw;
               if (anoFormFatura.length === 2) anoFormFatura = "20" + anoFormFatura;
 
               if (mesEncontrado) {
                 faturaBaseImportacao = `${mesEncontrado}/${anoFormFatura}`;
               } else {
-                motivosErro.push("Mês da fatura alvo não reconhecido");
+                motivosErro.push("Mês da fatura não reconhecido");
               }
             } else {
               motivosErro.push("Fatura Alvo fora do padrão Mês/Ano");
             }
           } else if (dataCompraObj && !isNaN(dataCompraObj.getTime())) {
-            // Dedução automática via data e fechamento do cartão
             let mesIdx = dataCompraObj.getUTCMonth();
             let anoObj = dataCompraObj.getUTCFullYear();
             const diaFechamento = cartaoAtivo?.dia_fechamento || 31;
@@ -380,21 +451,17 @@ export default function FaturaCartao() {
             faturaBaseImportacao = `${mesesNomes[mesIdx]}/${anoObj}`;
           }
 
-          // 7. Parcelas
           let parcelas = 1;
           if (parcelasRaw && parcelasRaw.trim() !== '') {
-              parcelas = parseInt(parcelasRaw);
+              parcelas = parseInt(parcelasRaw, 10);
               if (isNaN(parcelas) || parcelas < 1) {
-                  motivosErro.push("Número de parcelas inválido");
+                  motivosErro.push("Parcelas inválidas");
               }
           }
 
-          // ROTEAMENTO: SUCESSO OU ERRO?
           if (motivosErro.length > 0) {
-            // Se falhou em algo, manda pra planilha de correção
             linhasComErro.push(`${linhaOriginal};${motivosErro.join(' | ')}`);
           } else {
-            // Se passou em tudo, prepara para salvar no banco
             const valorParcela = valorFinal / parcelas;
             for (let p = 0; p < parcelas; p++) {
               transacoesImportadas.push({
@@ -412,19 +479,17 @@ export default function FaturaCartao() {
               });
             }
           }
-        } // Fim do For Loop
+        }
 
-        // INSERÇÃO E FEEDBACK FINAL
         if (transacoesImportadas.length > 0) {
           const { error } = await supabase.from('transacao_pessoal').insert(transacoesImportadas);
           if (error) {
-            alert('Erro Crítico ao comunicar com o banco: ' + error.message);
+            alert('Erro ao gravar no banco: ' + error.message);
             return;
           }
         }
 
         if (linhasComErro.length > 1) {
-          // Tem erros para mostrar
           const conteudoCsv = linhasComErro.join('\n');
           const blob = new Blob(["\uFEFF" + conteudoCsv], { type: 'text/csv;charset=utf-8;' });
           const url = URL.createObjectURL(blob);
@@ -435,17 +500,15 @@ export default function FaturaCartao() {
           link.click();
           document.body.removeChild(link);
           
-          alert(`⚠️ Importação concluída com ressalvas:\n\n✅ Sucesso: ${transacoesImportadas.length} linhas salvas.\n❌ Erros: ${linhasComErro.length - 1} linha(s) ignoradas.\n\nUm arquivo chamado "erros_importacao_corrigir.csv" foi baixado. Abra ele, leia o motivo do erro na última coluna, corrija o que for necessário e importe ele de novo!`);
+          alert(`⚠️ Processamento concluído com ressalvas:\n\n✅ Sucesso: ${transacoesImportadas.length} parcelas registradas.\n❌ Rejeitadas: ${linhasComErro.length - 1} linhas inconsistentes.\n\nO arquivo 'erros_importacao_corrigir.csv' com as justificativas foi baixado automaticamente.`);
         } else if (transacoesImportadas.length > 0) {
-           alert(`✅ Importação perfeita! ${transacoesImportadas.length} lançamentos salvos no banco.`);
-        } else {
-           alert("A planilha estava vazia ou sem linhas para processar.");
+           alert(`✅ Importação concluída! ${transacoesImportadas.length} lançamentos salvos com sucesso.`);
         }
 
         refetch();
 
       } catch (err) {
-        alert("Erro estrutural ao ler o arquivo CSV. Verifique se ele não está corrompido.");
+        alert("Erro no processamento do arquivo CSV.");
       }
     };
     reader.readAsText(file);
@@ -554,7 +617,7 @@ export default function FaturaCartao() {
                       <td className="py-4 text-center">
                         <div className="flex justify-center gap-1">
                           <Button variant="ghost" size="icon" onClick={() => abrirModalEdicao(t)} className="h-8 w-8 text-zinc-500 hover:text-white"><Edit2 className="w-4 h-4" /></Button>
-                          <Button variant="ghost" size="icon" onClick={() => deletarTransacao(t.id)} className="h-8 w-8 text-zinc-500 hover:text-red-400"><Trash2 className="w-4 h-4" /></Button>
+                          <Button variant="ghost" size="icon" onClick={() => iniciarExclusao(t)} className="h-8 w-8 text-zinc-500 hover:text-red-400"><Trash2 className="w-4 h-4" /></Button>
                         </div>
                       </td>
                     </tr>
@@ -585,6 +648,58 @@ export default function FaturaCartao() {
         </div>
       </div>
 
+      {/* Modal de Exclusão de Parcelas */}
+      {modalExclusaoAberto && transacaoParaExcluir && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-[#1a1a20] rounded-2xl w-full max-w-md border border-white/10 shadow-2xl p-6 animate-fade-in">
+            <div className="flex items-center gap-3 mb-4 text-amber-400">
+              <AlertTriangle className="w-6 h-6 shrink-0" />
+              <h3 className="text-lg font-bold text-white">Excluir Compra Parcelada</h3>
+            </div>
+            
+            <p className="text-sm text-zinc-400 mb-6">
+              A transação <span className="text-white font-semibold">"{transacaoParaExcluir.descricao}"</span> faz parte de uma compra parcelada. Como deseja proceder?
+            </p>
+
+            <div className="space-y-3">
+              <button 
+                onClick={() => executarExclusaoParcelada('APENAS_ESTA')}
+                className="w-full bg-[#22222a] hover:bg-[#2c2c36] border border-white/5 text-white font-semibold py-3 px-4 rounded-xl text-sm transition-all text-left flex justify-between items-center"
+              >
+                <span>Apenas esta parcela</span>
+                <span className="text-xs text-zinc-500">Exclui só este mês</span>
+              </button>
+              
+              <button 
+                onClick={() => executarExclusaoParcelada('DESTA_EM_DIANTE')}
+                className="w-full bg-[#22222a] hover:bg-[#2c2c36] border border-white/5 text-amber-400 font-semibold py-3 px-4 rounded-xl text-sm transition-all text-left flex justify-between items-center"
+              >
+                <span>Desta em diante</span>
+                <span className="text-xs text-zinc-500">Mantém as faturas passadas</span>
+              </button>
+
+              <button 
+                onClick={() => executarExclusaoParcelada('TODAS')}
+                className="w-full bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 font-semibold py-3 px-4 rounded-xl text-sm transition-all text-left flex justify-between items-center"
+              >
+                <span>Todas as parcelas</span>
+                <span className="text-xs text-red-500/70">Apaga o histórico completo</span>
+              </button>
+            </div>
+
+            <div className="mt-6 pt-4 border-t border-white/5 flex justify-end">
+              <button 
+                onClick={() => { setModalExclusaoAberto(false); setTransacaoParaExcluir(null); }}
+                className="px-4 py-2 text-sm text-zinc-400 font-medium hover:text-white transition-colors"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Lançamento / Edição */}
       {modalAberto && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-[#1a1a20] rounded-2xl w-full max-w-2xl border border-white/10 shadow-2xl flex flex-col max-h-[90vh]">
@@ -622,6 +737,22 @@ export default function FaturaCartao() {
 
                 <div className="space-y-5">
                   <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-zinc-400 text-[10px] font-bold uppercase block mb-1.5">Centro de Custo</label>
+                      <select 
+                        required 
+                        value={formCentroCusto} 
+                        onChange={(e) => {
+                          setFormCentroCusto(e.target.value);
+                          setCategoriaSelecionada(null);
+                        }} 
+                        className={cn("w-full bg-[#1e1e24] text-white border rounded-xl p-3 focus:outline-none transition-all text-sm h-[46px] cursor-pointer", formCentroCusto ? "border-white/10" : "border-red-500/50")}
+                      >
+                        <option value="" disabled>⚠️ Selecione</option>
+                        {centrosCusto.map((cc: any) => <option key={cc.id} value={cc.id}>{cc.nome}</option>)}
+                      </select>
+                    </div>
+
                     <div className="relative">
                       <label className="text-zinc-400 text-[10px] font-bold uppercase block mb-1.5">Categoria</label>
                       <button type="button" onClick={() => setDropdownCatAberto(!dropdownCatAberto)} className={cn("w-full bg-[#1e1e24] text-left border rounded-xl p-3 flex justify-between items-center transition-all h-[46px]", dropdownCatAberto ? "border-[#10b981]" : "border-white/10 hover:border-white/20")}>
@@ -640,7 +771,7 @@ export default function FaturaCartao() {
                               <input type="text" autoFocus placeholder="Buscar categoria..." value={buscaCat} onChange={(e) => setBuscaCat(e.target.value)} className="w-full bg-transparent text-sm text-white placeholder-zinc-500 p-1 focus:outline-none" />
                             </div>
                             <div className="overflow-y-auto p-1 custom-scrollbar flex-1">
-                              {categoriasFiltradas.length === 0 ? <p className="p-3 text-xs text-center text-zinc-500">Nenhuma categoria encontrada.</p> : categoriasFiltradas.map((cat: any) => {
+                              {categoriasFiltradas.length === 0 ? <p className="p-3 text-xs text-center text-zinc-500">Nenhuma categoria correspondente.</p> : categoriasFiltradas.map((cat: any) => {
                                   const subsDaCategoria = subcategorias.filter((sub: any) => sub.categoria_id === cat.id);
                                   return (
                                     <div key={cat.id} className="mb-1">
@@ -658,19 +789,11 @@ export default function FaturaCartao() {
                         </>
                       )}
                     </div>
-
-                    <div>
-                      <label className="text-zinc-400 text-[10px] font-bold uppercase block mb-1.5">Centro de Custo</label>
-                      <select required value={formCentroCusto} onChange={(e) => setFormCentroCusto(e.target.value)} className={cn("w-full bg-[#1e1e24] text-white border rounded-xl p-3 focus:outline-none transition-all text-sm h-[46px] cursor-pointer", formCentroCusto ? "border-white/10" : "border-red-500/50")}>
-                        <option value="" disabled>⚠️ Selecione</option>
-                        {centrosCusto.map((cc: any) => <option key={cc.id} value={cc.id}>{cc.nome}</option>)}
-                      </select>
-                    </div>
                   </div>
 
                   <div className="grid grid-cols-1 gap-4">
                     <div>
-                      <label className="text-[#10b981] text-[10px] font-bold uppercase block mb-1.5">Lançar/Alterar Para a Fatura de:</label>
+                      <label className="text-[#10b981] text-[10px] font-bold uppercase block mb-1.5">Fatura de Destino:</label>
                       <select value={formFaturaDestino} onChange={(e) => setFormFaturaDestino(e.target.value)} className="w-full bg-[#10b981]/10 text-[#10b981] font-bold border border-[#10b981]/30 rounded-xl p-3 focus:outline-none transition-all text-sm appearance-none cursor-pointer">
                         {opcoesFatura.map(f => <option key={f} value={f} className="bg-[#1e1e24] text-white">{f}</option>)}
                       </select>
@@ -700,7 +823,7 @@ export default function FaturaCartao() {
 
                   <div>
                     <label className="text-zinc-400 text-xs font-bold uppercase block mb-1.5">Observações (Opcional)</label>
-                    <textarea value={formObservacao} onChange={(e) => setFormObservacao(e.target.value)} rows={3} className="w-full bg-[#1e1e24] text-white border border-white/10 rounded-xl p-3 focus:border-[#10b981] focus:outline-none transition-all resize-none" placeholder="Ex: Presente do Bento..." />
+                    <textarea value={formObservacao} onChange={(e) => setFormObservacao(e.target.value)} rows={3} className="w-full bg-[#1e1e24] text-white border border-white/10 rounded-xl p-3 focus:border-[#10b981] focus:outline-none transition-all resize-none" placeholder="Detalhes adicionais..." />
                   </div>
                 </div>
               </div>
