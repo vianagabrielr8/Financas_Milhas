@@ -20,7 +20,6 @@ export default function FaturaCartao() {
   const [cartaoAtivo, setCartaoAtivo] = useState<any>(null);
   const [modalAberto, setModalAberto] = useState(false);
   
-  // Modal de Exclusão de Parcelas
   const [modalExclusaoAberto, setModalExclusaoAberto] = useState(false);
   const [transacaoParaExcluir, setTransacaoParaExcluir] = useState<any>(null);
 
@@ -362,7 +361,7 @@ export default function FaturaCartao() {
         const text = target?.result as string;
         const rows = text.split('\n').map(r => r.trim()).filter(r => r);
         
-        const transacoesImportadas = [];
+        const transacoesImportadas: any[] = [];
         const linhasComErro = [];
         
         linhasComErro.push("Data;Descricao;Valor;Fatura Alvo;Categoria;Centro Custo;Parcelas;Observacao;MOTIVO DO ERRO");
@@ -384,6 +383,7 @@ export default function FaturaCartao() {
           }
 
           let dataCompraObj: any = null;
+          let dataISO = "";
           const partesData = dataRaw.split('/');
           if (partesData.length !== 3) {
             motivosErro.push("Data fora do padrão DD/MM/AAAA");
@@ -393,6 +393,8 @@ export default function FaturaCartao() {
             dataCompraObj = new Date(`${anoForm}-${partesData[1]}-${partesData[0]}T12:00:00Z`);
             if (isNaN(dataCompraObj.getTime())) {
               motivosErro.push("Data inexistente ou inválida");
+            } else {
+              dataISO = dataCompraObj.toISOString().split('T')[0];
             }
           }
 
@@ -406,6 +408,22 @@ export default function FaturaCartao() {
           if (isNaN(valorFinal) || valorFinal <= 0) {
              motivosErro.push("Valor inválido");
           }
+
+          // Verificação de Duplicatas (Banco e Planilha)
+          const isDuplicadaBanco = transacoes.some((t: any) => 
+            t.descricao.toLowerCase().trim() === desc.trim().toLowerCase() &&
+            Math.abs(Number(t.valor)) === valorFinal &&
+            t.data.startsWith(dataISO)
+          );
+
+          const isDuplicadaPlanilha = transacoesImportadas.some((t: any) => 
+            t.descricao.toLowerCase().trim() === desc.trim().toLowerCase() &&
+            t.valor === valorFinal &&
+            t.data === dataISO
+          );
+
+          if (isDuplicadaBanco) motivosErro.push("Transação já existe no banco");
+          if (isDuplicadaPlanilha && parcelasRaw === '1') motivosErro.push("Transação duplicada dentro da planilha");
 
           let ccMatchId = null;
           let ccEncontradoObj: any = null;
@@ -494,7 +512,7 @@ export default function FaturaCartao() {
             for (let p = 0; p < parcelas; p++) {
               transacoesImportadas.push({
                 cartao_id: cartaoAtivo.id,
-                data: dataCompraObj.toISOString().split('T')[0],
+                data: dataISO,
                 mes_fatura: avancarMesFatura(faturaBaseImportacao, p),
                 descricao: parcelas > 1 ? `${desc.trim()} (${p + 1}/${parcelas})` : desc.trim(),
                 valor: valorParcela,
