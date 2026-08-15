@@ -170,7 +170,6 @@ export default function FaturaCartao() {
   const handleSalvarDespesa = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!cartaoAtivo) return alert('Você precisa ter um cartão ativo.');
-    if (!categoriaSelecionada) return alert('Selecione uma categoria para a despesa.');
     if (!formCentroCusto) return alert('Selecione um Centro de Custo.');
     if (Number(formValor) <= 0) return alert('O valor deve ser maior que zero.');
 
@@ -183,8 +182,8 @@ export default function FaturaCartao() {
         data: formData,
         mes_fatura: formFaturaDestino,
         observacao: formObservacao,
-        categoria_id: categoriaSelecionada.catId,
-        subcategoria_id: categoriaSelecionada.subId || null,
+        categoria_id: categoriaSelecionada?.catId || null,
+        subcategoria_id: categoriaSelecionada?.subId || null,
         centro_custo_id: formCentroCusto,
       }).eq('id', transacaoEditandoId);
 
@@ -211,8 +210,8 @@ export default function FaturaCartao() {
         mes_fatura: avancarMesFatura(formFaturaDestino, i),
         observacao: formObservacao,
         cartao_id: cartaoAtivo.id,
-        categoria_id: categoriaSelecionada.catId,
-        subcategoria_id: categoriaSelecionada.subId || null, 
+        categoria_id: categoriaSelecionada?.catId || null,
+        subcategoria_id: categoriaSelecionada?.subId || null, 
         centro_custo_id: formCentroCusto,
       });
     }
@@ -319,7 +318,7 @@ export default function FaturaCartao() {
              motivosErro.push("Valor inválido (Use formato 00,00)");
           }
 
-          // 4. Validação da Categoria (Se informada)
+          // 4. Validação da Categoria (Opcional)
           let categoriaMatchId = null;
           let subcategoriaMatchId = null;
           if (catRaw && catRaw.trim() !== '') {
@@ -626,8 +625,8 @@ export default function FaturaCartao() {
                     <div className="relative">
                       <label className="text-zinc-400 text-[10px] font-bold uppercase block mb-1.5">Categoria</label>
                       <button type="button" onClick={() => setDropdownCatAberto(!dropdownCatAberto)} className={cn("w-full bg-[#1e1e24] text-left border rounded-xl p-3 flex justify-between items-center transition-all h-[46px]", dropdownCatAberto ? "border-[#10b981]" : "border-white/10 hover:border-white/20")}>
-                        <span className={cn("truncate text-sm", categoriaSelecionada ? "text-white font-medium" : "text-amber-500 font-bold")}>
-                          {categoriaSelecionada ? categoriaSelecionada.nomeDisplay : '⚠️ Selecione'}
+                        <span className={cn("truncate text-sm", categoriaSelecionada ? "text-white font-medium" : "text-zinc-500")}>
+                          {categoriaSelecionada ? categoriaSelecionada.nomeDisplay : 'Sem Categoria (Opcional)'}
                         </span>
                         <ChevronDown className="w-4 h-4 text-zinc-500 flex-shrink-0 ml-2" />
                       </button>
