@@ -355,11 +355,12 @@ export default function FaturaCartao() {
     const file = e.target.files?.[0];
     if (!file || !cartaoAtivo) return;
 
-    // PRÉ-FETCH ABSOLUTO: Busca toda a história do cartão no banco para varrer duplicidade corretamente
+    // AUMENTANDO O LIMITE: Busca até 10 mil transações para garantir que nenhuma duplicata antiga passe
     const { data: transacoesBancoRaw } = await supabase
       .from('transacao_pessoal')
       .select('descricao, valor, data')
-      .eq('cartao_id', cartaoAtivo.id);
+      .eq('cartao_id', cartaoAtivo.id)
+      .limit(10000);
     
     const transacoesBanco = transacoesBancoRaw || [];
 
@@ -417,8 +418,16 @@ export default function FaturaCartao() {
              motivosErro.push("Valor numérico inválido");
           }
 
-          // Lógica Blindada de Verificação de Duplicatas (Banco)
-          const valFinalStr = valorFinal.toFixed(2);
+          let parcelas = 1;
+          if (parcelasRaw && parcelasRaw.trim() !== '') {
+              parcelas = parseInt(parcelasRaw, 10);
+              if (isNaN(parcelas) || parcelas < 1) {
+                  motivosErro.push("Parcelas inválidas");
+              }
+          }
+
+          // A GRANDE CORREÇÃO DA DUPLICATA: Compara usando o valor da PARCELA e não o total
+          const valorDaParcelaStr = (valorFinal / parcelas).toFixed(2);
           const descNormalizada = desc ? desc.replace(/\s+/g, ' ').trim().toLowerCase() : '';
 
           const isDuplicadaBanco = transacoesBanco.some((t: any) => {
@@ -427,16 +436,15 @@ export default function FaturaCartao() {
             const dbData = t.data ? t.data.split('T')[0] : '';
             const descMatch = dbDesc === descNormalizada || dbDesc.startsWith(`${descNormalizada} (`);
             
-            return descMatch && dbVal === valFinalStr && dbData === dataISO;
+            return descMatch && dbVal === valorDaParcelaStr && dbData === dataISO;
           });
 
-          // Duplicata (Planilha) - impede 2 importações na mesma execução
           const isDuplicadaPlanilha = transacoesImportadas.some((t: any) => {
             const planDesc = t.descricao ? t.descricao.replace(/\s+/g, ' ').trim().toLowerCase() : '';
             const planVal = Math.abs(Number(t.valor)).toFixed(2);
             const descMatch = planDesc === descNormalizada || planDesc.startsWith(`${descNormalizada} (`);
             
-            return descMatch && planVal === valFinalStr && t.data === dataISO;
+            return descMatch && planVal === valorDaParcelaStr && t.data === dataISO;
           });
 
           if (isDuplicadaBanco) motivosErro.push("Transação já existe no banco");
@@ -515,14 +523,6 @@ export default function FaturaCartao() {
               if (mesIdx > 11) { mesIdx = 0; anoObj++; }
             }
             faturaBaseImportacao = `${mesesNomes[mesIdx]}/${anoObj}`;
-          }
-
-          let parcelas = 1;
-          if (parcelasRaw && parcelasRaw.trim() !== '') {
-              parcelas = parseInt(parcelasRaw, 10);
-              if (isNaN(parcelas) || parcelas < 1) {
-                  motivosErro.push("Parcelas inválidas");
-              }
           }
 
           if (motivosErro.length > 0) {
