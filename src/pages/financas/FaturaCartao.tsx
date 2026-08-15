@@ -259,6 +259,7 @@ export default function FaturaCartao() {
     document.body.removeChild(link);
   };
 
+  // LOGICA DE IMPORTAÇÃO PARCIAL COM GERAÇÃO DE LOG DE ERRO
   const handleImportarCSV = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !cartaoAtivo) return;
@@ -268,42 +269,60 @@ export default function FaturaCartao() {
       try {
         const text = target?.result as string;
         const rows = text.split('\n').map(r => r.trim()).filter(r => r);
+        
         const transacoesImportadas = [];
-        let errosData = 0;
+        const linhasComErro = [];
+        
+        // Cabeçalho da Planilha de Erro
+        linhasComErro.push("Data;Descricao;Valor;Fatura Alvo (Ex: Ago/2026);Categoria (Opcional);Centro Custo (Opcional);Parcelas (Opcional);Observacao (Opcional);MOTIVO DO ERRO");
 
         for(let i = 1; i < rows.length; i++) {
-          const colunas = rows[i].split(';');
-          if (colunas.length < 3) continue;
+          const linhaOriginal = rows[i];
+          const colunas = linhaOriginal.split(';');
+          let motivosErro = [];
+
+          if (colunas.length < 3) {
+            linhasComErro.push(`${linhaOriginal};Faltam colunas obrigatórias`);
+            continue;
+          }
 
           const [dataRaw, desc, valorRaw, faturaRaw, catRaw, ccRaw, parcelasRaw, obsRaw] = colunas;
           
+          // 1. Validação de Descrição
+          if (!desc || desc.trim() === '') {
+             motivosErro.push("A descrição é obrigatória");
+          }
+
+          // 2. Validação da Data
+          let dataCompraObj: any = null;
           const partesData = dataRaw.split('/');
           if (partesData.length !== 3) {
-            errosData++;
-            continue;
-          }
-          
-          let anoForm = partesData[2].trim();
-          if (anoForm.length === 2) anoForm = "20" + anoForm;
-
-          const dataCompraObj = new Date(`${anoForm}-${partesData[1]}-${partesData[0]}T12:00:00Z`);
-          if (isNaN(dataCompraObj.getTime())) {
-            errosData++;
-            continue;
+            motivosErro.push("Data fora do padrão DD/MM/AAAA");
+          } else {
+            let anoForm = partesData[2].trim();
+            if (anoForm.length === 2) anoForm = "20" + anoForm;
+            dataCompraObj = new Date(`${anoForm}-${partesData[1]}-${partesData[0]}T12:00:00Z`);
+            if (isNaN(dataCompraObj.getTime())) {
+              motivosErro.push("Data inexistente/inválida");
+            }
           }
 
-          let cleanVal = valorRaw.replace('R$', '').trim();
+          // 3. Validação do Valor
+          let cleanVal = valorRaw?.replace('R$', '').trim() || '';
           if (cleanVal.includes('.') && cleanVal.includes(',')) {
              cleanVal = cleanVal.replace(/\./g, '').replace(',', '.');
           } else if (cleanVal.includes(',')) {
              cleanVal = cleanVal.replace(',', '.');
           }
           const valorFinal = parseFloat(cleanVal);
-          if (isNaN(valorFinal)) continue;
+          if (isNaN(valorFinal) || valorFinal <= 0) {
+             motivosErro.push("Valor inválido (Use formato 00,00)");
+          }
 
+          // 4. Validação da Categoria (Se informada)
           let categoriaMatchId = null;
           let subcategoriaMatchId = null;
-          if (catRaw) {
+          if (catRaw && catRaw.trim() !== '') {
             const termo = catRaw.trim().toLowerCase();
             const catEncontrada = categorias.find((c: any) => c.nome.toLowerCase() === termo);
             if (catEncontrada) {
@@ -313,33 +332,44 @@ export default function FaturaCartao() {
               if (subEncontrada) {
                 categoriaMatchId = subEncontrada.categoria_id;
                 subcategoriaMatchId = subEncontrada.id;
+              } else {
+                motivosErro.push(`Categoria '${catRaw.trim()}' não encontrada`);
               }
             }
           }
 
+          // 5. Validação Centro de Custo (Se informado)
           let ccMatchId = null;
-          if (ccRaw) {
+          if (ccRaw && ccRaw.trim() !== '') {
             const ccDigitado = ccRaw.trim().toLowerCase();
             const ccEncontrado = centrosCusto.find((c: any) => c.nome.toLowerCase() === ccDigitado);
-            if (ccEncontrado) ccMatchId = ccEncontrado.id;
-          }
-
-          let faturaBaseImportacao = "";
-          
-          if (faturaRaw && faturaRaw.trim().includes('/')) {
-            const [mRaw, aRaw] = faturaRaw.split('/');
-            const strMes = mRaw.trim().toLowerCase();
-            const mesEncontrado = mesesNomes.find(m => m.toLowerCase() === strMes || m.toLowerCase() === strMes.substring(0,3));
-            
-            let anoFormFatura = aRaw.trim();
-            if (anoFormFatura.length === 2) anoFormFatura = "20" + anoFormFatura;
-
-            if (mesEncontrado) {
-              faturaBaseImportacao = `${mesEncontrado}/${anoFormFatura}`;
+            if (ccEncontrado) {
+              ccMatchId = ccEncontrado.id;
+            } else {
+              motivosErro.push(`Centro de Custo '${ccRaw.trim()}' não encontrado`);
             }
           }
 
-          if (!faturaBaseImportacao) {
+          // 6. Validação Fatura Alvo
+          let faturaBaseImportacao = "";
+          if (faturaRaw && faturaRaw.trim() !== '') {
+            if (faturaRaw.includes('/')) {
+              const [mRaw, aRaw] = faturaRaw.split('/');
+              const strMes = mRaw.trim().toLowerCase();
+              const mesEncontrado = mesesNomes.find(m => m.toLowerCase() === strMes || m.toLowerCase() === strMes.substring(0,3));
+              let anoFormFatura = aRaw.trim();
+              if (anoFormFatura.length === 2) anoFormFatura = "20" + anoFormFatura;
+
+              if (mesEncontrado) {
+                faturaBaseImportacao = `${mesEncontrado}/${anoFormFatura}`;
+              } else {
+                motivosErro.push("Mês da fatura alvo não reconhecido");
+              }
+            } else {
+              motivosErro.push("Fatura Alvo fora do padrão Mês/Ano");
+            }
+          } else if (dataCompraObj && !isNaN(dataCompraObj.getTime())) {
+            // Dedução automática via data e fechamento do cartão
             let mesIdx = dataCompraObj.getUTCMonth();
             let anoObj = dataCompraObj.getUTCFullYear();
             const diaFechamento = cartaoAtivo?.dia_fechamento || 31;
@@ -351,41 +381,72 @@ export default function FaturaCartao() {
             faturaBaseImportacao = `${mesesNomes[mesIdx]}/${anoObj}`;
           }
 
-          const parcelas = parcelasRaw && parseInt(parcelasRaw) > 0 ? parseInt(parcelasRaw) : 1;
-          const valorParcela = valorFinal / parcelas;
-
-          for (let p = 0; p < parcelas; p++) {
-            transacoesImportadas.push({
-              cartao_id: cartaoAtivo.id,
-              data: dataCompraObj.toISOString().split('T')[0],
-              mes_fatura: avancarMesFatura(faturaBaseImportacao, p),
-              descricao: parcelas > 1 ? `${desc.trim()} (${p + 1}/${parcelas})` : desc.trim(),
-              valor: valorParcela,
-              categoria_id: categoriaMatchId,
-              subcategoria_id: subcategoriaMatchId,
-              centro_custo_id: ccMatchId, 
-              tipo: 'DESPESA',
-              situacao: 'PENDENTE',
-              observacao: obsRaw ? obsRaw.trim() : 'Importado via CSV',
-            });
+          // 7. Parcelas
+          let parcelas = 1;
+          if (parcelasRaw && parcelasRaw.trim() !== '') {
+              parcelas = parseInt(parcelasRaw);
+              if (isNaN(parcelas) || parcelas < 1) {
+                  motivosErro.push("Número de parcelas inválido");
+              }
           }
-        }
 
+          // ROTEAMENTO: SUCESSO OU ERRO?
+          if (motivosErro.length > 0) {
+            // Se falhou em algo, manda pra planilha de correção
+            linhasComErro.push(`${linhaOriginal};${motivosErro.join(' | ')}`);
+          } else {
+            // Se passou em tudo, prepara para salvar no banco
+            const valorParcela = valorFinal / parcelas;
+            for (let p = 0; p < parcelas; p++) {
+              transacoesImportadas.push({
+                cartao_id: cartaoAtivo.id,
+                data: dataCompraObj.toISOString().split('T')[0],
+                mes_fatura: avancarMesFatura(faturaBaseImportacao, p),
+                descricao: parcelas > 1 ? `${desc.trim()} (${p + 1}/${parcelas})` : desc.trim(),
+                valor: valorParcela,
+                categoria_id: categoriaMatchId,
+                subcategoria_id: subcategoriaMatchId,
+                centro_custo_id: ccMatchId, 
+                tipo: 'DESPESA',
+                situacao: 'PENDENTE',
+                observacao: obsRaw ? obsRaw.trim() : 'Importado via CSV',
+              });
+            }
+          }
+        } // Fim do For Loop
+
+        // INSERÇÃO E FEEDBACK FINAL
         if (transacoesImportadas.length > 0) {
           const { error } = await supabase.from('transacao_pessoal').insert(transacoesImportadas);
           if (error) {
-            alert('Erro ao importar para o banco: ' + error.message);
-          } else {
-            let msg = `${transacoesImportadas.length} transações importadas com sucesso!`;
-            if (errosData > 0) msg += `\n⚠️ Atenção: ${errosData} linha(s) ignoradas pois a data estava incorreta.`;
-            alert(msg);
-            refetch();
+            alert('Erro Crítico ao comunicar com o banco: ' + error.message);
+            return;
           }
-        } else {
-            alert("Nenhuma transação válida encontrada. Verifique se digitou as colunas corretamente.");
         }
+
+        if (linhasComErro.length > 1) {
+          // Tem erros para mostrar
+          const conteudoCsv = linhasComErro.join('\n');
+          const blob = new Blob(["\uFEFF" + conteudoCsv], { type: 'text/csv;charset=utf-8;' });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.setAttribute("href", url);
+          link.setAttribute("download", "erros_importacao_corrigir.csv");
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          
+          alert(`⚠️ Importação concluída com ressalvas:\n\n✅ Sucesso: ${transacoesImportadas.length} linhas salvas.\n❌ Erros: ${linhasComErro.length - 1} linha(s) ignoradas.\n\nUm arquivo chamado "erros_importacao_corrigir.csv" foi baixado. Abra ele, leia o motivo do erro na última coluna, corrija o que for necessário e importe ele de novo!`);
+        } else if (transacoesImportadas.length > 0) {
+           alert(`✅ Importação perfeita! ${transacoesImportadas.length} lançamentos salvos no banco.`);
+        } else {
+           alert("A planilha estava vazia ou sem linhas para processar.");
+        }
+
+        refetch();
+
       } catch (err) {
-        alert("Erro ao ler o arquivo CSV.");
+        alert("Erro estrutural ao ler o arquivo CSV. Verifique se ele não está corrompido.");
       }
     };
     reader.readAsText(file);
