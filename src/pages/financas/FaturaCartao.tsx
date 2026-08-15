@@ -355,7 +355,7 @@ export default function FaturaCartao() {
     const file = e.target.files?.[0];
     if (!file || !cartaoAtivo) return;
 
-    // Faz um pre-fetch de TODAS as transações deste cartão no banco para travar duplicatas
+    // PRÉ-FETCH ABSOLUTO: Busca toda a história do cartão no banco para varrer duplicidade corretamente
     const { data: transacoesBancoRaw } = await supabase
       .from('transacao_pessoal')
       .select('descricao, valor, data')
@@ -417,11 +417,10 @@ export default function FaturaCartao() {
              motivosErro.push("Valor numérico inválido");
           }
 
-          // Lógica Blindada de Verificação de Duplicatas
+          // Lógica Blindada de Verificação de Duplicatas (Banco)
           const valFinalStr = valorFinal.toFixed(2);
           const descNormalizada = desc ? desc.replace(/\s+/g, ' ').trim().toLowerCase() : '';
 
-          // 1. Procura no Banco inteiro (Ignorando se é parcela ex: "(1/4)")
           const isDuplicadaBanco = transacoesBanco.some((t: any) => {
             const dbDesc = t.descricao ? t.descricao.replace(/\s+/g, ' ').trim().toLowerCase() : '';
             const dbVal = Math.abs(Number(t.valor)).toFixed(2);
@@ -431,7 +430,7 @@ export default function FaturaCartao() {
             return descMatch && dbVal === valFinalStr && dbData === dataISO;
           });
 
-          // 2. Procura nas linhas anteriores da mesma planilha (Pra barrar CTRL+C CTRL+V na planilha)
+          // Duplicata (Planilha) - impede 2 importações na mesma execução
           const isDuplicadaPlanilha = transacoesImportadas.some((t: any) => {
             const planDesc = t.descricao ? t.descricao.replace(/\s+/g, ' ').trim().toLowerCase() : '';
             const planVal = Math.abs(Number(t.valor)).toFixed(2);
@@ -442,7 +441,6 @@ export default function FaturaCartao() {
 
           if (isDuplicadaBanco) motivosErro.push("Transação já existe no banco");
           
-          // Só trava duplicata na planilha se a pessoa importou como 1 parcela. Se mandou parcelado no Excel, a gente ignora.
           if (isDuplicadaPlanilha && (parcelasRaw === '1' || !parcelasRaw)) {
             motivosErro.push("Transação duplicada dentro da própria planilha");
           }
@@ -571,6 +569,8 @@ export default function FaturaCartao() {
           alert(`⚠️ Processamento concluído com ressalvas:\n\n✅ Sucesso: ${transacoesImportadas.length} parcelas registradas.\n❌ Rejeitadas: ${linhasComErro.length - 1} linhas inconsistentes.\n\nO arquivo 'erros_importacao_corrigir.csv' com as justificativas foi baixado automaticamente.`);
         } else if (transacoesImportadas.length > 0) {
            alert(`✅ Importação concluída! ${transacoesImportadas.length} lançamentos salvos com sucesso.`);
+        } else {
+           alert("Nenhuma transação identificada na planilha.");
         }
 
         refetch();
