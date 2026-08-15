@@ -351,9 +351,17 @@ export default function FaturaCartao() {
     document.body.removeChild(link);
   };
 
-  const handleImportarCSV = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImportarCSV = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !cartaoAtivo) return;
+
+    // Faz um pre-fetch de TODAS as transações deste cartão no banco para travar duplicatas
+    const { data: transacoesBancoRaw } = await supabase
+      .from('transacao_pessoal')
+      .select('descricao, valor, data')
+      .eq('cartao_id', cartaoAtivo.id);
+    
+    const transacoesBanco = transacoesBancoRaw || [];
 
     const reader = new FileReader();
     reader.onload = async ({ target }) => {
@@ -406,24 +414,38 @@ export default function FaturaCartao() {
           }
           const valorFinal = parseFloat(cleanVal);
           if (isNaN(valorFinal) || valorFinal <= 0) {
-             motivosErro.push("Valor inválido");
+             motivosErro.push("Valor numérico inválido");
           }
 
-          // Verificação de Duplicatas (Banco e Planilha)
-          const isDuplicadaBanco = transacoes.some((t: any) => 
-            t.descricao.toLowerCase().trim() === desc.trim().toLowerCase() &&
-            Math.abs(Number(t.valor)) === valorFinal &&
-            t.data.startsWith(dataISO)
-          );
+          // Lógica Blindada de Verificação de Duplicatas
+          const valFinalStr = valorFinal.toFixed(2);
+          const descNormalizada = desc ? desc.replace(/\s+/g, ' ').trim().toLowerCase() : '';
 
-          const isDuplicadaPlanilha = transacoesImportadas.some((t: any) => 
-            t.descricao.toLowerCase().trim() === desc.trim().toLowerCase() &&
-            t.valor === valorFinal &&
-            t.data === dataISO
-          );
+          // 1. Procura no Banco inteiro (Ignorando se é parcela ex: "(1/4)")
+          const isDuplicadaBanco = transacoesBanco.some((t: any) => {
+            const dbDesc = t.descricao ? t.descricao.replace(/\s+/g, ' ').trim().toLowerCase() : '';
+            const dbVal = Math.abs(Number(t.valor)).toFixed(2);
+            const dbData = t.data ? t.data.split('T')[0] : '';
+            const descMatch = dbDesc === descNormalizada || dbDesc.startsWith(`${descNormalizada} (`);
+            
+            return descMatch && dbVal === valFinalStr && dbData === dataISO;
+          });
+
+          // 2. Procura nas linhas anteriores da mesma planilha (Pra barrar CTRL+C CTRL+V na planilha)
+          const isDuplicadaPlanilha = transacoesImportadas.some((t: any) => {
+            const planDesc = t.descricao ? t.descricao.replace(/\s+/g, ' ').trim().toLowerCase() : '';
+            const planVal = Math.abs(Number(t.valor)).toFixed(2);
+            const descMatch = planDesc === descNormalizada || planDesc.startsWith(`${descNormalizada} (`);
+            
+            return descMatch && planVal === valFinalStr && t.data === dataISO;
+          });
 
           if (isDuplicadaBanco) motivosErro.push("Transação já existe no banco");
-          if (isDuplicadaPlanilha && parcelasRaw === '1') motivosErro.push("Transação duplicada dentro da planilha");
+          
+          // Só trava duplicata na planilha se a pessoa importou como 1 parcela. Se mandou parcelado no Excel, a gente ignora.
+          if (isDuplicadaPlanilha && (parcelasRaw === '1' || !parcelasRaw)) {
+            motivosErro.push("Transação duplicada dentro da própria planilha");
+          }
 
           let ccMatchId = null;
           let ccEncontradoObj: any = null;
