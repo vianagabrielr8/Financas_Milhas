@@ -25,6 +25,7 @@ export default function FaturaCartao() {
 
   const [transacaoEditandoId, setTransacaoEditandoId] = useState<string | null>(null);
 
+  const [formTipo, setFormTipo] = useState('DESPESA'); // Agora suporta 'ESTORNO'
   const [formDescricao, setFormDescricao] = useState('');
   const [formValor, setFormValor] = useState('');
   const [formData, setFormData] = useState(new Date().toISOString().split('T')[0]);
@@ -110,7 +111,11 @@ export default function FaturaCartao() {
     }
   });
 
-  const totalFatura = transacoes.reduce((acc, curr) => acc + Number(curr.valor), 0);
+  // Matemática abate os ESTORNOS
+  const totalFatura = transacoes.reduce((acc, curr) => {
+    const valor = Number(curr.valor);
+    return curr.tipo === 'ESTORNO' ? acc - valor : acc + valor;
+  }, 0);
 
   const categoriasFiltradas = useMemo(() => {
     let baseCategorias = categorias;
@@ -129,6 +134,7 @@ export default function FaturaCartao() {
 
   const resetarFormulario = () => {
     setTransacaoEditandoId(null);
+    setFormTipo('DESPESA');
     setFormDescricao('');
     setFormValor('');
     setCategoriaSelecionada(null);
@@ -146,6 +152,7 @@ export default function FaturaCartao() {
 
   const abrirModalEdicao = (t: any) => {
     setTransacaoEditandoId(t.id);
+    setFormTipo(t.tipo || 'DESPESA');
     setFormDescricao(t.descricao);
     setFormValor(Math.abs(Number(t.valor)).toString());
     setFormData(t.data); 
@@ -188,6 +195,7 @@ export default function FaturaCartao() {
     
     if (transacaoEditandoId) {
       const { error } = await supabase.from('transacao_pessoal').update({
+        tipo: formTipo,
         descricao: formDescricao,
         valor: valorOriginal,
         data: formData,
@@ -216,7 +224,7 @@ export default function FaturaCartao() {
         descricao: formParcelado ? `${formDescricao} (${i + 1}/${qtdParcelas})` : formDescricao,
         valor: valorParcela,
         situacao: 'PENDENTE', 
-        tipo: 'DESPESA',
+        tipo: formTipo,
         data: formData, 
         mes_fatura: avancarMesFatura(formFaturaDestino, i),
         observacao: formObservacao,
@@ -310,7 +318,7 @@ export default function FaturaCartao() {
     const conteudo = "Data;Descricao;Valor;Fatura Alvo (Ex: Set/2026);Categoria (Opcional);Centro Custo;Parcelas (Opcional);Observacao (Opcional)\n" +
                      "30/08/2026;Uber;26,22;Set/2026;Transporte;360 Gestão;1;Corrida cliente\n" +
                      "15/08/2026;Supermercado;450,00;Set/2026;Alimentação;Familiar;1;Compras do mês\n" +
-                     "20/08/2026;Curso de Formação;1200,00;Set/2026;Educação;Familiar;4;Capacitação";
+                     "20/08/2026;Estorno Anuidade;-120,00;Set/2026;;Familiar;1;Valores negativos viram Estorno automaticamente";
     
     const blob = new Blob(["\uFEFF" + conteudo], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -334,7 +342,10 @@ export default function FaturaCartao() {
       const desc = t.descricao?.replace(/;/g, ',') || '';
       const cat = renderNomeCategoria(t.categoria_id, t.subcategoria_id).replace(/;/g, ',');
       const cc = t.centro_custo_projeto?.nome?.replace(/;/g, ',') || '';
-      const val = Number(t.valor).toFixed(2).replace('.', ',');
+      
+      const multiplicador = t.tipo === 'ESTORNO' ? -1 : 1;
+      const val = (Number(t.valor) * multiplicador).toFixed(2).replace('.', ',');
+      
       const sit = t.situacao || '';
       const obs = t.observacao?.replace(/;/g, ',') || '';
 
@@ -355,10 +366,9 @@ export default function FaturaCartao() {
     const file = e.target.files?.[0];
     if (!file || !cartaoAtivo) return;
 
-    // AUMENTANDO O LIMITE: Busca até 10 mil transações para garantir que nenhuma duplicata antiga passe
     const { data: transacoesBancoRaw } = await supabase
       .from('transacao_pessoal')
-      .select('descricao, valor, data')
+      .select('descricao, valor, data, tipo')
       .eq('cartao_id', cartaoAtivo.id)
       .limit(10000);
     
@@ -413,10 +423,14 @@ export default function FaturaCartao() {
           } else if (cleanVal.includes(',')) {
              cleanVal = cleanVal.replace(',', '.');
           }
-          const valorFinal = parseFloat(cleanVal);
-          if (isNaN(valorFinal) || valorFinal <= 0) {
-             motivosErro.push("Valor numérico inválido");
+          
+          const valorOriginalParsed = parseFloat(cleanVal);
+          if (isNaN(valorOriginalParsed) || valorOriginalParsed === 0) {
+             motivosErro.push("Valor numérico inválido ou nulo");
           }
+
+          const tipoTransacao = valorOriginalParsed < 0 ? 'ESTORNO' : 'DESPESA';
+          const valorFinal = Math.abs(valorOriginalParsed);
 
           let parcelas = 1;
           if (parcelasRaw && parcelasRaw.trim() !== '') {
@@ -424,9 +438,11 @@ export default function FaturaCartao() {
               if (isNaN(parcelas) || parcelas < 1) {
                   motivosErro.push("Parcelas inválidas");
               }
+              if (tipoTransacao === 'ESTORNO' && parcelas > 1) {
+                  motivosErro.push("Estornos não podem ser parcelados");
+              }
           }
 
-          // A GRANDE CORREÇÃO DA DUPLICATA: Compara usando o valor da PARCELA e não o total
           const valorDaParcelaStr = (valorFinal / parcelas).toFixed(2);
           const descNormalizada = desc ? desc.replace(/\s+/g, ' ').trim().toLowerCase() : '';
 
@@ -434,9 +450,10 @@ export default function FaturaCartao() {
             const dbDesc = t.descricao ? t.descricao.replace(/\s+/g, ' ').trim().toLowerCase() : '';
             const dbVal = Math.abs(Number(t.valor)).toFixed(2);
             const dbData = t.data ? t.data.split('T')[0] : '';
+            const dbTipo = t.tipo || 'DESPESA';
             const descMatch = dbDesc === descNormalizada || dbDesc.startsWith(`${descNormalizada} (`);
             
-            return descMatch && dbVal === valorDaParcelaStr && dbData === dataISO;
+            return descMatch && dbVal === valorDaParcelaStr && dbData === dataISO && dbTipo === tipoTransacao;
           });
 
           const isDuplicadaPlanilha = transacoesImportadas.some((t: any) => {
@@ -444,11 +461,10 @@ export default function FaturaCartao() {
             const planVal = Math.abs(Number(t.valor)).toFixed(2);
             const descMatch = planDesc === descNormalizada || planDesc.startsWith(`${descNormalizada} (`);
             
-            return descMatch && planVal === valorDaParcelaStr && t.data === dataISO;
+            return descMatch && planVal === valorDaParcelaStr && t.data === dataISO && t.tipo === tipoTransacao;
           });
 
           if (isDuplicadaBanco) motivosErro.push("Transação já existe no banco");
-          
           if (isDuplicadaPlanilha && (parcelasRaw === '1' || !parcelasRaw)) {
             motivosErro.push("Transação duplicada dentro da própria planilha");
           }
@@ -539,7 +555,7 @@ export default function FaturaCartao() {
                 categoria_id: categoriaMatchId,
                 subcategoria_id: subcategoriaMatchId,
                 centro_custo_id: ccMatchId, 
-                tipo: 'DESPESA',
+                tipo: tipoTransacao,
                 situacao: 'PENDENTE',
                 observacao: obsRaw ? obsRaw.trim() : 'Importado via CSV',
               });
@@ -684,7 +700,11 @@ export default function FaturaCartao() {
                           </span>
                         </div>
                       </td>
-                      <td className="py-4 text-right font-bold text-[#e74c3c] whitespace-nowrap">- R$ {Number(t.valor).toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
+                      <td className="py-4 text-right font-bold whitespace-nowrap">
+                        <span className={t.tipo === 'ESTORNO' ? 'text-[#10b981]' : 'text-[#e74c3c]'}>
+                          {t.tipo === 'ESTORNO' ? '+' : '-'} R$ {Number(t.valor).toLocaleString('pt-BR', {minimumFractionDigits: 2})}
+                        </span>
+                      </td>
                       <td className="py-4 text-center">
                         <div className="flex justify-center gap-1">
                           <Button variant="ghost" size="icon" onClick={() => abrirModalEdicao(t)} className="h-8 w-8 text-zinc-500 hover:text-white"><Edit2 className="w-4 h-4" /></Button>
@@ -778,7 +798,7 @@ export default function FaturaCartao() {
             <div className="px-6 py-5 border-b border-white/10 flex justify-between items-center shrink-0">
               <h2 className="text-xl text-white font-bold flex items-center gap-2">
                 <CreditCard className="text-[#10b981]" size={20} /> 
-                {transacaoEditandoId ? 'Editar Despesa' : 'Lançar Despesa'}
+                {transacaoEditandoId ? 'Editar Lançamento' : 'Novo Lançamento'}
               </h2>
               <button onClick={() => setModalAberto(false)} className="text-zinc-500 hover:text-white transition-colors">✕</button>
             </div>
@@ -787,6 +807,11 @@ export default function FaturaCartao() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 
                 <div className="space-y-5">
+                  <div className="flex bg-[#22222a] p-1 rounded-lg border border-white/5">
+                    <button type="button" onClick={() => setFormTipo('DESPESA')} className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${formTipo === 'DESPESA' ? 'bg-[#e74c3c]/20 text-[#e74c3c] shadow-sm' : 'text-zinc-500 hover:text-zinc-300'}`}>Despesa</button>
+                    <button type="button" onClick={() => setFormTipo('ESTORNO')} className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${formTipo === 'ESTORNO' ? 'bg-[#10b981]/20 text-[#10b981] shadow-sm' : 'text-zinc-500 hover:text-zinc-300'}`}>Estorno na Fatura</button>
+                  </div>
+
                   <div className="grid grid-cols-2 gap-4">
                     <div className="col-span-2">
                       <label className="text-zinc-400 text-[10px] font-bold uppercase block mb-1.5">Data da Compra (Fato Real)</label>
@@ -801,7 +826,7 @@ export default function FaturaCartao() {
                     </div>
                   </div>
                   <div>
-                    <label className="text-zinc-400 text-xs font-bold uppercase block mb-1.5">Descrição da Compra</label>
+                    <label className="text-zinc-400 text-xs font-bold uppercase block mb-1.5">Descrição do Lançamento</label>
                     <input type="text" required value={formDescricao} onChange={(e) => setFormDescricao(e.target.value)} className="w-full bg-[#1e1e24] text-white border border-white/10 rounded-xl p-3 focus:border-[#10b981] focus:outline-none transition-all" placeholder="Ex: Mercado Livre" />
                   </div>
                 </div>
@@ -871,7 +896,7 @@ export default function FaturaCartao() {
                     </div>
                   </div>
 
-                  {!transacaoEditandoId && (
+                  {!transacaoEditandoId && formTipo === 'DESPESA' && (
                     <div className="p-4 bg-[#1e1e24] border border-white/10 rounded-xl">
                       <div className="flex items-center justify-between mb-4">
                         <div>
@@ -903,7 +928,7 @@ export default function FaturaCartao() {
             <div className="p-6 border-t border-white/10 flex justify-end gap-3 shrink-0 bg-[#1a1a20]">
               <button type="button" onClick={() => setModalAberto(false)} className="px-6 py-2.5 text-sm text-zinc-400 font-bold hover:text-white transition-colors">CANCELAR</button>
               <button onClick={handleSalvarDespesa} className="bg-[#10b981] text-black hover:bg-[#059669] px-8 py-2.5 rounded-lg text-sm font-bold transition-all">
-                {transacaoEditandoId ? 'SALVAR ALTERAÇÕES' : 'SALVAR COMPRA'}
+                {transacaoEditandoId ? 'SALVAR ALTERAÇÕES' : 'SALVAR LANÇAMENTO'}
               </button>
             </div>
 
