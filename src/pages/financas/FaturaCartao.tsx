@@ -5,7 +5,7 @@ import { useParams, Link } from 'react-router-dom';
 import { 
   ChevronLeft, ChevronRight, Calendar, DollarSign, Receipt, 
   FileText, Trash2, Edit2, Plus, CreditCard, ChevronDown, 
-  Search, CornerDownRight, Upload, Download, Briefcase, AlertTriangle, X 
+  Search, CornerDownRight, Upload, Download, Briefcase, AlertTriangle, X, DownloadCloud 
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -237,7 +237,6 @@ export default function FaturaCartao() {
     }
   };
 
-  // Gerenciamento de Exclusão de Transações
   const iniciarExclusao = (t: any) => {
     const regexParcela = /\((\d+)\/(\d+)\)$/;
     if (regexParcela.test(t.descricao)) {
@@ -319,6 +318,35 @@ export default function FaturaCartao() {
     const link = document.createElement("a");
     link.setAttribute("href", url);
     link.setAttribute("download", "modelo_importacao_fatura.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const exportarFaturaCSV = () => {
+    if (transacoes.length === 0) {
+      alert('Não há transações nesta fatura para exportar.');
+      return;
+    }
+
+    const cabecalho = "Data;Descrição;Categoria;Centro de Custo;Valor;Situação;Observação\n";
+    const linhas = transacoes.map((t: any) => {
+      const dataFmt = new Date(t.data).toLocaleDateString('pt-BR', {timeZone: 'UTC'});
+      const desc = t.descricao?.replace(/;/g, ',') || '';
+      const cat = renderNomeCategoria(t.categoria_id, t.subcategoria_id).replace(/;/g, ',');
+      const cc = t.centro_custo_projeto?.nome?.replace(/;/g, ',') || '';
+      const val = Number(t.valor).toFixed(2).replace('.', ',');
+      const sit = t.situacao || '';
+      const obs = t.observacao?.replace(/;/g, ',') || '';
+
+      return `${dataFmt};${desc};${cat};${cc};${val};${sit};${obs}`;
+    }).join('\n');
+
+    const blob = new Blob(["\uFEFF" + cabecalho + linhas], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `Fatura_${cartaoAtivo?.nome}_${faturaAtual.replace('/', '-')}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -556,6 +584,9 @@ export default function FaturaCartao() {
         </div>
         
         <div className="flex items-center gap-3">
+          <Button onClick={exportarFaturaCSV} variant="outline" className="border-[#3b82f6]/50 text-[#3b82f6] hover:bg-[#3b82f6]/10 bg-transparent text-xs font-bold h-9">
+            <DownloadCloud className="w-4 h-4 mr-2" /> Exportar Fatura
+          </Button>
           <Button onClick={baixarModeloCSV} variant="outline" className="border-white/10 bg-transparent hover:bg-white/5 text-zinc-400 hover:text-white text-xs font-bold h-9">
             <Download className="w-4 h-4 mr-2" /> Modelo CSV
           </Button>
@@ -793,7 +824,7 @@ export default function FaturaCartao() {
 
                   <div className="grid grid-cols-1 gap-4">
                     <div>
-                      <label className="text-[#10b981] text-[10px] font-bold uppercase block mb-1.5">Fatura de Destino:</label>
+                      <label className="text-[#10b981] text-[10px] font-bold uppercase block mb-1.5">Lançar/Alterar Para a Fatura de:</label>
                       <select value={formFaturaDestino} onChange={(e) => setFormFaturaDestino(e.target.value)} className="w-full bg-[#10b981]/10 text-[#10b981] font-bold border border-[#10b981]/30 rounded-xl p-3 focus:outline-none transition-all text-sm appearance-none cursor-pointer">
                         {opcoesFatura.map(f => <option key={f} value={f} className="bg-[#1e1e24] text-white">{f}</option>)}
                       </select>
