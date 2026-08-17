@@ -5,10 +5,13 @@ import { useParams, Link } from 'react-router-dom';
 import { 
   ChevronLeft, ChevronRight, Calendar, DollarSign, Receipt, 
   FileText, Trash2, Edit2, Plus, CreditCard, ChevronDown, 
-  Search, CornerDownRight, Upload, Download, Briefcase, AlertTriangle, X, DownloadCloud 
+  Search, CornerDownRight, Upload, Download, Briefcase, AlertTriangle, X, DownloadCloud,
+  ArrowUpDown, ArrowUp, ArrowDown
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+
+type SortKey = 'data' | 'descricao' | 'categoria' | 'valor';
 
 export default function FaturaCartao() {
   const { id: urlCardId } = useParams();
@@ -25,7 +28,7 @@ export default function FaturaCartao() {
 
   const [transacaoEditandoId, setTransacaoEditandoId] = useState<string | null>(null);
 
-  const [formTipo, setFormTipo] = useState('DESPESA'); // Agora suporta 'ESTORNO'
+  const [formTipo, setFormTipo] = useState('DESPESA'); 
   const [formDescricao, setFormDescricao] = useState('');
   const [formValor, setFormValor] = useState('');
   const [formData, setFormData] = useState(new Date().toISOString().split('T')[0]);
@@ -38,6 +41,9 @@ export default function FaturaCartao() {
   const [categoriaSelecionada, setCategoriaSelecionada] = useState<{catId: string, subId?: string, nomeDisplay: string} | null>(null);
   const [dropdownCatAberto, setDropdownCatAberto] = useState(false);
   const [buscaCat, setBuscaCat] = useState('');
+
+  // Estados de Ordenação da Tabela
+  const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: 'asc' | 'desc' }>({ key: 'data', direction: 'desc' });
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -103,15 +109,13 @@ export default function FaturaCartao() {
         .from('transacao_pessoal')
         .select('*, centro_custo_projeto(nome)') 
         .eq('cartao_id', cartaoAtivo.id)
-        .eq('mes_fatura', faturaAtual)
-        .order('data', { ascending: false });
+        .eq('mes_fatura', faturaAtual);
       
       if (error) throw error;
       return data || [];
     }
   });
 
-  // Matemática abate os ESTORNOS
   const totalFatura = transacoes.reduce((acc, curr) => {
     const valor = Number(curr.valor);
     return curr.tipo === 'ESTORNO' ? acc - valor : acc + valor;
@@ -132,6 +136,64 @@ export default function FaturaCartao() {
     });
   }, [categorias, subcategorias, buscaCat, formCentroCusto]);
 
+  const renderNomeCategoria = (catId: string, subId?: string) => {
+    if (!catId) return 'A Classificar';
+    const cat = categorias.find((c: any) => c.id === catId);
+    if (!cat) return 'A Classificar';
+    if (subId) {
+      const sub = subcategorias.find((s: any) => s.id === subId);
+      return sub ? `${cat.nome} • ${sub.nome}` : cat.nome;
+    }
+    return cat.nome;
+  };
+
+  // Lógica de Ordenação Dinâmica
+  const transacoesOrdenadas = useMemo(() => {
+    let sortableItems = [...transacoes];
+    
+    sortableItems.sort((a, b) => {
+      if (sortConfig.key === 'data') {
+        const dateA = new Date(a.data).getTime();
+        const dateB = new Date(b.data).getTime();
+        return dateA - dateB;
+      }
+      if (sortConfig.key === 'descricao') {
+        return (a.descricao || '').localeCompare(b.descricao || '');
+      }
+      if (sortConfig.key === 'categoria') {
+        const catA = renderNomeCategoria(a.categoria_id, a.subcategoria_id);
+        const catB = renderNomeCategoria(b.categoria_id, b.subcategoria_id);
+        return catA.localeCompare(catB);
+      }
+      if (sortConfig.key === 'valor') {
+        const valA = a.tipo === 'ESTORNO' ? Number(a.valor) : -Number(a.valor);
+        const valB = b.tipo === 'ESTORNO' ? Number(b.valor) : -Number(b.valor);
+        return valA - valB;
+      }
+      return 0;
+    });
+
+    if (sortConfig.direction === 'desc') {
+      sortableItems.reverse();
+    }
+    
+    return sortableItems;
+  }, [transacoes, sortConfig, categorias, subcategorias]);
+
+  const requestSort = (key: SortKey) => {
+    let direction: 'asc' | 'desc' = 'asc';
+    if (sortConfig.key === key && sortConfig.direction === 'asc') {
+      direction = 'desc';
+    }
+    setSortConfig({ key, direction });
+  };
+
+  const renderSortIcon = (key: SortKey) => {
+    if (sortConfig.key !== key) return <ArrowUpDown className="w-3 h-3 ml-1 opacity-30 group-hover:opacity-100 transition-opacity" />;
+    if (sortConfig.direction === 'asc') return <ArrowUp className="w-3 h-3 ml-1 text-[#10b981]" />;
+    return <ArrowDown className="w-3 h-3 ml-1 text-[#10b981]" />;
+  };
+
   const resetarFormulario = () => {
     setTransacaoEditandoId(null);
     setFormTipo('DESPESA');
@@ -140,6 +202,7 @@ export default function FaturaCartao() {
     setCategoriaSelecionada(null);
     setFormCentroCusto('');
     setFormParcelado(false);
+    setFormParcelas(2);
     setFormObservacao('');
     setFormData(new Date().toISOString().split('T')[0]);
     setFormFaturaDestino(faturaAtual);
@@ -303,17 +366,6 @@ export default function FaturaCartao() {
     refetch();
   };
 
-  const renderNomeCategoria = (catId: string, subId?: string) => {
-    if (!catId) return 'A Classificar';
-    const cat = categorias.find((c: any) => c.id === catId);
-    if (!cat) return 'A Classificar';
-    if (subId) {
-      const sub = subcategorias.find((s: any) => s.id === subId);
-      return sub ? `${cat.nome} • ${sub.nome}` : cat.nome;
-    }
-    return cat.nome;
-  };
-
   const baixarModeloCSV = () => {
     const conteudo = "Data;Descricao;Valor;Fatura Alvo (Ex: Set/2026);Categoria (Opcional);Centro Custo;Parcelas (Opcional);Observacao (Opcional)\n" +
                      "30/08/2026;Uber;26,22;Set/2026;Transporte;360 Gestão;1;Corrida cliente\n" +
@@ -337,7 +389,7 @@ export default function FaturaCartao() {
     }
 
     const cabecalho = "Data;Descrição;Categoria;Centro de Custo;Valor;Situação;Observação\n";
-    const linhas = transacoes.map((t: any) => {
+    const linhas = transacoesOrdenadas.map((t: any) => {
       const dataFmt = new Date(t.data).toLocaleDateString('pt-BR', {timeZone: 'UTC'});
       const desc = t.descricao?.replace(/;/g, ',') || '';
       const cat = renderNomeCategoria(t.categoria_id, t.subcategoria_id).replace(/;/g, ',');
@@ -673,14 +725,28 @@ export default function FaturaCartao() {
 
           <div className="overflow-x-auto">
             <table className="w-full text-sm text-left">
-              <thead className="text-[11px] text-zinc-400 font-bold uppercase border-b border-white/5">
-                <tr><th className="pb-3">Data</th><th className="pb-3">Descrição</th><th className="pb-3">Categoria & C. Custo</th><th className="pb-3 text-right">Valor</th><th className="pb-3 text-center">Ações</th></tr>
+              <thead className="text-[11px] text-zinc-400 font-bold uppercase border-b border-white/5 select-none">
+                <tr>
+                  <th className="pb-3 cursor-pointer group" onClick={() => requestSort('data')}>
+                    <div className="flex items-center">Data {renderSortIcon('data')}</div>
+                  </th>
+                  <th className="pb-3 cursor-pointer group" onClick={() => requestSort('descricao')}>
+                    <div className="flex items-center">Descrição {renderSortIcon('descricao')}</div>
+                  </th>
+                  <th className="pb-3 cursor-pointer group" onClick={() => requestSort('categoria')}>
+                    <div className="flex items-center">Categoria & C. Custo {renderSortIcon('categoria')}</div>
+                  </th>
+                  <th className="pb-3 cursor-pointer group text-right" onClick={() => requestSort('valor')}>
+                    <div className="flex items-center justify-end">Valor {renderSortIcon('valor')}</div>
+                  </th>
+                  <th className="pb-3 text-center">Ações</th>
+                </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
-                {transacoes.length === 0 ? (
+                {transacoesOrdenadas.length === 0 ? (
                    <tr><td colSpan={5} className="py-8 text-center text-zinc-500">Nenhuma compra listada na fatura de {faturaAtual}.</td></tr>
                 ) : (
-                  transacoes.map((t: any) => (
+                  transacoesOrdenadas.map((t: any) => (
                     <tr key={t.id} className="hover:bg-white/[0.02]">
                       <td className="py-4 text-zinc-300 whitespace-nowrap">{new Date(t.data).toLocaleDateString('pt-BR', {timeZone: 'UTC'})}</td>
                       <td className="py-4">
