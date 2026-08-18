@@ -31,14 +31,6 @@ export default function FinancasDashboard() {
     }
   });
 
-  const { data: subcategoriasLista = [] } = useQuery({
-    queryKey: ['subcategorias_dashboard'],
-    queryFn: async () => {
-      const { data } = await supabase.from('subcategoria_pessoal').select('id, nome');
-      return data || [];
-    }
-  });
-
   const formatoFaturaAlvo = useMemo(() => {
     const [anoStr, mesNumStr] = anoMesSelecionado.split('-');
     const mesIdx = parseInt(mesNumStr, 10) - 1;
@@ -66,13 +58,11 @@ export default function FinancasDashboard() {
     let gas = 0;
     let faturas = 0;
     
-    const getCatName = (catId?: string, subId?: string) => {
+    // VISÃO MACRO: Ignora subcategoria e agrupa apenas pela Categoria Principal
+    const getMacroCatName = (catId?: string) => {
       if (!catId) return 'A Classificar';
       const c = categoriasLista.find((x: any) => x.id === catId);
-      const s = subcategoriasLista.find((x: any) => x.id === subId);
-      if (c && s) return `${c.nome} • ${s.nome}`;
-      if (c) return c.nome;
-      return 'A Classificar';
+      return c ? c.nome : 'A Classificar';
     };
 
     const transacoesFiltradas = transacoes.filter((t: any) => {
@@ -81,16 +71,13 @@ export default function FinancasDashboard() {
       
       let bateuMes = false;
       
-      // LÓGICA CORRIGIDA: Trata cartões de crédito x contas correntes
       if (t.cartao_id && t.cartao_id.trim() !== '') {
-        // Se for cartão, a prioridade é o mês da fatura. Se não tiver, cai pra data.
         if (t.mes_fatura) {
           bateuMes = t.mes_fatura.toLowerCase().replace(/\s/g,'') === formatoFaturaAlvo.toLowerCase().replace(/\s/g,'');
         } else if (t.data) {
           bateuMes = t.data.startsWith(anoMesSelecionado);
         }
       } else {
-        // Se for Conta Corrente (ex: Empréstimo, I.R), NÃO TEM FATURA. Lê direto pela Data.
         bateuMes = t.data && t.data.startsWith(anoMesSelecionado);
       }
 
@@ -113,7 +100,8 @@ export default function FinancasDashboard() {
         gas -= val;
         if (t.cartao_id && t.cartao_id.trim() !== '') faturas -= val;
         
-        const catNome = getCatName(t.categoria_id, t.subcategoria_id);
+        // Aplica o Agrupamento MACRO
+        const catNome = getMacroCatName(t.categoria_id);
         if (!mapCategorias[catNome]) {
            mapCategorias[catNome] = { valor: 0, cor: CORES_PALETA[corCatIdx % CORES_PALETA.length] };
            corCatIdx++;
@@ -130,7 +118,8 @@ export default function FinancasDashboard() {
         gas += val;
         if (t.cartao_id && t.cartao_id.trim() !== '') faturas += val; 
 
-        const catNome = getCatName(t.categoria_id, t.subcategoria_id);
+        // Aplica o Agrupamento MACRO
+        const catNome = getMacroCatName(t.categoria_id);
         if (!mapCategorias[catNome]) {
            mapCategorias[catNome] = { valor: 0, cor: CORES_PALETA[corCatIdx % CORES_PALETA.length] };
            corCatIdx++;
@@ -170,7 +159,7 @@ export default function FinancasDashboard() {
       despesasPorCategoria: arrayCategorias,
       custoPorUnidade: arrayCentros
     };
-  }, [transacoes, filtroCentro, anoMesSelecionado, categoriasLista, subcategoriasLista, formatoFaturaAlvo]);
+  }, [transacoes, filtroCentro, anoMesSelecionado, categoriasLista, formatoFaturaAlvo]);
 
   return (
     <div className="space-y-6 max-w-[1600px] mx-auto text-zinc-100 p-6 animate-fade-in">
@@ -231,7 +220,7 @@ export default function FinancasDashboard() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="bg-[#1e1e24] border border-white/5 rounded-2xl p-5 col-span-2 flex flex-col h-[400px]">
-          <h3 className="text-sm font-bold flex items-center gap-2 mb-4 shrink-0"><BarChart3 className="w-4 h-4 text-[#8b5cf6]" /> Despesas por Categoria (Visão Completa)</h3>
+          <h3 className="text-sm font-bold flex items-center gap-2 mb-4 shrink-0"><BarChart3 className="w-4 h-4 text-[#8b5cf6]" /> Despesas por Categoria (Visão Macro)</h3>
           
           <div className="space-y-4 overflow-y-auto pr-3 custom-scrollbar flex-1">
             {despesasPorCategoria.length === 0 ? (
