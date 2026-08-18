@@ -45,8 +45,6 @@ export default function FinancasDashboard() {
     return `${mesesNomes[mesIdx]}/${anoStr}`;
   }, [anoMesSelecionado]);
 
-  // Busca Bruta Otimizada: Removemos o .or() defeituoso. 
-  // Puxamos até 10.000 linhas e filtramos no frontend (rápido e sem erro de sintaxe)
   const { data: transacoes = [] } = useQuery({
     queryKey: ['transacoes_dashboard_brutas'],
     queryFn: async () => {
@@ -55,10 +53,7 @@ export default function FinancasDashboard() {
         .select('*, centro_custo_projeto(nome)')
         .limit(10000); 
         
-      if (error) {
-        console.error("Erro na busca do Dashboard:", error);
-        throw error;
-      }
+      if (error) throw error;
       return data || [];
     }
   });
@@ -68,16 +63,16 @@ export default function FinancasDashboard() {
     let gas = 0;
     let faturas = 0;
     
+    // A correção: Se tem categoria mas NÃO tem subcategoria, retorna a categoria pai.
     const getCatName = (catId?: string, subId?: string) => {
       if (!catId) return 'A Classificar';
       const c = categoriasLista.find((x: any) => x.id === catId);
       const s = subcategoriasLista.find((x: any) => x.id === subId);
       if (c && s) return `${c.nome} • ${s.nome}`;
-      if (c) return c.nome;
+      if (c) return c.nome; // ← A MÁGICA ESTÁ AQUI
       return 'A Classificar';
     };
 
-    // O Filtro à prova de balas
     const transacoesFiltradas = transacoes.filter((t: any) => {
       const centroNome = t.centro_custo_projeto?.nome || 'Sem Centro';
       const bateuCentro = filtroCentro === 'Todos (Visão Global)' || centroNome === filtroCentro;
