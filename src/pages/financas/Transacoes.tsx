@@ -1,8 +1,9 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { Search, Plus, Filter, FileText, ChevronDown, Check, Trash2, Edit2, TrendingUp, TrendingDown, Wallet } from 'lucide-react';
+import { Search, Plus, Filter, FileText, ChevronDown, Check, Trash2, Edit2, TrendingUp, TrendingDown, Wallet, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 
 export default function Transacoes() {
   const queryClient = useQueryClient();
@@ -163,7 +164,6 @@ export default function Transacoes() {
         </div>
       </div>
 
-      {/* CARDS TOTALIZADORES DOS FILTROS */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-[#1e1e24] border border-white/5 rounded-xl p-5 hover:border-white/10 transition-colors">
           <div className="flex justify-between items-start">
