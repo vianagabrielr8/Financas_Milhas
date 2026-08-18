@@ -31,19 +31,29 @@ export default function FinancasDashboard() {
     }
   });
 
-  const formatoFaturaAlvo = useMemo(() => {
+  // PREPARA OS DADOS EXATAMENTE IGUAL À TELA DE TRANSAÇÕES
+  const { dataInicio, dataFim, mesFaturaStr } = useMemo(() => {
     const [anoStr, mesNumStr] = anoMesSelecionado.split('-');
-    const mesIdx = parseInt(mesNumStr, 10) - 1;
-    return `${mesesNomes[mesIdx]}/${anoStr}`;
+    const anoNum = Number(anoStr);
+    const mesNum = Number(mesNumStr);
+    
+    const ultimoDia = new Date(anoNum, mesNum, 0).getDate();
+    const dInicio = `${anoStr}-${mesNumStr}-01`;
+    const dFim = `${anoStr}-${mesNumStr}-${ultimoDia}`;
+    const faturaStr = `${mesesNomes[mesNum - 1]}/${anoStr}`;
+    
+    return { dataInicio: dInicio, dataFim: dFim, mesFaturaStr: faturaStr };
   }, [anoMesSelecionado]);
 
+  // BUSCA SINCRONIZADA COM A TELA DE TRANSAÇÕES
   const { data: transacoes = [] } = useQuery({
-    queryKey: ['transacoes_dashboard_brutas'],
+    queryKey: ['transacoes_dashboard', dataInicio, dataFim, mesFaturaStr],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('transacao_pessoal')
         .select('*, centro_custo_projeto(nome)')
-        .limit(10000); 
+        .or(`and(cartao_id.is.null,data.gte.${dataInicio},data.lte.${dataFim}),and(cartao_id.not.is.null,mes_fatura.eq.${mesFaturaStr})`)
+        .order('data', { ascending: false });
         
       if (error) {
         console.error("Erro na busca do Dashboard:", error);
@@ -58,30 +68,16 @@ export default function FinancasDashboard() {
     let gas = 0;
     let faturas = 0;
     
-    // VISÃO MACRO: Ignora subcategoria e agrupa apenas pela Categoria Principal
     const getMacroCatName = (catId?: string) => {
       if (!catId) return 'A Classificar';
       const c = categoriasLista.find((x: any) => x.id === catId);
       return c ? c.nome : 'A Classificar';
     };
 
+    // O filtro de data já foi feito pelo Supabase. Filtramos só o Centro de Custo no Front.
     const transacoesFiltradas = transacoes.filter((t: any) => {
       const centroNome = t.centro_custo_projeto?.nome || 'Sem Centro';
-      const bateuCentro = filtroCentro === 'Todos (Visão Global)' || centroNome === filtroCentro;
-      
-      let bateuMes = false;
-      
-      if (t.cartao_id && t.cartao_id.trim() !== '') {
-        if (t.mes_fatura) {
-          bateuMes = t.mes_fatura.toLowerCase().replace(/\s/g,'') === formatoFaturaAlvo.toLowerCase().replace(/\s/g,'');
-        } else if (t.data) {
-          bateuMes = t.data.startsWith(anoMesSelecionado);
-        }
-      } else {
-        bateuMes = t.data && t.data.startsWith(anoMesSelecionado);
-      }
-
-      return bateuCentro && bateuMes;
+      return filtroCentro === 'Todos (Visão Global)' || centroNome === filtroCentro;
     });
 
     const mapCategorias: Record<string, { valor: number, cor: string }> = {};
@@ -100,7 +96,6 @@ export default function FinancasDashboard() {
         gas -= val;
         if (t.cartao_id && t.cartao_id.trim() !== '') faturas -= val;
         
-        // Aplica o Agrupamento MACRO
         const catNome = getMacroCatName(t.categoria_id);
         if (!mapCategorias[catNome]) {
            mapCategorias[catNome] = { valor: 0, cor: CORES_PALETA[corCatIdx % CORES_PALETA.length] };
@@ -118,7 +113,6 @@ export default function FinancasDashboard() {
         gas += val;
         if (t.cartao_id && t.cartao_id.trim() !== '') faturas += val; 
 
-        // Aplica o Agrupamento MACRO
         const catNome = getMacroCatName(t.categoria_id);
         if (!mapCategorias[catNome]) {
            mapCategorias[catNome] = { valor: 0, cor: CORES_PALETA[corCatIdx % CORES_PALETA.length] };
@@ -159,7 +153,7 @@ export default function FinancasDashboard() {
       despesasPorCategoria: arrayCategorias,
       custoPorUnidade: arrayCentros
     };
-  }, [transacoes, filtroCentro, anoMesSelecionado, categoriasLista, formatoFaturaAlvo]);
+  }, [transacoes, filtroCentro, categoriasLista]);
 
   return (
     <div className="space-y-6 max-w-[1600px] mx-auto text-zinc-100 p-6 animate-fade-in">
