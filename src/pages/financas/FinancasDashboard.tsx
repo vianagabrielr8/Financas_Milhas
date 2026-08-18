@@ -53,7 +53,10 @@ export default function FinancasDashboard() {
         .select('*, centro_custo_projeto(nome)')
         .limit(10000); 
         
-      if (error) throw error;
+      if (error) {
+        console.error("Erro na busca do Dashboard:", error);
+        throw error;
+      }
       return data || [];
     }
   });
@@ -63,13 +66,12 @@ export default function FinancasDashboard() {
     let gas = 0;
     let faturas = 0;
     
-    // A correção: Se tem categoria mas NÃO tem subcategoria, retorna a categoria pai.
     const getCatName = (catId?: string, subId?: string) => {
       if (!catId) return 'A Classificar';
       const c = categoriasLista.find((x: any) => x.id === catId);
       const s = subcategoriasLista.find((x: any) => x.id === subId);
       if (c && s) return `${c.nome} • ${s.nome}`;
-      if (c) return c.nome; // ← A MÁGICA ESTÁ AQUI
+      if (c) return c.nome;
       return 'A Classificar';
     };
 
@@ -78,13 +80,17 @@ export default function FinancasDashboard() {
       const bateuCentro = filtroCentro === 'Todos (Visão Global)' || centroNome === filtroCentro;
       
       let bateuMes = false;
+      
+      // LÓGICA CORRIGIDA: Trata cartões de crédito x contas correntes
       if (t.cartao_id && t.cartao_id.trim() !== '') {
+        // Se for cartão, a prioridade é o mês da fatura. Se não tiver, cai pra data.
         if (t.mes_fatura) {
           bateuMes = t.mes_fatura.toLowerCase().replace(/\s/g,'') === formatoFaturaAlvo.toLowerCase().replace(/\s/g,'');
         } else if (t.data) {
           bateuMes = t.data.startsWith(anoMesSelecionado);
         }
       } else {
+        // Se for Conta Corrente (ex: Empréstimo, I.R), NÃO TEM FATURA. Lê direto pela Data.
         bateuMes = t.data && t.data.startsWith(anoMesSelecionado);
       }
 
