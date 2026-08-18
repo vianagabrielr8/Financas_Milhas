@@ -284,15 +284,19 @@ export default function FaturaCartao() {
   };
 
   const lidarComCalculadora = (calc: string) => {
+    if (!calc || !calc.trim()) return;
     try {
-      const resultado = Function(`"use strict";return (${calc})`)();
+      // Substitui as vírgulas por pontos para o Javascript entender as casas decimais antes de calcular
+      const expressaoTratada = calc.replace(/,/g, '.');
+      const resultado = Function(`"use strict";return (${expressaoTratada})`)();
+      
       if (!isNaN(resultado) && isFinite(resultado)) {
         setFormValor(Math.abs(resultado).toFixed(2));
         setCalcAberto(false);
         setCalcVisor('');
       }
     } catch {
-      alert("Expressão inválida na calculadora.");
+      alert("Expressão matemática inválida. Verifique os números e operadores.");
     }
   };
 
@@ -662,7 +666,9 @@ export default function FaturaCartao() {
             if (catEncontrada) {
               if (ccMatchId && catEncontrada.centro_custo_id && catEncontrada.centro_custo_id !== ccMatchId) {
                 motivosErro.push(`Categoria '${catEncontrada.nome}' não pertence ao CC '${ccEncontradoObj?.nome}'`);
-              } else categoriaMatchId = catEncontrada.id;
+              } else {
+                categoriaMatchId = catEncontrada.id;
+              }
             } else {
               const subEncontrada = subcategorias.find((s: any) => s.nome.toLowerCase() === termo);
               if (subEncontrada) {
@@ -999,7 +1005,7 @@ export default function FaturaCartao() {
                         <div className="absolute top-[110%] right-0 z-50 bg-[#22222a] border border-white/10 p-3 rounded-xl shadow-2xl w-64 animate-fade-in">
                           <input type="text" autoFocus value={calcVisor} onChange={(e) => setCalcVisor(e.target.value)} placeholder="Ex: 50.40 + 20 * 2" className="w-full bg-[#141417] text-white text-right p-2 rounded-lg mb-2 focus:outline-none border border-white/5" onKeyDown={(e) => { if(e.key === 'Enter') { e.preventDefault(); lidarComCalculadora(calcVisor); } }} />
                           <div className="grid grid-cols-4 gap-1.5">
-                            {['7','8','9','/','4','5','6','*','1','2','3','-','C','0','.','+'].map(btn => (
+                            {['7','8','9','/','4','5','6','*','1','2','3','-','C','0',',','+'].map(btn => (
                               <button type="button" key={btn} onClick={() => { if(btn === 'C') setCalcVisor(''); else setCalcVisor(prev => prev + btn); }} className="bg-[#1a1a20] hover:bg-white/10 text-white font-bold py-2 rounded-lg transition-colors">{btn}</button>
                             ))}
                             <button type="button" onClick={() => lidarComCalculadora(calcVisor)} className="col-span-4 bg-[#10b981] hover:bg-[#059669] text-black font-bold py-2 rounded-lg transition-colors mt-1">=</button>
