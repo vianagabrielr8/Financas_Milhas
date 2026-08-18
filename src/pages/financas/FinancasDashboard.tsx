@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Landmark, ArrowUpCircle, ArrowDownCircle, Calendar, Layers, PieChart, BarChart3, AlertTriangle, Wallet } from 'lucide-react';
 
-const CORES_PALETA = ['#8b5cf6', '#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#ec4899', '#06b6d4', '#14b8a6'];
+const CORES_PALETA = ['#8b5cf6', '#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#ec4899', '#06b6d4', '#14b8a6', '#f43f5e', '#84cc16', '#a855f7', '#0ea5e9'];
 
 export default function FinancasDashboard() {
   const mesesNomes = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
@@ -15,22 +15,52 @@ export default function FinancasDashboard() {
   const [anoMesSelecionado, setAnoMesSelecionado] = useState(`${anoAtual}-${mesAtualNum}`);
   const [filtroCentro, setFiltroCentro] = useState('Todos (Visão Global)');
 
+  // Buscas Seguras de Relacionamentos (Sem quebrar o Join do Supabase)
   const { data: centrosCusto = [] } = useQuery({
-    queryKey: ['centros_custo_dashboard_fix'],
+    queryKey: ['centros_custo_dashboard'],
     queryFn: async () => {
-      const { data } = await supabase.from('centro_custo_projeto').select('nome').order('nome');
+      const { data } = await supabase.from('centro_custo_projeto').select('id, nome').order('nome');
       return data || [];
     }
   });
 
+  const { data: categoriasLista = [] } = useQuery({
+    queryKey: ['categorias_dashboard'],
+    queryFn: async () => {
+      const { data } = await supabase.from('categoria_pessoal').select('id, nome');
+      return data || [];
+    }
+  });
+
+  const { data: subcategoriasLista = [] } = useQuery({
+    queryKey: ['subcategorias_dashboard'],
+    queryFn: async () => {
+      const { data } = await supabase.from('subcategoria_pessoal').select('id, nome');
+      return data || [];
+    }
+  });
+
+  // Converte a data do input (2026-09) para o formato alvo da fatura (Set/2026)
+  const formatoFaturaAlvo = useMemo(() => {
+    const [anoStr, mesNumStr] = anoMesSelecionado.split('-');
+    const mesIdx = parseInt(mesNumStr, 10) - 1;
+    return `${mesesNomes[mesIdx]}/${anoStr}`;
+  }, [anoMesSelecionado]);
+
+  // Busca Otimizada: Filtra no Banco para escapar do limite de 1000 linhas
   const { data: transacoes = [] } = useQuery({
-    queryKey: ['transacoes_dashboard_fix'],
+    queryKey: ['transacoes_dashboard_fix_v3', anoMesSelecionado, formatoFaturaAlvo],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('transacao_pessoal')
-        .select('*, categoria_pessoal(nome), centro_custo_projeto(nome)');
+        .select('*, centro_custo_projeto(nome)')
+        .or(`mes_fatura.ilike.${formatoFaturaAlvo},data.ilike.${anoMesSelecionado}%`)
+        .limit(10000); // Garante que lê todo o volume mensal
         
-      if (error) throw error;
+      if (error) {
+        console.error("Erro na busca do Dashboard:", error);
+        throw error;
+      }
       return data || [];
     }
   });
@@ -40,17 +70,22 @@ export default function FinancasDashboard() {
     let gas = 0;
     let faturas = 0;
     
-    const [anoStr, mesNumStr] = anoMesSelecionado.split('-');
-    const mesIdx = parseInt(mesNumStr, 10) - 1;
-    const nomeMesAbrev = mesesNomes[mesIdx];
-    const formatoFaturaAlvo = `${nomeMesAbrev}/${anoStr}`;
+    // Função auxiliar para mapear o nome exato da Categoria/Subcategoria
+    const getCatName = (catId?: string, subId?: string) => {
+      if (!catId) return 'A Classificar';
+      const c = categoriasLista.find((x: any) => x.id === catId);
+      const s = subcategoriasLista.find((x: any) => x.id === subId);
+      if (c && s) return `${c.nome} • ${s.nome}`;
+      if (c) return c.nome;
+      return 'A Classificar';
+    };
 
     const transacoesFiltradas = transacoes.filter((t: any) => {
       const centroNome = t.centro_custo_projeto?.nome || 'Sem Centro';
       const bateuCentro = filtroCentro === 'Todos (Visão Global)' || centroNome === filtroCentro;
       
       let bateuMes = false;
-      if (t.cartao_id) {
+      if (t.cartao_id && t.cartao_id.trim() !== '') {
         if (t.mes_fatura) {
           bateuMes = t.mes_fatura.toLowerCase().replace(/\s/g,'') === formatoFaturaAlvo.toLowerCase().replace(/\s/g,'');
         } else if (t.data) {
@@ -70,16 +105,36 @@ export default function FinancasDashboard() {
     let corCcIdx = 0;
 
     transacoesFiltradas.forEach((t: any) => {
-      const val = Number(t.valor) || 0;
+      // Força o valor absoluto para garantir contas cravadas independentes de sinal no banco
+      const val = Math.abs(Number(t.valor) || 0);
       const tipo = t.tipo?.toUpperCase() || 'DESPESA';
       
       if (tipo === 'RECEITA') {
         fat += val;
-      } else {
-        gas += val;
-        if (t.cartao_id) faturas += val; 
+      } else if (tipo === 'ESTORNO') {
+        // Estorno ABATE da despesa
+        gas -= val;
+        if (t.cartao_id && t.cartao_id.trim() !== '') faturas -= val;
+        
+        const catNome = getCatName(t.categoria_id, t.subcategoria_id);
+        if (!mapCategorias[catNome]) {
+           mapCategorias[catNome] = { valor: 0, cor: CORES_PALETA[corCatIdx % CORES_PALETA.length] };
+           corCatIdx++;
+        }
+        mapCategorias[catNome].valor -= val;
 
-        const catNome = t.categoria_pessoal?.nome || 'A Classificar';
+        const ccNome = t.centro_custo_projeto?.nome || 'Sem Centro';
+        if (!mapCentros[ccNome]) {
+           mapCentros[ccNome] = { valor: 0, cor: CORES_PALETA[corCcIdx % CORES_PALETA.length] };
+           corCcIdx++;
+        }
+        mapCentros[ccNome].valor -= val;
+      } else {
+        // Despesa NORMAL
+        gas += val;
+        if (t.cartao_id && t.cartao_id.trim() !== '') faturas += val; 
+
+        const catNome = getCatName(t.categoria_id, t.subcategoria_id);
         if (!mapCategorias[catNome]) {
            mapCategorias[catNome] = { valor: 0, cor: CORES_PALETA[corCatIdx % CORES_PALETA.length] };
            corCatIdx++;
@@ -98,6 +153,7 @@ export default function FinancasDashboard() {
     const totalDespesasGrafico = Object.values(mapCategorias).reduce((acc, curr) => acc + curr.valor, 0);
     
     const arrayCategorias = Object.entries(mapCategorias)
+      .filter(([_, obj]) => obj.valor > 0) // Esconde categorias que zeraram por causa de estorno
       .map(([cat, obj]) => ({
         cat,
         valor: obj.valor,
@@ -107,6 +163,7 @@ export default function FinancasDashboard() {
       .sort((a, b) => b.valor - a.valor); 
 
     const arrayCentros = Object.entries(mapCentros)
+      .filter(([_, obj]) => obj.valor > 0)
       .map(([cc, obj]) => ({ cc, valor: obj.valor, cor: obj.cor }))
       .sort((a, b) => b.valor - a.valor);
 
@@ -117,7 +174,7 @@ export default function FinancasDashboard() {
       despesasPorCategoria: arrayCategorias,
       custoPorUnidade: arrayCentros
     };
-  }, [transacoes, filtroCentro, anoMesSelecionado]);
+  }, [transacoes, filtroCentro, anoMesSelecionado, categoriasLista, subcategoriasLista, formatoFaturaAlvo]);
 
   return (
     <div className="space-y-6 max-w-[1600px] mx-auto text-zinc-100 p-6 animate-fade-in">
@@ -143,7 +200,7 @@ export default function FinancasDashboard() {
             <Layers className="w-4 h-4 text-gray-400" />
             <select value={filtroCentro} onChange={(e) => setFiltroCentro(e.target.value)} className="bg-transparent text-xs font-semibold text-white focus:outline-none cursor-pointer appearance-none max-w-[150px] truncate">
               <option value="Todos (Visão Global)" className="bg-[#1a1a20]">Todos (Visão Global)</option>
-              {centrosCusto.map((cc: any) => <option key={cc.nome} value={cc.nome} className="bg-[#1a1a20]">{cc.nome}</option>)}
+              {centrosCusto.map((cc: any) => <option key={cc.id} value={cc.nome} className="bg-[#1a1a20]">{cc.nome}</option>)}
             </select>
           </div>
         </div>
