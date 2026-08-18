@@ -15,7 +15,6 @@ export default function FinancasDashboard() {
   const [anoMesSelecionado, setAnoMesSelecionado] = useState(`${anoAtual}-${mesAtualNum}`);
   const [filtroCentro, setFiltroCentro] = useState('Todos (Visão Global)');
 
-  // Buscas Seguras de Relacionamentos (Sem quebrar o Join do Supabase)
   const { data: centrosCusto = [] } = useQuery({
     queryKey: ['centros_custo_dashboard'],
     queryFn: async () => {
@@ -40,22 +39,21 @@ export default function FinancasDashboard() {
     }
   });
 
-  // Converte a data do input (2026-09) para o formato alvo da fatura (Set/2026)
   const formatoFaturaAlvo = useMemo(() => {
     const [anoStr, mesNumStr] = anoMesSelecionado.split('-');
     const mesIdx = parseInt(mesNumStr, 10) - 1;
     return `${mesesNomes[mesIdx]}/${anoStr}`;
   }, [anoMesSelecionado]);
 
-  // Busca Otimizada: Filtra no Banco para escapar do limite de 1000 linhas
+  // Busca Bruta Otimizada: Removemos o .or() defeituoso. 
+  // Puxamos até 10.000 linhas e filtramos no frontend (rápido e sem erro de sintaxe)
   const { data: transacoes = [] } = useQuery({
-    queryKey: ['transacoes_dashboard_fix_v3', anoMesSelecionado, formatoFaturaAlvo],
+    queryKey: ['transacoes_dashboard_brutas'],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('transacao_pessoal')
         .select('*, centro_custo_projeto(nome)')
-        .or(`mes_fatura.ilike.${formatoFaturaAlvo},data.ilike.${anoMesSelecionado}%`)
-        .limit(10000); // Garante que lê todo o volume mensal
+        .limit(10000); 
         
       if (error) {
         console.error("Erro na busca do Dashboard:", error);
@@ -70,7 +68,6 @@ export default function FinancasDashboard() {
     let gas = 0;
     let faturas = 0;
     
-    // Função auxiliar para mapear o nome exato da Categoria/Subcategoria
     const getCatName = (catId?: string, subId?: string) => {
       if (!catId) return 'A Classificar';
       const c = categoriasLista.find((x: any) => x.id === catId);
@@ -80,6 +77,7 @@ export default function FinancasDashboard() {
       return 'A Classificar';
     };
 
+    // O Filtro à prova de balas
     const transacoesFiltradas = transacoes.filter((t: any) => {
       const centroNome = t.centro_custo_projeto?.nome || 'Sem Centro';
       const bateuCentro = filtroCentro === 'Todos (Visão Global)' || centroNome === filtroCentro;
@@ -105,14 +103,12 @@ export default function FinancasDashboard() {
     let corCcIdx = 0;
 
     transacoesFiltradas.forEach((t: any) => {
-      // Força o valor absoluto para garantir contas cravadas independentes de sinal no banco
       const val = Math.abs(Number(t.valor) || 0);
       const tipo = t.tipo?.toUpperCase() || 'DESPESA';
       
       if (tipo === 'RECEITA') {
         fat += val;
       } else if (tipo === 'ESTORNO') {
-        // Estorno ABATE da despesa
         gas -= val;
         if (t.cartao_id && t.cartao_id.trim() !== '') faturas -= val;
         
@@ -130,7 +126,6 @@ export default function FinancasDashboard() {
         }
         mapCentros[ccNome].valor -= val;
       } else {
-        // Despesa NORMAL
         gas += val;
         if (t.cartao_id && t.cartao_id.trim() !== '') faturas += val; 
 
@@ -153,7 +148,7 @@ export default function FinancasDashboard() {
     const totalDespesasGrafico = Object.values(mapCategorias).reduce((acc, curr) => acc + curr.valor, 0);
     
     const arrayCategorias = Object.entries(mapCategorias)
-      .filter(([_, obj]) => obj.valor > 0) // Esconde categorias que zeraram por causa de estorno
+      .filter(([_, obj]) => obj.valor > 0) 
       .map(([cat, obj]) => ({
         cat,
         valor: obj.valor,
