@@ -21,6 +21,8 @@ export default function FaturaCartao() {
   const [anoSelecionado, setAnoSelecionado] = useState(new Date().getFullYear());
 
   const [cartaoAtivo, setCartaoAtivo] = useState<any>(null);
+  const [filtroVinculado, setFiltroVinculado] = useState<string | 'ALL'>('ALL');
+  
   const [modalAberto, setModalAberto] = useState(false);
   
   // Exclusão
@@ -93,6 +95,24 @@ export default function FaturaCartao() {
     }
   }, [cartoes, urlCardId]);
 
+  useEffect(() => {
+    setFiltroVinculado('ALL');
+  }, [cartaoAtivo, mesSelecionado, anoSelecionado]);
+
+  const { data: cartoesVinculados = [] } = useQuery({
+    queryKey: ['cartoes_vinculados', cartaoAtivo?.id],
+    enabled: !!cartaoAtivo,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('cartao_vinculado')
+        .select('*')
+        .eq('cartao_pessoal_id', cartaoAtivo.id)
+        .order('nome_impresso');
+      if (error) throw error;
+      return data || [];
+    }
+  });
+
   const { data: centrosCusto = [] } = useQuery({
     queryKey: ['centros_custo_projeto'],
     queryFn: async () => {
@@ -134,7 +154,13 @@ export default function FaturaCartao() {
     }
   });
 
-  const totalFatura = transacoes.reduce((acc, curr) => {
+  const transacoesFiltradas = useMemo(() => {
+    if (filtroVinculado === 'ALL') return transacoes;
+    if (filtroVinculado === 'MAIN') return transacoes.filter((t: any) => !t.cartao_vinculado_id);
+    return transacoes.filter((t: any) => t.cartao_vinculado_id === filtroVinculado);
+  }, [transacoes, filtroVinculado]);
+
+  const totalFatura = transacoesFiltradas.reduce((acc, curr) => {
     const valor = Number(curr.valor);
     return curr.tipo === 'ESTORNO' ? acc - valor : acc + valor;
   }, 0);
@@ -188,7 +214,7 @@ export default function FaturaCartao() {
   };
 
   const transacoesOrdenadas = useMemo(() => {
-    let sortableItems = [...transacoes];
+    let sortableItems = [...transacoesFiltradas];
     sortableItems.sort((a, b) => {
       if (sortConfig.key === 'data') {
         return new Date(a.data).getTime() - new Date(b.data).getTime();
@@ -210,7 +236,7 @@ export default function FaturaCartao() {
     });
     if (sortConfig.direction === 'desc') sortableItems.reverse();
     return sortableItems;
-  }, [transacoes, sortConfig, categorias, subcategorias]);
+  }, [transacoesFiltradas, sortConfig, categorias, subcategorias]);
 
   const requestSort = (key: SortKey) => {
     let direction: 'asc' | 'desc' = 'asc';
@@ -286,7 +312,6 @@ export default function FaturaCartao() {
   const lidarComCalculadora = (calc: string) => {
     if (!calc || !calc.trim()) return;
     try {
-      // Substitui as vírgulas por pontos para o Javascript entender as casas decimais antes de calcular
       const expressaoTratada = calc.replace(/,/g, '.');
       const resultado = Function(`"use strict";return (${expressaoTratada})`)();
       
@@ -377,6 +402,7 @@ export default function FaturaCartao() {
               mes_fatura: faturaAlvo,
               observacao: formObservacao,
               cartao_id: cartaoAtivo.id,
+              cartao_vinculado_id: filtroVinculado === 'ALL' || filtroVinculado === 'MAIN' ? null : filtroVinculado,
               categoria_id: r.cat?.catId || null,
               subcategoria_id: r.cat?.subId || null, 
               centro_custo_id: r.cc,
@@ -393,6 +419,7 @@ export default function FaturaCartao() {
           mes_fatura: faturaAlvo,
           observacao: formObservacao,
           cartao_id: cartaoAtivo.id,
+          cartao_vinculado_id: filtroVinculado === 'ALL' || filtroVinculado === 'MAIN' ? null : filtroVinculado,
           categoria_id: categoriaSelecionada?.catId || null,
           subcategoria_id: categoriaSelecionada?.subId || null, 
           centro_custo_id: formCentroCusto,
@@ -796,6 +823,20 @@ export default function FaturaCartao() {
         </div>
         
         <div className="flex items-center gap-3">
+          {cartoesVinculados.length > 0 && (
+            <select
+              value={filtroVinculado}
+              onChange={(e) => setFiltroVinculado(e.target.value)}
+              className="bg-[#1e1e24] text-zinc-300 border border-white/10 rounded-md px-3 py-1.5 text-xs font-bold focus:outline-none focus:border-[#10b981] h-9 cursor-pointer"
+            >
+              <option value="ALL">Todos os Plásticos</option>
+              <option value="MAIN">Cartão Principal</option>
+              {cartoesVinculados.map((cv: any) => (
+                <option key={cv.id} value={cv.id}>{cv.nome_impresso}</option>
+              ))}
+            </select>
+          )}
+
           <Button onClick={exportarFaturaCSV} variant="outline" className="border-[#3b82f6]/50 text-[#3b82f6] hover:bg-[#3b82f6]/10 bg-transparent text-xs font-bold h-9">
             <DownloadCloud className="w-4 h-4 mr-2" /> Exportar Fatura
           </Button>
@@ -854,8 +895,14 @@ export default function FaturaCartao() {
                     <tr key={t.id} className="hover:bg-white/[0.02]">
                       <td className="py-4 text-zinc-300 whitespace-nowrap">{new Date(t.data).toLocaleDateString('pt-BR', {timeZone: 'UTC'})}</td>
                       <td className="py-4">
-                        <div className="flex flex-col">
+                        <div className="flex flex-col gap-1">
                           <span className="font-semibold text-white">{t.descricao}</span>
+                          {t.cartao_vinculado_id && (
+                            <span className="text-[10px] bg-white/5 border border-white/10 px-2 py-0.5 rounded-md text-zinc-400 w-fit flex items-center gap-1">
+                              <CreditCard className="w-3 h-3" />
+                              {cartoesVinculados.find((cv: any) => cv.id === t.cartao_vinculado_id)?.nome_impresso || 'Cartão Adicional'}
+                            </span>
+                          )}
                           {t.observacao && <span className="text-xs text-zinc-400 flex items-center gap-1 mt-1 truncate max-w-[350px]"><FileText className="w-3.5 h-3.5 flex-shrink-0" /> {t.observacao}</span>}
                         </div>
                       </td>
