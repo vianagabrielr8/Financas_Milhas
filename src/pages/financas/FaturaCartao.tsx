@@ -78,7 +78,7 @@ export default function FaturaCartao() {
   const { data: cartoes = [], isLoading: carregandoCartoes } = useQuery({
     queryKey: ['cartoes_pessoais'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('cartao_pessoal').select('*').order('nome');
+      const { data, error } = await supabase.from('cartao_pessoal' as any).select('*').order('nome');
       if (error) throw error;
       return data || [];
     }
@@ -104,7 +104,7 @@ export default function FaturaCartao() {
     enabled: !!cartaoAtivo,
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('cartao_vinculado')
+        .from('cartao_vinculado' as any)
         .select('*')
         .eq('cartao_pessoal_id', cartaoAtivo.id)
         .order('nome_impresso');
@@ -116,7 +116,7 @@ export default function FaturaCartao() {
   const { data: centrosCusto = [] } = useQuery({
     queryKey: ['centros_custo_projeto'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('centro_custo_projeto').select('*').order('nome');
+      const { data, error } = await supabase.from('centro_custo_projeto' as any).select('*').order('nome');
       if (error) throw error; return data || [];
     }
   });
@@ -124,7 +124,7 @@ export default function FaturaCartao() {
   const { data: categorias = [] } = useQuery({
     queryKey: ['categorias_pessoais'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('categoria_pessoal').select('*').order('nome');
+      const { data, error } = await supabase.from('categoria_pessoal' as any).select('*').order('nome');
       if (error) throw error; return data || [];
     }
   });
@@ -132,7 +132,7 @@ export default function FaturaCartao() {
   const { data: subcategorias = [] } = useQuery({
     queryKey: ['subcategorias_pessoais'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('subcategoria_pessoal').select('*').order('nome');
+      const { data, error } = await supabase.from('subcategoria_pessoal' as any).select('*').order('nome');
       if (error) throw error; return data || [];
     }
   });
@@ -144,7 +144,7 @@ export default function FaturaCartao() {
     enabled: !!cartaoAtivo,
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('transacao_pessoal')
+        .from('transacao_pessoal' as any)
         .select('*, centro_custo_projeto(nome)') 
         .eq('cartao_id', cartaoAtivo.id)
         .eq('mes_fatura', faturaAtual);
@@ -165,7 +165,6 @@ export default function FaturaCartao() {
     return curr.tipo === 'ESTORNO' ? acc - valor : acc + valor;
   }, 0);
 
-  // AUTO-CÁLCULO DO RATEIO
   useEffect(() => {
     if (!isRateio) return;
     const totalDesejado = tipoRateio === 'PERCENTUAL' ? 100 : (Number(formValor) || 0);
@@ -365,7 +364,7 @@ export default function FaturaCartao() {
         setModalEdicaoLoteAberto(true);
         return;
       } else {
-        const { error } = await supabase.from('transacao_pessoal').update(dadosNovaEdicao).eq('id', transacaoEditandoId);
+        const { error } = await supabase.from('transacao_pessoal' as any).update(dadosNovaEdicao as any).eq('id', transacaoEditandoId);
         if (error) alert('Erro ao editar: ' + error.message);
         else {
           setModalAberto(false);
@@ -427,7 +426,7 @@ export default function FaturaCartao() {
       }
     }
 
-    const { error } = await supabase.from('transacao_pessoal').insert(transacoesParaInserir);
+    const { error } = await supabase.from('transacao_pessoal' as any).insert(transacoesParaInserir as any);
     if (error) alert('Erro ao salvar: ' + error.message);
     else {
       setModalAberto(false);
@@ -446,7 +445,7 @@ export default function FaturaCartao() {
     const novoNomeBase = dados.descricao.replace(/\s*\(\d+\/\d+\)$/, '');
 
     if (modo === 'APENAS_ESTA') {
-      await supabase.from('transacao_pessoal').update(dados).eq('id', id);
+      await supabase.from('transacao_pessoal' as any).update(dados as any).eq('id', id);
     } 
     else {
       const descricoesOriginais = [];
@@ -456,7 +455,7 @@ export default function FaturaCartao() {
       }
 
       const { data: transacoesAlvo } = await supabase
-        .from('transacao_pessoal')
+        .from('transacao_pessoal' as any)
         .select('id, descricao, mes_fatura, data')
         .eq('cartao_id', cartaoAtivo.id)
         .in('descricao', descricoesOriginais);
@@ -466,7 +465,7 @@ export default function FaturaCartao() {
           const matchTarget = t.descricao.match(/\((\d+)\/\d+\)$/);
           const pTarget = matchTarget ? matchTarget[1] : '';
           
-          await supabase.from('transacao_pessoal').update({
+          await supabase.from('transacao_pessoal' as any).update({
             valor: dados.valor,
             tipo: dados.tipo,
             categoria_id: dados.categoria_id,
@@ -476,7 +475,7 @@ export default function FaturaCartao() {
             descricao: `${novoNomeBase} (${pTarget}/${totalParcelas})`,
             data: t.id === id ? dados.data : t.data,
             mes_fatura: t.id === id ? dados.mes_fatura : t.mes_fatura
-          }).eq('id', t.id);
+          } as any).eq('id', t.id);
         }
       }
     }
@@ -501,7 +500,7 @@ export default function FaturaCartao() {
   };
 
   const executarExclusaoSimples = async (id: string) => {
-    await supabase.from('transacao_pessoal').delete().eq('id', id);
+    await supabase.from('transacao_pessoal' as any).delete().eq('id', id);
     refetch();
   };
 
@@ -522,16 +521,16 @@ export default function FaturaCartao() {
     const totalParcelas = parseInt(totalParcelasStr, 10);
 
     if (modo === 'APENAS_ESTA') {
-      await supabase.from('transacao_pessoal').delete().eq('id', transacaoParaExcluir.id);
+      await supabase.from('transacao_pessoal' as any).delete().eq('id', transacaoParaExcluir.id);
     } else if (modo === 'TODAS') {
       const descricoes = Array.from({ length: totalParcelas }, (_, i) => `${nomeBase.trim()} (${i + 1}/${totalParcelas})`);
-      await supabase.from('transacao_pessoal').delete().eq('cartao_id', transacaoParaExcluir.cartao_id).in('descricao', descricoes);
+      await supabase.from('transacao_pessoal' as any).delete().eq('cartao_id', transacaoParaExcluir.cartao_id).in('descricao', descricoes);
     } else if (modo === 'DESTA_EM_DIANTE') {
       const descricoes = [];
       for (let i = parcelaAtual; i <= totalParcelas; i++) {
         descricoes.push(`${nomeBase.trim()} (${i}/${totalParcelas})`);
       }
-      await supabase.from('transacao_pessoal').delete().eq('cartao_id', transacaoParaExcluir.cartao_id).in('descricao', descricoes);
+      await supabase.from('transacao_pessoal' as any).delete().eq('cartao_id', transacaoParaExcluir.cartao_id).in('descricao', descricoes);
     }
 
     setModalExclusaoAberto(false);
@@ -588,7 +587,7 @@ export default function FaturaCartao() {
     if (!file || !cartaoAtivo) return;
 
     const { data: transacoesBancoRaw } = await supabase
-      .from('transacao_pessoal')
+      .from('transacao_pessoal' as any)
       .select('descricao, valor, data, tipo')
       .eq('cartao_id', cartaoAtivo.id)
       .limit(10000);
@@ -758,7 +757,7 @@ export default function FaturaCartao() {
         }
 
         if (transacoesImportadas.length > 0) {
-          const { error } = await supabase.from('transacao_pessoal').insert(transacoesImportadas);
+          const { error } = await supabase.from('transacao_pessoal' as any).insert(transacoesImportadas as any);
           if (error) { alert('Erro ao gravar no banco: ' + error.message); return; }
         }
 
