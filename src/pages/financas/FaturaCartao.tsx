@@ -6,7 +6,8 @@ import {
   ChevronLeft, ChevronRight, Calendar, DollarSign, Receipt, 
   FileText, Trash2, Edit2, Plus, CreditCard, ChevronDown, 
   Search, CornerDownRight, Upload, Download, Briefcase, AlertTriangle, X, DownloadCloud,
-  ArrowUpDown, ArrowUp, ArrowDown, Calculator, SplitSquareHorizontal, Percent
+  ArrowUpDown, ArrowUp, ArrowDown, Calculator, SplitSquareHorizontal, Percent,
+  Filter
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -822,20 +823,6 @@ export default function FaturaCartao() {
         </div>
         
         <div className="flex items-center gap-3">
-          {cartoesVinculados.length > 0 && (
-            <select
-              value={filtroVinculado}
-              onChange={(e) => setFiltroVinculado(e.target.value)}
-              className="bg-[#1e1e24] text-zinc-300 border border-white/10 rounded-md px-3 py-1.5 text-xs font-bold focus:outline-none focus:border-[#10b981] h-9 cursor-pointer"
-            >
-              <option value="ALL">Todos os Plásticos</option>
-              <option value="MAIN">Cartão Principal</option>
-              {cartoesVinculados.map((cv: any) => (
-                <option key={cv.id} value={cv.id}>{cv.nome_impresso}</option>
-              ))}
-            </select>
-          )}
-
           <Button onClick={exportarFaturaCSV} variant="outline" className="border-[#3b82f6]/50 text-[#3b82f6] hover:bg-[#3b82f6]/10 bg-transparent text-xs font-bold h-9">
             <DownloadCloud className="w-4 h-4 mr-2" /> Exportar Fatura
           </Button>
@@ -936,6 +923,33 @@ export default function FaturaCartao() {
         </div>
 
         <div className="space-y-4">
+          
+          {/* NOVO CARD DO FILTRO DE PLÁSTICOS */}
+          {cartoesVinculados.length > 0 && (
+            <div className="bg-[#1e1e24] border border-white/5 rounded-2xl p-5 flex flex-col gap-3 relative overflow-hidden">
+              <div className="flex justify-between items-center">
+                <p className="text-zinc-400 text-xs">Filtrar Lançamentos</p>
+                <div className="w-8 h-8 rounded-full bg-purple-500/20 flex items-center justify-center">
+                  <Filter className="w-4 h-4 text-purple-500" />
+                </div>
+              </div>
+              <div className="relative z-10">
+                <select
+                  value={filtroVinculado}
+                  onChange={(e) => setFiltroVinculado(e.target.value)}
+                  className="w-full bg-[#141417] text-white border border-white/10 rounded-lg p-2.5 pr-8 focus:border-[#10b981] focus:outline-none transition-all text-sm appearance-none cursor-pointer font-bold shadow-sm"
+                >
+                  <option value="ALL">💳 Todos os Plásticos</option>
+                  <option value="MAIN">⭐ Cartão Principal</option>
+                  {cartoesVinculados.map((cv: any) => (
+                    <option key={cv.id} value={cv.id}>🔹 {cv.nome_impresso}</option>
+                  ))}
+                </select>
+                <ChevronDown className="w-4 h-4 text-zinc-500 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              </div>
+            </div>
+          )}
+
           <div className="bg-[#1e1e24] border border-white/5 rounded-2xl p-5 flex justify-between items-center">
             <div><p className="text-zinc-400 text-xs mb-1">Valor da fatura</p><p className="text-2xl font-bold text-white">R$ {totalFatura.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</p></div>
             <div className="w-10 h-10 rounded-full bg-[#10b981]/20 flex items-center justify-center"><DollarSign className="w-5 h-5 text-[#10b981]" /></div>
