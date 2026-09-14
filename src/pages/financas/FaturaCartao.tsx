@@ -924,7 +924,7 @@ export default function FaturaCartao() {
 
         <div className="space-y-4">
           
-          {/* NOVO CARD DO FILTRO DE PLÁSTICOS */}
+          {/* NOVO CARD DO FILTRO DE CARTÕES */}
           {cartoesVinculados.length > 0 && (
             <div className="bg-[#1e1e24] border border-white/5 rounded-2xl p-5 flex flex-col gap-3 relative overflow-hidden">
               <div className="flex justify-between items-center">
@@ -939,7 +939,7 @@ export default function FaturaCartao() {
                   onChange={(e) => setFiltroVinculado(e.target.value)}
                   className="w-full bg-[#141417] text-white border border-white/10 rounded-lg p-2.5 pr-8 focus:border-[#10b981] focus:outline-none transition-all text-sm appearance-none cursor-pointer font-bold shadow-sm"
                 >
-                  <option value="ALL">💳 Todos os Plásticos</option>
+                  <option value="ALL">💳 Todos os Cartões</option>
                   <option value="MAIN">⭐ Cartão Principal</option>
                   {cartoesVinculados.map((cv: any) => (
                     <option key={cv.id} value={cv.id}>🔹 {cv.nome_impresso}</option>
