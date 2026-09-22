@@ -130,7 +130,6 @@ export default function Transacoes() {
     });
   }, [transacoes, filtrosAtivos]);
 
-  // CÁLCULOS DOS CARDS (TOTALIZADORES DINÂMICOS)
   const { totalReceitas, totalDespesas } = useMemo(() => {
     let rec = 0;
     let des = 0;
@@ -138,7 +137,7 @@ export default function Transacoes() {
       const v = Math.abs(Number(t.valor) || 0);
       if (t.tipo === 'RECEITA') rec += v;
       else if (t.tipo === 'ESTORNO') des -= v;
-      else des += v; // DESPESA
+      else des += v;
     });
     return { totalReceitas: rec, totalDespesas: des };
   }, [transacoesFiltradas]);
@@ -178,7 +177,6 @@ export default function Transacoes() {
     e.preventDefault();
     if (!formCentroCustoId) return alert('Por favor, selecione um Centro de Custo.');
     if (!formContaId) return alert('Por favor, selecione uma conta financeira base.');
-    if (!categoriaSelecionada) return alert('Por favor, selecione uma categoria.');
 
     const transacoesParaInserir = [];
     let quantidade = 1;
@@ -207,8 +205,8 @@ export default function Transacoes() {
         centro_custo_id: formCentroCustoId,
         conta_id: formContaId,
         cartao_id: null,
-        categoria_id: categoriaSelecionada.catId,
-        subcategoria_id: categoriaSelecionada.subId || null,
+        categoria_id: categoriaSelecionada?.catId || null,
+        subcategoria_id: categoriaSelecionada?.subId || null,
       });
     }
 
@@ -253,7 +251,7 @@ export default function Transacoes() {
         </div>
       </div>
 
-      {/* CARDS TOTALIZADORES COM A IDENTIDADE VISUAL EXATA DA PÁGINA */}
+      {/* CARDS TOTALIZADORES */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         <div className="bg-[#1a1a20] border border-gray-800 rounded-xl p-5 hover:border-gray-700 transition-colors shadow-sm">
           <div className="flex justify-between items-start">
@@ -521,9 +519,9 @@ export default function Transacoes() {
               </div>
 
               <div className="relative">
-                <label className="text-gray-400 text-xs font-semibold uppercase tracking-wider block mb-1.5">Categoria</label>
+                <label className="text-gray-400 text-xs font-semibold uppercase tracking-wider block mb-1.5">Categoria (Opcional)</label>
                 <button type="button" onClick={() => setDropdownCatAberto(!dropdownCatAberto)} className={cn("w-full bg-[#22222a] text-left border rounded-lg p-2.5 flex justify-between items-center transition-all", dropdownCatAberto ? "border-emerald-500" : "border-gray-700 hover:border-gray-500")}>
-                  <span className={categoriaSelecionada ? "text-white font-medium" : "text-gray-500"}>{categoriaSelecionada ? categoriaSelecionada.nomeDisplay : 'Selecionar categoria...'}</span>
+                  <span className={categoriaSelecionada ? "text-white font-medium" : "text-gray-500"}>{categoriaSelecionada ? categoriaSelecionada.nomeDisplay : 'Sem Categoria (Opcional)'}</span>
                   <ChevronDown className="w-4 h-4 text-gray-500" />
                 </button>
                 {dropdownCatAberto && (
@@ -535,6 +533,13 @@ export default function Transacoes() {
                         <input type="text" autoFocus placeholder="Buscar categoria..." value={buscaCat} onChange={(e) => setBuscaCat(e.target.value)} className="w-full bg-transparent text-sm text-white placeholder-gray-500 p-1 focus:outline-none"/>
                       </div>
                       <div className="overflow-y-auto p-1 custom-scrollbar flex-1">
+                        <button 
+                          type="button" 
+                          onClick={() => { setCategoriaSelecionada(null); setDropdownCatAberto(false); }} 
+                          className="w-full text-left px-3 py-2 text-sm font-semibold text-zinc-400 hover:bg-gray-800 rounded-lg transition-colors mb-1"
+                        >
+                          Sem Categoria (Opcional)
+                        </button>
                         {categoriasFiltradasModal.length === 0 ? (
                            <p className="p-3 text-xs text-center text-gray-500">Nenhuma categoria encontrada.</p>
                         ) : (
