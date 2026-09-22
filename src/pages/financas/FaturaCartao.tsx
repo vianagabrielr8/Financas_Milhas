@@ -540,7 +540,7 @@ export default function FaturaCartao() {
   };
 
   const baixarModeloCSV = () => {
-    const conteudo = "Data;Descricao;Valor;Fatura Alvo (Ex: Set/2026);Categoria (Opcional);Centro Custo;Parcelas (Opcional);Observacao (Opcional)\n" +
+    const conteudo = "Data;Descricao;Valor Total;Fatura Alvo (Ex: Set/2026);Categoria (Opcional);Centro Custo;Parcelas (Opcional);Observacao (Opcional)\n" +
                      "30/08/2026;Uber;26,22;Set/2026;Transporte;360 Gestão;1;Corrida cliente\n" +
                      "15/08/2026;Supermercado;450,00;Set/2026;Alimentação;Familiar;1;Compras do mês\n" +
                      "20/08/2026;Estorno Anuidade;-120,00;Set/2026;;Familiar;1;Valores negativos viram Estorno automaticamente";
@@ -604,7 +604,8 @@ export default function FaturaCartao() {
         const transacoesImportadas: any[] = [];
         const linhasComErro = [];
         
-        linhasComErro.push("Data;Descricao;Valor;Fatura Alvo;Categoria;Centro Custo;Parcelas;Observacao;MOTIVO DO ERRO");
+        // CUIDADO: Alteração para 'Valor Total'
+        linhasComErro.push("Data;Descricao;Valor Total;Fatura Alvo;Categoria;Centro Custo;Parcelas;Observacao;MOTIVO DO ERRO");
 
         for(let i = 1; i < rows.length; i++) {
           const linhaOriginal = rows[i];
