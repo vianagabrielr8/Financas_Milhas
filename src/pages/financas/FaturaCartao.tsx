@@ -785,7 +785,7 @@ export default function FaturaCartao() {
 
       } catch (err) { alert("Erro no processamento do arquivo CSV."); }
     };
-    reader.readAsText(file);
+reader.readAsText(file, 'ISO-8859-1');
     if (fileInputRef.current) fileInputRef.current.value = ''; 
   };
 
