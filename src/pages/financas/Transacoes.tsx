@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { Search, Plus, X, Calendar, ChevronDown, CornerDownRight, Filter, TrendingUp, TrendingDown, Wallet, Edit2, Trash2 } from 'lucide-react';
+import { Search, Plus, X, Calendar, ChevronDown, CornerDownRight, Filter, TrendingUp, TrendingDown, Wallet, Edit2, Trash2, FileText } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export default function Transacoes() {
@@ -219,7 +219,7 @@ export default function Transacoes() {
     e.preventDefault();
     if (!formCentroCustoId) return alert('Por favor, selecione um Centro de Custo.');
     
-    // Só exige Conta/Caixa se não for uma transação de Cartão de Crédito
+    // Só exige Conta/Caixa se não for uma transação originada de Cartão de Crédito
     if (!formContaId && !transacaoEditandoOriginal?.cartao_id) {
       return alert('Por favor, selecione uma conta financeira base.');
     }
@@ -238,7 +238,7 @@ export default function Transacoes() {
       };
 
       if (!transacaoEditandoOriginal?.cartao_id) {
-          payloadAtualizacao.conta_id = formContaId;
+        payloadAtualizacao.conta_id = formContaId;
       }
 
       const { error: updateError } = await supabase.from('transacao_pessoal').update(payloadAtualizacao).eq('id', transacaoEditandoId);
@@ -402,6 +402,12 @@ export default function Transacoes() {
                         <div className="flex flex-wrap gap-2">
                           {t.recorrente && <span className="text-[9px] bg-blue-500/10 text-blue-400 px-1.5 py-0.5 rounded border border-blue-500/20 uppercase font-bold tracking-wider">Recorrente</span>}
                         </div>
+                        {t.observacao && (
+                          <span className="text-xs text-zinc-500 flex items-center gap-1 mt-0.5 max-w-[320px] truncate" title={t.observacao}>
+                            <FileText className="w-3 h-3 flex-shrink-0 text-zinc-600" />
+                            {t.observacao}
+                          </span>
+                        )}
                       </div>
                     </td>
                     <td className="p-4">
