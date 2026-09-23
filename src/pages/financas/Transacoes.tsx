@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { Search, Plus, X, Calendar, ChevronDown, CornerDownRight, Filter, TrendingUp, TrendingDown, Wallet } from 'lucide-react';
+import { Search, Plus, X, Calendar, ChevronDown, CornerDownRight, Filter, TrendingUp, TrendingDown, Wallet, Edit2, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export default function Transacoes() {
@@ -26,6 +26,10 @@ export default function Transacoes() {
   const [filtrosTemp, setFiltrosTemp] = useState(filtrosAtivos);
   const [dropdownCatFiltroAberto, setDropdownCatFiltroAberto] = useState(false);
   const [buscaCatFiltro, setBuscaCatFiltro] = useState('');
+
+  // Estados do Formulário (Nova e Edição)
+  const [transacaoEditandoId, setTransacaoEditandoId] = useState<string | null>(null);
+  const [transacaoEditandoOriginal, setTransacaoEditandoOriginal] = useState<any>(null);
 
   const [formDescricao, setFormDescricao] = useState('');
   const [formValor, setFormValor] = useState('');
@@ -161,10 +165,48 @@ export default function Transacoes() {
   const temFiltroAtivo = filtrosAtivos.tipo !== 'TODOS' || filtrosAtivos.situacao !== 'TODAS' || filtrosAtivos.categoriaId !== 'TODAS' || filtrosAtivos.cartao !== 'TODOS' || filtrosAtivos.diaVencimento !== 'TODOS' || filtrosAtivos.centroCustoId !== 'TODOS';
 
   const resetForm = () => {
+    setTransacaoEditandoId(null);
+    setTransacaoEditandoOriginal(null);
     setFormDescricao(''); setFormValor(''); setFormSituacao('PAGO'); setFormTipo('DESPESA');
     setFormData(new Date().toISOString().split('T')[0]); setFormRecorrente(false);
     setFormFrequencia('MENSAL'); setFormObservacao(''); setFormContaId('');
     setFormCentroCustoId(''); setCategoriaSelecionada(null); setBuscaCat('');
+  };
+
+  const iniciarEdicao = (t: any) => {
+    setTransacaoEditandoId(t.id);
+    setTransacaoEditandoOriginal(t);
+    setFormDescricao(t.descricao);
+    setFormValor(Math.abs(Number(t.valor)).toString());
+    setFormData(t.data);
+    setFormSituacao(t.situacao);
+    setFormTipo(t.tipo);
+    setFormObservacao(t.observacao || '');
+    setFormCentroCustoId(t.centro_custo_id || '');
+    setFormContaId(t.conta_id || '');
+
+    if (t.categoria_id) {
+      setCategoriaSelecionada({
+        catId: t.categoria_id,
+        subId: t.subcategoria_id,
+        nomeDisplay: renderNomeCategoria(t.categoria_id, t.subcategoria_id)
+      });
+    } else {
+      setCategoriaSelecionada(null);
+    }
+
+    setFormRecorrente(t.recorrente || false);
+    setFormFrequencia(t.frequencia_recorrencia || 'MENSAL');
+
+    setModalAberto(true);
+  };
+
+  const iniciarExclusao = async (id: string) => {
+    if (window.confirm('Tem a certeza que deseja eliminar esta transação de forma permanente?')) {
+      const { error } = await supabase.from('transacao_pessoal').delete().eq('id', id);
+      if (error) alert('Erro ao eliminar: ' + error.message);
+      else refetch();
+    }
   };
 
   const handleChangeTipo = (novoTipo: string) => {
@@ -176,8 +218,42 @@ export default function Transacoes() {
   const handleSalvarTransacao = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formCentroCustoId) return alert('Por favor, selecione um Centro de Custo.');
-    if (!formContaId) return alert('Por favor, selecione uma conta financeira base.');
+    
+    // Só exige Conta/Caixa se não for uma transação de Cartão de Crédito
+    if (!formContaId && !transacaoEditandoOriginal?.cartao_id) {
+      return alert('Por favor, selecione uma conta financeira base.');
+    }
 
+    if (transacaoEditandoId) {
+      const payloadAtualizacao: any = {
+        descricao: formDescricao,
+        valor: parseFloat(formValor),
+        situacao: formSituacao,
+        tipo: formTipo,
+        data: formData,
+        observacao: formObservacao,
+        centro_custo_id: formCentroCustoId,
+        categoria_id: categoriaSelecionada?.catId || null,
+        subcategoria_id: categoriaSelecionada?.subId || null,
+      };
+
+      if (!transacaoEditandoOriginal?.cartao_id) {
+          payloadAtualizacao.conta_id = formContaId;
+      }
+
+      const { error: updateError } = await supabase.from('transacao_pessoal').update(payloadAtualizacao).eq('id', transacaoEditandoId);
+      
+      if (updateError) {
+        alert('Erro ao atualizar: ' + updateError.message);
+      } else {
+        setModalAberto(false);
+        resetForm();
+        refetch();
+      }
+      return;
+    }
+
+    // Fluxo de Nova Transação
     const transacoesParaInserir = [];
     let quantidade = 1;
 
@@ -245,7 +321,7 @@ export default function Transacoes() {
             <Filter className="w-4 h-4 mr-2" /> Filtros {temFiltroAtivo && <span className="ml-2 w-2 h-2 rounded-full bg-emerald-500"></span>}
           </button>
 
-          <button onClick={() => setModalAberto(true)} className="bg-emerald-500 hover:bg-emerald-600 text-white px-5 h-[42px] rounded-lg font-medium transition-all shadow-lg shadow-emerald-500/20 flex items-center gap-2">
+          <button onClick={() => { resetForm(); setModalAberto(true); }} className="bg-emerald-500 hover:bg-emerald-600 text-white px-5 h-[42px] rounded-lg font-medium transition-all shadow-lg shadow-emerald-500/20 flex items-center gap-2">
             <Plus className="w-4 h-4" /> Nova
           </button>
         </div>
@@ -306,16 +382,17 @@ export default function Transacoes() {
                 <th className="p-4 w-32">Tipo</th>
                 <th className="p-4 text-right w-40">Valor</th>
                 <th className="p-4 w-32 text-center">Situação</th>
+                <th className="p-4 w-20 text-center">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-800/50">
               {isLoading ? (
-                <tr><td colSpan={7} className="p-8 text-center text-emerald-500 font-medium">Carregando dados...</td></tr>
+                <tr><td colSpan={8} className="p-8 text-center text-emerald-500 font-medium">A carregar dados...</td></tr>
               ) : transacoesFiltradas.length === 0 ? (
-                <tr><td colSpan={7} className="p-8 text-center text-gray-500">Nenhuma transação encontrada para este mês.</td></tr>
+                <tr><td colSpan={8} className="p-8 text-center text-gray-500">Nenhuma transação encontrada para este mês.</td></tr>
               ) : (
                 transacoesFiltradas.map((t: any) => (
-                  <tr key={t.id} className="hover:bg-[#22222a] transition-colors text-gray-200">
+                  <tr key={t.id} className="hover:bg-[#22222a] transition-colors text-gray-200 group">
                     <td className="p-4 text-sm whitespace-nowrap text-zinc-400">
                       {new Date(t.data).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}
                     </td>
@@ -358,6 +435,16 @@ export default function Transacoes() {
                     </td>
                     <td className="p-4 text-center">
                       <span className={`px-2.5 py-1 rounded-md text-[10px] font-bold tracking-wider uppercase border ${t.situacao === 'PAGO' || t.situacao === 'RECEBIDO' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20'}`}>{t.situacao}</span>
+                    </td>
+                    <td className="p-4 text-center">
+                      <div className="flex justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button onClick={() => iniciarEdicao(t)} className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-800 rounded-md transition-colors" title="Editar">
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                        <button onClick={() => iniciarExclusao(t.id)} className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-500/10 rounded-md transition-colors" title="Eliminar">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -469,12 +556,12 @@ export default function Transacoes() {
         </div>
       )}
 
-      {/* Modal de Nova Transação */}
+      {/* Modal de Nova / Editar Transação */}
       {modalAberto && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-[#15151a] p-8 rounded-2xl w-full max-w-xl border border-gray-800 shadow-2xl flex flex-col max-h-[90vh]">
             <div className="flex justify-between items-center mb-6 shrink-0">
-              <h2 className="text-2xl text-white font-bold">Nova Transação</h2>
+              <h2 className="text-2xl text-white font-bold">{transacaoEditandoId ? 'Editar Transação' : 'Nova Transação'}</h2>
               <button onClick={() => { setModalAberto(false); resetForm(); }} className="text-gray-500 hover:text-white transition-colors"><X size={20} /></button>
             </div>
             
@@ -509,13 +596,20 @@ export default function Transacoes() {
                     {centrosCusto.map((cc: any) => <option key={cc.id} value={cc.id}>{cc.nome}</option>)}
                   </select>
                 </div>
-                <div>
-                  <label className="text-gray-400 text-xs font-semibold uppercase tracking-wider block mb-1.5">Conta / Caixa</label>
-                  <select required value={formContaId} onChange={(e) => setFormContaId(e.target.value)} className="w-full bg-[#22222a] text-white border border-gray-700 rounded-lg p-2.5 focus:border-emerald-500 focus:outline-none transition-all appearance-none">
-                    <option value="" disabled>Selecione a conta...</option>
-                    {contas.map((c: any) => <option key={c.id} value={c.id}>{c.nome}</option>)}
-                  </select>
-                </div>
+                {transacaoEditandoOriginal?.cartao_id ? (
+                  <div>
+                    <label className="text-gray-400 text-xs font-semibold uppercase tracking-wider block mb-1.5">Conta / Caixa</label>
+                    <input type="text" disabled value={`💳 ${transacaoEditandoOriginal.cartao_pessoal?.nome}`} className="w-full bg-[#22222a]/50 text-gray-500 border border-gray-800 rounded-lg p-2.5 cursor-not-allowed" />
+                  </div>
+                ) : (
+                  <div>
+                    <label className="text-gray-400 text-xs font-semibold uppercase tracking-wider block mb-1.5">Conta / Caixa</label>
+                    <select required value={formContaId} onChange={(e) => setFormContaId(e.target.value)} className="w-full bg-[#22222a] text-white border border-gray-700 rounded-lg p-2.5 focus:border-emerald-500 focus:outline-none transition-all appearance-none">
+                      <option value="" disabled>Selecione a conta...</option>
+                      {contas.map((c: any) => <option key={c.id} value={c.id}>{c.nome}</option>)}
+                    </select>
+                  </div>
+                )}
               </div>
 
               <div className="relative">
@@ -578,28 +672,30 @@ export default function Transacoes() {
                 </select>
               </div>
 
-              <div className="p-4 bg-[#22222a] rounded-lg border border-gray-800">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <span className="text-sm font-medium text-white block">Lançamento Recorrente?</span>
-                    <span className="text-xs text-gray-500">Repetir esta transação no futuro</span>
+              {!transacaoEditandoId && (
+                <div className="p-4 bg-[#22222a] rounded-lg border border-gray-800">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-sm font-medium text-white block">Lançamento Recorrente?</span>
+                      <span className="text-xs text-gray-500">Repetir esta transação no futuro</span>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input type="checkbox" className="sr-only peer" checked={formRecorrente} onChange={(e) => setFormRecorrente(e.target.checked)}/>
+                      <div className="w-11 h-6 bg-gray-700 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+                    </label>
                   </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input type="checkbox" className="sr-only peer" checked={formRecorrente} onChange={(e) => setFormRecorrente(e.target.checked)}/>
-                    <div className="w-11 h-6 bg-gray-700 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
-                  </label>
+                  {formRecorrente && (
+                    <div className="mt-4 pt-4 border-t border-gray-700/50">
+                      <label className="text-gray-400 text-xs font-semibold uppercase tracking-wider block mb-1.5">Frequência</label>
+                      <select value={formFrequencia} onChange={(e) => setFormFrequencia(e.target.value)} className="w-full bg-[#15151a] text-white border border-gray-700 rounded-lg p-2.5 focus:border-emerald-500 focus:outline-none">
+                        <option value="SEMANAL">Semanal</option>
+                        <option value="MENSAL">Mensal</option>
+                        <option value="ANUAL">Anual</option>
+                      </select>
+                    </div>
+                  )}
                 </div>
-                {formRecorrente && (
-                  <div className="mt-4 pt-4 border-t border-gray-700/50">
-                    <label className="text-gray-400 text-xs font-semibold uppercase tracking-wider block mb-1.5">Frequência</label>
-                    <select value={formFrequencia} onChange={(e) => setFormFrequencia(e.target.value)} className="w-full bg-[#15151a] text-white border border-gray-700 rounded-lg p-2.5 focus:border-emerald-500 focus:outline-none">
-                      <option value="SEMANAL">Semanal</option>
-                      <option value="MENSAL">Mensal</option>
-                      <option value="ANUAL">Anual</option>
-                    </select>
-                  </div>
-                )}
-              </div>
+              )}
 
               <div>
                 <label className="text-gray-400 text-xs font-semibold uppercase tracking-wider block mb-1.5">Observações (Opcional)</label>
