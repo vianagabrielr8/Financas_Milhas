@@ -1,6 +1,15 @@
 # MilheiroSmart — regras para quem mexe neste projeto (IA ou pessoa)
 
 App de finanças pessoais + milhas. React (Vite) + Supabase (banco) + Vercel (site).
+
+**Projeto Supabase de PRODUÇÃO: `tdatvduchifakmocywhq`.** O id
+`nunbtbtktvzdlisshbij`, que aparece em `supabase/config.toml`, é de um projeto
+antigo: não use e não altere esse arquivo sem combinar antes.
+
+Edge Functions em produção:
+- `telegram-webhook`: o bot. O código está em `supabase/functions/`.
+- `cron-sync`: o código não está no repositório.
+- `pluggy-webhook`: integração Pluggy abandonada.
 Um bot do Telegram também grava lançamentos no mesmo banco. Outra IA (Gemini)
 também edita este repositório — estas regras valem para todos.
 
@@ -23,9 +32,10 @@ também edita este repositório — estas regras valem para todos.
 
    Todo arquivo segue o mesmo formato: O QUE FAZ, **PASSO 0** (conferências
    só de leitura), **PASSO 1** (SELECT mostrando o que muda), **PASSO 2** (o
-   comando, entre `BEGIN`/`COMMIT`) e **COMO DESFAZER**. Quando o projeto
-   Supabase de TESTE existir, todo arquivo roda **primeiro no teste** e só
-   depois em produção.
+   comando, entre `BEGIN`/`COMMIT`) e **COMO DESFAZER**. **Não existe
+   projeto de teste**: tudo roda direto em produção. Por isso todo arquivo
+   que altera dados guarda antes uma cópia (backup) das linhas afetadas.
+   Lembre o dono: voltar versão no GitHub desfaz código, **não** dados.
 3. Nunca escreva chaves, tokens ou senhas no código. Use o `.env` (que não vai
    para o GitHub) e o `.env.example` (só os nomes). No site, as variáveis ficam
    no painel da Vercel.
@@ -74,6 +84,11 @@ Atenção: as tabelas de finanças **não** estão em `supabase/migrations`
 (foram criadas pelo painel do Supabase). A estrutura real está no Supabase.
 Para conferir a estrutura real, use `supabase/manual/2026-09_inventario.sql`
 (só leitura).
+
+**Inventário de set/2026:** as tabelas `payables`, `payable_installments`,
+`receivables`, `receivable_installments`, `passageiros`, todo o modelo de Milhas
+em inglês e as views listadas acima **não existem** no banco. O resultado
+completo está em `docs/pacote2-familias-rls.md`.
 
 ## Pacote 2 (em andamento): famílias, papéis e RLS
 O plano aprovado está em `docs/pacote2-familias-rls.md`. Resumo:
