@@ -2,18 +2,22 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { 
   LayoutDashboard, Package, ArrowRightLeft, DollarSign,
-  Wallet, UserCircle, Plane, Users, ShieldCheck, LogOut, ChevronLeft, Menu, Target, CalendarDays, Tags, FolderTree, Landmark 
+  Wallet, UserCircle, Plane, Users, ShieldCheck, LogOut, ChevronLeft, Menu, Target, CalendarDays, Tags, FolderTree, Landmark, Home 
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { useFamilia } from '@/contexts/FamiliaContext';
 
 export const Sidebar = () => {
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
-  const [moduloAtivo, setModuloAtivo] = useState<'FINANCAS' | 'MILHAS'>(() => {
+  const { isAdmin } = useFamilia();
+  const [moduloEscolhido, setModuloAtivo] = useState<'FINANCAS' | 'MILHAS'>(() => {
     return (localStorage.getItem('erp_modulo_ativo') as 'FINANCAS' | 'MILHAS') || 'FINANCAS';
   });
+  // O membro só usa Finanças (o módulo Milhas é só do admin).
+  const moduloAtivo = isAdmin ? moduloEscolhido : 'FINANCAS';
 
   // Estados para armazenar os dados reais do usuário logado
   const [userName, setUserName] = useState('Carregando...');
@@ -46,7 +50,7 @@ export const Sidebar = () => {
     window.location.reload();
   };
 
-  const menuConfig = moduloAtivo === 'FINANCAS' ? [
+  const menuCompleto = moduloAtivo === 'FINANCAS' ? [
     { group: "VISÃO GERAL", items: [
       { icon: LayoutDashboard, label: 'Dashboard', path: '/financas' },
       { icon: DollarSign, label: 'Transações', path: '/financas/transacoes' },
@@ -73,6 +77,14 @@ export const Sidebar = () => {
     { group: "SEGURANÇA", items: [{ icon: ShieldCheck, label: 'Limites CPF', path: '/milhas/limites' }]}
   ];
 
+  // Admin vê tudo + a tela Família. Membro só vê as telas de consulta.
+  const PATHS_DO_MEMBRO = ['/financas', '/financas/transacoes', '/financas/metas', '/financas/fluxo-caixa', '/financas/cartoes'];
+  const menuConfig = isAdmin
+    ? [...menuCompleto, { group: "CONFIGURAÇÕES", items: [{ icon: Home, label: 'Família', path: '/configuracoes/familia' }] }]
+    : menuCompleto
+        .map(g => ({ ...g, items: g.items.filter(i => PATHS_DO_MEMBRO.includes(i.path)) }))
+        .filter(g => g.items.length > 0);
+
   return (
     <aside className={cn(
       "h-screen bg-[#0a0a0b] border-r border-white/5 transition-all duration-300 flex flex-col shrink-0 z-40 relative", 
@@ -90,7 +102,7 @@ export const Sidebar = () => {
         </Button>
       </div>
 
-      <div className="p-4 border-b border-white/5">
+      {isAdmin && <div className="p-4 border-b border-white/5">
         <div className={cn("flex bg-[#141417] rounded-lg p-1 border border-white/5", collapsed ? "flex-col gap-1.5" : "gap-1")}>
           <button 
             onClick={() => alterarModulo('FINANCAS')} 
@@ -105,7 +117,7 @@ export const Sidebar = () => {
             {collapsed ? "M" : "MILHAS"}
           </button>
         </div>
-      </div>
+      </div>}
 
       <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-6 scrollbar-hide">
         {menuConfig.map((group) => (

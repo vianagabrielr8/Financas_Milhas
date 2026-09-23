@@ -11,10 +11,12 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { useFamilia } from '@/contexts/FamiliaContext';
 
 type SortKey = 'data' | 'descricao' | 'categoria' | 'valor';
 
 export default function FaturaCartao() {
+  const { podeEditar } = useFamilia();
   const queryClient = useQueryClient();
   const { id: urlCardId } = useParams();
 
@@ -1009,17 +1011,18 @@ export default function FaturaCartao() {
         </div>
 
         <div className="flex items-center gap-3 flex-wrap">
-          <Button
+          {podeEditar && <Button
             onClick={() => setModalPagarFaturaAberto(true)}
             disabled={faturaEstaPaga || transacoesFiltradas.length === 0}
             className={cn("font-bold flex items-center gap-2 h-9 shadow-sm transition-all", faturaEstaPaga ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 cursor-default" : "bg-[#10b981] hover:bg-[#059669] text-black")}
           >
             <CheckCircle2 className="w-4 h-4" /> {faturaEstaPaga ? 'Fatura Paga' : 'Pagar Fatura'}
-          </Button>
+          </Button>}
 
           <Button onClick={exportarFaturaCSV} variant="outline" className="border-[#3b82f6]/50 text-[#3b82f6] hover:bg-[#3b82f6]/10 bg-transparent text-xs font-bold h-9">
             <DownloadCloud className="w-4 h-4 mr-2" /> Exportar Fatura
           </Button>
+          {podeEditar && <>
           <Button onClick={baixarModeloCSV} variant="outline" className="border-white/10 bg-transparent hover:bg-white/5 text-zinc-400 hover:text-white text-xs font-bold h-9">
             <Download className="w-4 h-4 mr-2" /> Modelo CSV
           </Button>
@@ -1029,6 +1032,7 @@ export default function FaturaCartao() {
           <Button onClick={abrirModalNovaDespesa} className="bg-[#10b981] hover:bg-[#059669] text-black font-bold flex items-center gap-2 h-9">
             <Plus className="w-4 h-4" /> Nova Despesa
           </Button>
+          </>}
         </div>
       </div>
 
@@ -1103,10 +1107,10 @@ export default function FaturaCartao() {
                         </span>
                       </td>
                       <td className="py-4 text-center">
-                        <div className="flex justify-center gap-1">
+                        {podeEditar && <div className="flex justify-center gap-1">
                           <Button variant="ghost" size="icon" onClick={() => abrirModalEdicao(t)} className="h-8 w-8 text-zinc-500 hover:text-white"><Edit2 className="w-4 h-4" /></Button>
                           <Button variant="ghost" size="icon" onClick={() => iniciarExclusao(t)} className="h-8 w-8 text-zinc-500 hover:text-red-400"><Trash2 className="w-4 h-4" /></Button>
-                        </div>
+                        </div>}
                       </td>
                     </tr>
                   ))

@@ -11,6 +11,7 @@ export const Header = () => {
     if (path === '/' || path === '/financas') return 'Dashboard';
     if (path.startsWith('/financas/cartoes/')) return 'Fatura do Cartão';
     if (path.startsWith('/milhas/estoque/')) return 'Detalhes do Programa';
+    if (path === '/configuracoes/familia') return 'Família';
 
     // 2. Fallback Genérico para as outras rotas
     const segmentos = path.split('/').filter(Boolean);

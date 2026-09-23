@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
@@ -35,7 +35,63 @@ import CentrosCusto from './pages/financas/CentrosCusto';
 import Categorias from './pages/financas/Categorias';
 import Metas from "./pages/financas/Metas";
 
+// FAMÍLIA E ACESSO
+import { FamiliaProvider, useFamilia } from "./contexts/FamiliaContext";
+import AcessoNaoLiberado from "./pages/AcessoNaoLiberado";
+import Familia from "./pages/configuracoes/Familia";
+
 const queryClient = new QueryClient();
+
+// Páginas que o MEMBRO não acessa (configurações, cadastros e o módulo Milhas).
+// Os botões de lançar/editar/apagar também somem para ele nas outras páginas.
+const SomenteAdmin = ({ children }: { children: JSX.Element }) => {
+  const { isAdmin } = useFamilia();
+  return isAdmin ? children : <Navigate to="/financas" replace />;
+};
+
+const AppLogado = () => {
+  const { situacao, recarregar } = useFamilia();
+
+  if (situacao === 'CARREGANDO') {
+    return <div className="min-h-screen bg-[#0a0a0b] flex items-center justify-center text-emerald-500 font-bold tracking-widest uppercase">Carregando...</div>;
+  }
+  if (situacao !== 'OK') {
+    return <AcessoNaoLiberado erro={situacao === 'ERRO'} onTentarNovamente={recarregar} />;
+  }
+
+  return (
+    <MainLayout>
+      <Routes>
+        <Route path="/" element={<SomenteAdmin><Index /></SomenteAdmin>} />
+
+        <Route path="/milhas/estoque" element={<SomenteAdmin><Estoque /></SomenteAdmin>} />
+        <Route path="/milhas/estoque/:id" element={<SomenteAdmin><ProgramDetails /></SomenteAdmin>} />
+        <Route path="/milhas/limites" element={<SomenteAdmin><Limites /></SomenteAdmin>} />
+        <Route path="/milhas/passageiros" element={<SomenteAdmin><Passageiros /></SomenteAdmin>} />
+        <Route path="/milhas/programas" element={<SomenteAdmin><Programas /></SomenteAdmin>} />
+        <Route path="/milhas/contas" element={<SomenteAdmin><ContasMilhas /></SomenteAdmin>} />
+        <Route path="/milhas/transferencias" element={<SomenteAdmin><TransferenciasMilhas /></SomenteAdmin>} />
+
+        <Route path="/financas" element={<FinancasDashboard />} />
+        <Route path="/financas/contas" element={<SomenteAdmin><Contas /></SomenteAdmin>} />
+        <Route path="/financas/transacoes" element={<Transacoes />} />
+        <Route path="/financas/fluxo-caixa" element={<FluxoCaixa />} />
+        <Route path="/financas/transferencias" element={<SomenteAdmin><TransferenciasFinancas /></SomenteAdmin>} />
+        <Route path="/financas/contas-pagar" element={<SomenteAdmin><ContasPagar /></SomenteAdmin>} />
+        <Route path="/financas/contas-receber" element={<SomenteAdmin><ContasReceber /></SomenteAdmin>} />
+        <Route path="/financas/cartoes" element={<Cartoes />} />
+        <Route path="/financas/cartoes/:id" element={<FaturaCartao />} />
+        <Route path="/financas/centros-custo" element={<SomenteAdmin><CentrosCusto /></SomenteAdmin>} />
+        <Route path="/financas/categorias" element={<SomenteAdmin><Categorias /></SomenteAdmin>} />
+        <Route path="/financas/metas" element={<Metas />} />
+
+        <Route path="/configuracoes/familia" element={<SomenteAdmin><Familia /></SomenteAdmin>} />
+
+        <Route path="*" element={<NotFound />} />
+      </Routes>
+    </MainLayout>
+  );
+};
 
 const App = () => {
   const [session, setSession] = useState<Session | null>(null);
@@ -72,35 +128,10 @@ const App = () => {
               <Route path="*" element={<Login />} />
             </Routes>
           ) : (
-            /* Se está logado, libera o Layout e o Sistema inteiro */
-            <MainLayout>
-              <Routes>
-                <Route path="/" element={<Index />} />
-
-                <Route path="/milhas/estoque" element={<Estoque />} />
-                <Route path="/milhas/estoque/:id" element={<ProgramDetails />} />
-                <Route path="/milhas/limites" element={<Limites />} />
-                <Route path="/milhas/passageiros" element={<Passageiros />} />
-                <Route path="/milhas/programas" element={<Programas />} />
-                <Route path="/milhas/contas" element={<ContasMilhas />} />
-                <Route path="/milhas/transferencias" element={<TransferenciasMilhas />} />
-
-                <Route path="/financas" element={<FinancasDashboard />} />
-                <Route path="/financas/contas" element={<Contas />} />
-                <Route path="/financas/transacoes" element={<Transacoes />} />
-                <Route path="/financas/fluxo-caixa" element={<FluxoCaixa />} />
-                <Route path="/financas/transferencias" element={<TransferenciasFinancas />} />
-                <Route path="/financas/contas-pagar" element={<ContasPagar />} />
-                <Route path="/financas/contas-receber" element={<ContasReceber />} />
-                <Route path="/financas/cartoes" element={<Cartoes />} />
-                <Route path="/financas/cartoes/:id" element={<FaturaCartao />} />
-                <Route path="/financas/centros-custo" element={<CentrosCusto />} />
-                <Route path="/financas/categorias" element={<Categorias />} />
-                <Route path="/financas/metas" element={<Metas />} />
-                
-                <Route path="*" element={<NotFound />} />
-              </Routes>
-            </MainLayout>
+            /* Se está logado, descobre a família e o papel antes de liberar o sistema */
+            <FamiliaProvider userId={session.user.id}>
+              <AppLogado />
+            </FamiliaProvider>
           )}
         </BrowserRouter>
       </TooltipProvider>

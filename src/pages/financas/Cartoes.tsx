@@ -5,8 +5,10 @@ import { supabase } from '@/integrations/supabase/client';
 import { Card, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { CreditCard, Trash2, Edit2, Plus, X } from 'lucide-react';
+import { useFamilia } from '@/contexts/FamiliaContext';
 
 export default function Cartoes() {
+  const { podeEditar } = useFamilia();
   const [modalAberto, setModalAberto] = useState(false);
   const [cartaoEditandoId, setCartaoEditandoId] = useState<string | null>(null);
   
@@ -89,9 +91,11 @@ export default function Cartoes() {
         <h1 className="text-2xl font-bold flex items-center gap-2">
           <CreditCard className="text-[#10b981]" /> Cartões
         </h1>
-        <Button onClick={abrirModalNovo} className="bg-[#10b981] hover:bg-[#059669] text-black font-bold flex items-center gap-2">
-          <Plus size={18} /> Novo Cartão
-        </Button>
+        {podeEditar && (
+          <Button onClick={abrirModalNovo} className="bg-[#10b981] hover:bg-[#059669] text-black font-bold flex items-center gap-2">
+            <Plus size={18} /> Novo Cartão
+          </Button>
+        )}
       </div>
       
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -108,10 +112,10 @@ export default function Cartoes() {
               <Card className="bg-[#141417] p-6 border-white/5 group-hover:border-[#10b981] transition-all cursor-pointer h-full relative flex flex-col">
                 <div className="flex justify-between mb-2">
                   <span className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider">Cartão de Crédito</span>
-                  <div className="flex gap-2 relative z-10">
+                  {podeEditar && <div className="flex gap-2 relative z-10">
                      <button onClick={(e) => abrirModalEdicao(e, cartao)} className="p-1 text-zinc-500 hover:text-white transition-colors"><Edit2 className="w-4 h-4" /></button>
                      <button onClick={(e) => deletarCartao(e, cartao.id)} className="p-1 text-zinc-500 hover:text-red-500 transition-colors"><Trash2 className="w-4 h-4" /></button>
-                  </div>
+                  </div>}
                 </div>
                 
                 <CardTitle className="text-xl mb-6">{cartao.nome}</CardTitle>
