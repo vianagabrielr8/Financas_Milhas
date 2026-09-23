@@ -22,11 +22,12 @@ const CONFIG = {
   // tipos de lançamento que NÃO são receita nem gasto (mudança de lugar do dinheiro)
   tiposNeutros: ['TRANSFERENCIA', 'PAGAMENTO_FATURA', 'PAGAMENTO FATURA', 'PAGAMENTO DE FATURA'],
 
-  // ⚠️ CONFIRMAR no Supabase
-  tabelaCartoes: 'cartao_credito',
+  // mesma tabela e colunas usadas em Cartoes.tsx
+  tabelaCartoes: 'cartao_pessoal',
   cartaoCampoNome: 'nome',
-  cartaoCampoMelhorDia: 'melhor_dia_compra',
-  cartaoCampoLimite: 'limite_total',
+  // não existe coluna de "melhor dia": ele é o dia seguinte ao fechamento
+  cartaoCampoFechamento: 'dia_fechamento',
+  cartaoCampoLimite: 'limite',
   tabelaSubcategorias: 'subcategoria_pessoal',
   transacaoCampoSubcategoria: 'subcategoria_id',
   transacaoCampoDescricao: 'descricao',
@@ -305,7 +306,7 @@ export default function FinancasDashboard() {
     cartoes.forEach((c: any) =>
       m.set(String(c.id), {
         nome: c[CONFIG.cartaoCampoNome] ?? 'Cartão',
-        melhorDia: Number(c[CONFIG.cartaoCampoMelhorDia]) || null,
+        melhorDia: Number(c[CONFIG.cartaoCampoFechamento]) ? (Number(c[CONFIG.cartaoCampoFechamento]) % 31) + 1 : null,
         limite: Number(c[CONFIG.cartaoCampoLimite]) || null,
       }),
     );

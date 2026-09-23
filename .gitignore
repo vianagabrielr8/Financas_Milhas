@@ -22,3 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Segredos: nunca enviar ao GitHub (use .env.example como modelo)
+.env
+.env.*
+!.env.example

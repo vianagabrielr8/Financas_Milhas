@@ -8,27 +8,40 @@ import { format, parseISO } from 'date-fns';
 export default function FluxoCaixa() {
   const [dataSelecionada, setDataSelecionada] = useState(new Date().toISOString().split('T')[0]);
 
-  // Busca todas as transações, cartões e contas associadas
+  const [anoSel, mesSel] = dataSelecionada.split('-');
+  // Nomes dos meses para comparar com "mes_fatura" (ex: "Set/2026")
+  const mesesNomes = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  const mascaraFatura = `${mesesNomes[Number(mesSel) - 1]}/${anoSel}`;
+
+  // Busca só o que pode cair no dia da tela: lançamentos de conta daquele dia
+  // e compras de cartão da fatura daquele mês. O Supabase devolve no máximo
+  // 1000 linhas por consulta, então buscamos em páginas até acabar.
   const { data: transacoes = [], isLoading } = useQuery({
-    queryKey: ['fluxo_caixa_geral'],
+    queryKey: ['fluxo_caixa_geral', dataSelecionada],
+    enabled: !!dataSelecionada,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('transacao_pessoal')
-        .select('*, cartao_pessoal(nome, dia_vencimento), conta_financeira_pessoal(nome)');
-      if (error) throw error;
-      return data || [];
+      const TAM = 1000;
+      const todas: any[] = [];
+      for (let de = 0; ; de += TAM) {
+        const { data, error } = await supabase
+          .from('transacao_pessoal')
+          .select('*, cartao_pessoal(nome, dia_vencimento), conta_financeira_pessoal(nome)')
+          .or(`and(cartao_id.is.null,data.eq.${dataSelecionada}),and(cartao_id.not.is.null,mes_fatura.eq.${mascaraFatura})`)
+          .order('id', { ascending: true })
+          .range(de, de + TAM - 1);
+        if (error) throw error;
+        todas.push(...(data || []));
+        if (!data || data.length < TAM) break;
+      }
+      return todas;
     }
   });
 
   const diaFiltrado = useMemo(() => {
     if (!transacoes.length) return null;
 
-    const [anoSel, mesSel, diaSel] = dataSelecionada.split('-');
+    const diaSel = dataSelecionada.split('-')[2];
     const dataAlvo = new Date(Number(anoSel), Number(mesSel) - 1, Number(diaSel));
-    
-    // Nomes dos meses para comparar com "mes_fatura" (ex: "Set/2026")
-    const mesesNomes = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
-    const mascaraFatura = `${mesesNomes[Number(mesSel) - 1]}/${anoSel}`;
 
     // Filtra as transações cujo fluxo de caixa acontece NA DATA SELECIONADA
     const itensDoDia = transacoes.filter((t: any) => {
@@ -55,8 +68,12 @@ export default function FluxoCaixa() {
     let totalDia = 0;
     const itens = itensDoDia.map((t: any) => {
       const valor = Number(t.valor);
-      const isDespesa = t.tipo === 'DESPESA';
-      totalDia += isDespesa ? -valor : valor;
+      // Pagamento de fatura: o dinheiro saiu da conta, mas as compras do cartão
+      // já aparecem neste fluxo no dia do vencimento — somar de novo duplicaria.
+      if (t.tipo !== 'PAGAMENTO_FATURA') {
+        const isDespesa = t.tipo === 'DESPESA';
+        totalDia += isDespesa ? -valor : valor;
+      }
 
       return {
         id: t.id,
@@ -73,7 +90,7 @@ export default function FluxoCaixa() {
       totalDia,
       itens
     };
-  }, [transacoes, dataSelecionada]);
+  }, [transacoes, dataSelecionada, anoSel, mesSel, mascaraFatura]);
 
 
   return (
@@ -111,7 +128,7 @@ export default function FluxoCaixa() {
             {diaFiltrado.itens.map((item: any) => (
               <div key={item.id} className="p-5 flex justify-between items-center hover:bg-white/[0.02] transition-colors">
                 <div className="flex items-center gap-4">
-                  {item.tipo === 'DESPESA' ? <ArrowDownCircle className="w-6 h-6 text-[#ef4444]" /> : <ArrowUpCircle className="w-6 h-6 text-[#10b981]" />}
+                  {item.tipo === 'DESPESA' || item.tipo === 'PAGAMENTO_FATURA' ? <ArrowDownCircle className={`w-6 h-6 ${item.tipo === 'PAGAMENTO_FATURA' ? 'text-sky-400' : 'text-[#ef4444]'}`} /> : <ArrowUpCircle className="w-6 h-6 text-[#10b981]" />}
                   <div>
                     <p className="text-base font-semibold text-white">{item.desc}</p>
                     <div className="flex items-center gap-2 mt-1">
@@ -119,11 +136,16 @@ export default function FluxoCaixa() {
                         {item.status}
                       </span>
                       <span className="text-[10px] text-zinc-500 font-medium">{item.origem}</span>
+                      {item.tipo === 'PAGAMENTO_FATURA' && (
+                        <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border bg-sky-500/10 text-sky-400 border-sky-500/20" title="Não entra no total do dia: as compras do cartão já foram contadas no vencimento">
+                          Pagamento de fatura
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
-                <span className={`font-bold text-base whitespace-nowrap ${item.tipo === 'DESPESA' ? 'text-[#ef4444]' : 'text-[#10b981]'}`}>
-                  {item.tipo === 'DESPESA' ? '-' : '+'} R$ {Math.abs(item.valor).toLocaleString('pt-BR', {minimumFractionDigits: 2})}
+                <span className={`font-bold text-base whitespace-nowrap ${item.tipo === 'PAGAMENTO_FATURA' ? 'text-sky-400' : item.tipo === 'DESPESA' ? 'text-[#ef4444]' : 'text-[#10b981]'}`}>
+                  {item.tipo === 'DESPESA' || item.tipo === 'PAGAMENTO_FATURA' ? '-' : '+'} R$ {Math.abs(item.valor).toLocaleString('pt-BR', {minimumFractionDigits: 2})}
                 </span>
               </div>
             ))}
