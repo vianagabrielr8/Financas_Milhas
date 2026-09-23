@@ -78,12 +78,12 @@ Todas ganham a coluna `familia_id`.
 
 ## 2. Etapas (cada uma testável e reversível)
 
-**Arquivos de banco:** ficam em `supabase/migrations/`, no formato PASSO 0, 1, 2 e COMO DESFAZER, conforme o CLAUDE.md. Rodam **primeiro no projeto de teste**, depois em produção.
+**Arquivos de banco:** ficam em `supabase/migrations/`, no formato PASSO 0, 1, 2 e COMO DESFAZER, conforme o CLAUDE.md. Rodam **direto em produção** (decisão do dono, set/2026: sem projeto de teste). Por isso cada arquivo guarda uma cópia (backup) das linhas que mexe e traz o bloco "como desfazer". Voltar uma versão no GitHub desfaz **código**, mas **não desfaz dados do banco**.
 
 | Etapa | PR | O que faz | Toca produção? | Como desfazer |
 |---|---|---|---|---|
 | 0 | 1 | Inventário (só leitura) e atualização do CLAUDE.md. O código atual do bot entra no repositório sem mudanças. | Não | Nada a desfazer |
-| 1 | 2 | Projeto de teste: estrutura base igual à real, dados falsos de 2 famílias e guia dos painéis | Não | Apagar o projeto de teste |
+| 1 | — | ~~Projeto de teste~~: **cancelado** pelo dono. Os testes de "outra família" usam a conta de teste `360gestaoindaut@gmail.com` em produção. | — | — |
 | 2 | 3 | Tabelas e funções novas, já com RLS (estão vazias). Cria a família do dono com o dono como admin e a esposa como membro. | Só tabelas novas | `DROP` das tabelas e funções novas |
 | 3 | 4 | Coluna `familia_id` em tudo, sem ser obrigatória; preenchimento; índices; backup de `transacao_pessoal`; **rede de segurança** | Sim | `DROP COLUMN` e remover a rede |
 | 4 | 5 (ou 5a e 5b) | Telas: família e papel, "acesso não liberado", Família e convites, Liberar acesso, contestar, Contestações, "Conectar Telegram" | Não | Reverter o PR |
@@ -97,32 +97,23 @@ Todas ganham a coluna `familia_id`.
 
 ## 3. Passos manuais nos painéis
 
-**Supabase: projeto de teste** (na mesma organização)
-1. Criar o projeto `milheirosmart-teste`. O plano grátis permite 2 projetos ativos.
-2. No SQL Editor do projeto de teste, rodar a estrutura base, as migrations e os dados falsos.
-3. Em Authentication → Providers → Google: ligar o login com Google, com o mesmo Client ID e Secret da produção.
-4. No Google Cloud Console, no cliente OAuth, em "URIs de redirecionamento autorizados": adicionar `https://<id-do-teste>.supabase.co/auth/v1/callback`.
-5. Em Authentication → URL Configuration: adicionar as URLs de preview da Vercel e `http://localhost:5173/**`.
-
-**Vercel:** em Settings → Environment Variables, configurar `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY` assim:
-- em **Production**, com os valores da produção;
-- em **Preview**, com os valores do teste.
+**Antes de cada etapa que mexe no banco:** exportar uma cópia de `transacao_pessoal` pelo painel (Table Editor → a tabela → Export → CSV) e guardar no computador. No plano grátis do Supabase não dá para restaurar um backup do banco inteiro pelo painel.
 
 **Telegram** (etapa 5)
-1. Criar um segundo bot, de teste, no @BotFather.
-2. Em cada projeto Supabase, cadastrar os segredos `TELEGRAM_BOT_TOKEN` e `TELEGRAM_WEBHOOK_SECRET`.
+1. A trava de acesso já está no ar (set/2026): Secrets `TELEGRAM_WEBHOOK_SECRET` e `TELEGRAM_ALLOWED_CHAT_IDS`.
+2. No projeto de produção, cadastrar os segredos `TELEGRAM_BOT_TOKEN` e `TELEGRAM_WEBHOOK_SECRET`.
 3. Registrar o webhook (o endereço para onde o Telegram manda as mensagens) com o `secret_token`. O link fica pronto no guia.
 
 ## 4. Riscos e testes
 
 | Risco | Como evitar | Como testar |
 |---|---|---|
-| App fica vazio ao ligar o RLS | Regras criadas antes, 3 grupos, ensaio no teste | Totais do Dashboard antes e depois |
+| App fica vazio ao ligar o RLS | Regras criadas antes, 3 grupos, cópia CSV antes | Totais do Dashboard antes e depois |
 | Linha fica sem família | Preenchimento e rede de segurança | O SELECT de linhas sem família precisa dar 0 |
-| View mostra outra família | `security_invoker` | Daniel, no teste, não vê dados da outra família |
+| View mostra outra família | `security_invoker` | Conta de teste não vê dados do dono |
 | Bot aceita estranhos ou grava na família errada | Vínculo obrigatório, segredo do webhook, família vinda do vínculo | Conta não vinculada recebe "não autorizado" |
-| Bot usa categoria de outra família (o `service_role` ignora o RLS) | Toda busca do bot filtra por `familia_id` | 2 famílias falsas com categorias de mesmo nome |
-| Nome único trava outra família | Regra passa a valer por família | Criar a mesma categoria nas 2 famílias |
+| Bot usa categoria de outra família (o `service_role` ignora o RLS) | Toda busca do bot filtra por `familia_id` | Conta de teste com categoria de mesmo nome |
+| Nome único trava outra família | Regra passa a valer por família | Criar a mesma categoria na família de teste |
 | Admin trancado fora | Proibido remover o último admin | Tentar remover a si mesmo |
 | Membro grava pelo navegador | O RLS só deixa o admin gravar | Salvar logado como membro precisa dar erro |
 | Perda de dados | Backups, nenhum DELETE, "como desfazer" em cada arquivo | Contagens antes e depois |
@@ -179,7 +170,7 @@ Todas ganham a coluna `familia_id`.
 - **O banco é PostgreSQL 17.6.**
 - **Contas de login:** só existem 2.
   - A do dono, `d327ec3e-…`, dona de todos os dados.
-  - Uma conta de teste, criada em 13/08, sem nenhum dado. O dono disse que pode ser excluída.
+  - Uma conta de teste, criada em 13/08, sem nenhum dado. Fica: vai ser a "família de teste" para conferir que uma família não vê a outra.
   - A esposa ainda não entrou no app.
 - **As 6 linhas de `transacao_pessoal` sem `user_id` parecem teste.**
   - São UBER, PADARIA, IFOOD e FARMACIA, de 02/09 e 06/09, gravadas em 03/09 e 13/09.

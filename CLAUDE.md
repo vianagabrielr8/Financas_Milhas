@@ -32,9 +32,10 @@ também edita este repositório — estas regras valem para todos.
 
    Todo arquivo segue o mesmo formato: O QUE FAZ, **PASSO 0** (conferências
    só de leitura), **PASSO 1** (SELECT mostrando o que muda), **PASSO 2** (o
-   comando, entre `BEGIN`/`COMMIT`) e **COMO DESFAZER**. Quando o projeto
-   Supabase de TESTE existir, todo arquivo roda **primeiro no teste** e só
-   depois em produção.
+   comando, entre `BEGIN`/`COMMIT`) e **COMO DESFAZER**. **Não existe
+   projeto de teste**: tudo roda direto em produção. Por isso todo arquivo
+   que altera dados guarda antes uma cópia (backup) das linhas afetadas.
+   Lembre o dono: voltar versão no GitHub desfaz código, **não** dados.
 3. Nunca escreva chaves, tokens ou senhas no código. Use o `.env` (que não vai
    para o GitHub) e o `.env.example` (só os nomes). No site, as variáveis ficam
    no painel da Vercel.
