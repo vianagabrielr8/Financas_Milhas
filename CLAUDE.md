@@ -13,9 +13,19 @@ também edita este repositório — estas regras valem para todos.
 1. Sempre trabalhe num **branch** e abra um **Pull Request**. Nunca faça push
    direto na `main` e nunca faça merge sozinho.
 2. **Nunca altere dados do banco** (UPDATE/DELETE/INSERT em massa, mudança de
-   tabela, RLS) direto. Escreva o SQL num arquivo em `supabase/manual/`, com:
-   um SELECT que mostra o que muda, o comando, e como desfazer. O dono revisa e
-   roda manualmente.
+   tabela, RLS) direto. O SQL vai para um arquivo no repositório e o dono
+   revisa e roda manualmente no SQL Editor:
+   - `supabase/migrations/` (nome começando com data e hora `AAAAMMDDHHMMSS_`)
+     para **mudança de estrutura**: tabela nova, coluna nova, regra de RLS
+     ou função;
+   - `supabase/manual/` (nome `AAAA-MM_assunto.sql`) para **consertos de dados**
+     e consultas avulsas, como o inventário.
+
+   Todo arquivo segue o mesmo formato: O QUE FAZ, **PASSO 0** (conferências
+   só de leitura), **PASSO 1** (SELECT mostrando o que muda), **PASSO 2** (o
+   comando, entre `BEGIN`/`COMMIT`) e **COMO DESFAZER**. Quando o projeto
+   Supabase de TESTE existir, todo arquivo roda **primeiro no teste** e só
+   depois em produção.
 3. Nunca escreva chaves, tokens ou senhas no código. Use o `.env` (que não vai
    para o GitHub) e o `.env.example` (só os nomes). No site, as variáveis ficam
    no painel da Vercel.
@@ -62,3 +72,34 @@ Milhas (dois modelos convivendo — não misturar sem combinar antes):
 
 Atenção: as tabelas de finanças **não** estão em `supabase/migrations`
 (foram criadas pelo painel do Supabase). A estrutura real está no Supabase.
+Para conferir a estrutura real, use `supabase/manual/2026-09_inventario.sql`
+(só leitura).
+
+## Pacote 2 (em andamento): famílias, papéis e RLS
+O plano aprovado está em `docs/pacote2-familias-rls.md`. Resumo:
+- **Cada usuário pertence a uma família**, e cada família vê só os próprios
+  dados. Quem garante isso é o **RLS** (regras dentro do banco que decidem
+  quem vê cada linha), usando a coluna `familia_id`.
+- **Papéis:**
+  - `admin`: faz tudo;
+  - `membro`: no app só consulta e pode **contestar a classificação** de um
+    lançamento; lança despesas pelo bot.
+- **O bot do Telegram** (Edge Function `telegram-webhook`) só aceita contas do
+  Telegram vinculadas a um usuário e grava sempre o `familia_id` do vínculo.
+- **Siga a ordem das etapas do plano.** Nunca ligue o RLS numa tabela antes de
+  as regras de acesso dela existirem.
+
+## Antes de comercializar (futuro — ainda NÃO fazer)
+Hoje o Daniel (sócio) tem acesso ao painel do Supabase de produção. Antes de
+abrir o app para clientes:
+- **Restringir o acesso ao painel de produção** e revisar quem é membro da
+  organização no Supabase, na Vercel e no GitHub.
+- **Política de privacidade e LGPD** (Lei Geral de Proteção de Dados): quais
+  dados guardamos, para quê, e como o cliente pede para apagar os dele.
+- **Registro de acessos:** anotar quem acessou ou alterou dados sensíveis, e
+  quando.
+- **Preview com dados reais:** criar o branch `homologacao`, com variáveis da
+  Vercel específicas desse branch apontando para produção, e permitir que só
+  o dono atualize esse branch.
+- **Regras de proteção do GitHub (Rulesets):** a `main` só recebe mudanças por
+  PR aprovado.
