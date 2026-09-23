@@ -6,6 +6,16 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
 const SUPABASE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY');
 
+// TRAVA DE ACESSO: senha do webhook e lista de chats permitidos (Secrets do Supabase)
+const WEBHOOK_SECRET = Deno.env.get('TELEGRAM_WEBHOOK_SECRET') ?? '';
+const CHATS_PERMITIDOS = new Set(
+  (Deno.env.get('TELEGRAM_ALLOWED_CHAT_IDS') ?? '').split(',').map(s => s.trim()).filter(Boolean)
+);
+
+function chatPermitido(chatId: unknown) {
+  return chatId !== undefined && chatId !== null && CHATS_PERMITIDOS.has(String(chatId));
+}
+
 const supabase = createClient(SUPABASE_URL!, SUPABASE_KEY!);
 const URL_PUBLICA = 'https://tdatvduchifakmocywhq.supabase.co/functions/v1/telegram-webhook';
 
@@ -474,9 +484,21 @@ async function executarTarefaGravacao(chatId: number, mesFaturaEscolhida: string
 // ROTEADOR WEBHOOK
 // ------------------------------------------------------------------
 serve(async (req) => {
+  // TRAVA 1: só aceita chamadas com a senha secreta (o Telegram manda no cabeçalho).
+  // Sem a senha configurada, recusa tudo.
+  if (!WEBHOOK_SECRET || req.headers.get('X-Telegram-Bot-Api-Secret-Token') !== WEBHOOK_SECRET) {
+    return new Response("Unauthorized", { status: 401 });
+  }
+
   if (req.method === 'POST') {
     try {
       const payload = await req.json();
+
+      // TRAVA 2: chat fora da lista -> não responde nada e não grava nada.
+      const chatIdDaMensagem = payload.internal_task
+        ? payload.chatId
+        : (payload.message?.chat?.id ?? payload.callback_query?.message?.chat?.id);
+      if (!chatPermitido(chatIdDaMensagem)) return new Response("OK", { status: 200 });
 
       if (payload.internal_task === 'run_ai') { await executarTarefaIA(payload.chatId); return new Response("OK", { status: 200 }); }
       if (payload.internal_task === 'edit_ai') { await processarEdicaoTexto(payload.chatId, payload.texto); return new Response("OK", { status: 200 }); }
@@ -525,7 +547,7 @@ serve(async (req) => {
 
         if (count && count > 0 && !texto.startsWith('/')) {
              await sendMessage(chatId, "🧠 Processando suas edições em lote...");
-             EdgeRuntime.waitUntil(fetch(URL_PUBLICA, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_KEY}` }, body: JSON.stringify({ internal_task: 'edit_ai', chatId: chatId, texto: texto }) }).catch(console.error));
+             EdgeRuntime.waitUntil(fetch(URL_PUBLICA, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_KEY}`, 'X-Telegram-Bot-Api-Secret-Token': WEBHOOK_SECRET }, body: JSON.stringify({ internal_task: 'edit_ai', chatId: chatId, texto: texto }) }).catch(console.error));
              return new Response("OK", { status: 200 });
         } else {
              // Fallback para texto solto
@@ -618,7 +640,7 @@ serve(async (req) => {
         else if (action === 'start_ai') {
           await removeKeyboard(chatId, messageId);
           await sendMessage(chatId, "🧠 Analisando lote completo...");
-          EdgeRuntime.waitUntil(fetch(URL_PUBLICA, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_KEY}` }, body: JSON.stringify({ internal_task: 'run_ai', chatId: chatId }) }).catch(console.error));
+          EdgeRuntime.waitUntil(fetch(URL_PUBLICA, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_KEY}`, 'X-Telegram-Bot-Api-Secret-Token': WEBHOOK_SECRET }, body: JSON.stringify({ internal_task: 'run_ai', chatId: chatId }) }).catch(console.error));
         }
         else if (action === 'get_edit_template') {
           const { data: stagingData } = await supabase.from('open_finance_staging').select('*').order('data').order('id');
