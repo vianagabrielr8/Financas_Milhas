@@ -139,6 +139,8 @@ export default function Transacoes() {
     let des = 0;
     transacoesFiltradas.forEach((t: any) => {
       const v = Math.abs(Number(t.valor) || 0);
+      // Pagamento de fatura não é gasto novo: as compras do cartão já foram somadas
+      if (t.tipo === 'PAGAMENTO_FATURA') return;
       if (t.tipo === 'RECEITA') rec += v;
       else if (t.tipo === 'ESTORNO') des -= v;
       else des += v;
@@ -431,13 +433,19 @@ export default function Transacoes() {
                       ) : (t.conta_financeira_pessoal?.nome || '—')}
                     </td>
                     <td className="p-4 text-sm">
-                      <span className={`flex items-center gap-1.5 font-medium ${t.tipo === 'RECEITA' ? 'text-emerald-400' : 'text-red-400'}`}>
-                        <span className={`w-1.5 h-1.5 rounded-full ${t.tipo === 'RECEITA' ? 'bg-emerald-400' : 'bg-red-400'}`}></span>
-                        {t.tipo}
-                      </span>
+                      {t.tipo === 'PAGAMENTO_FATURA' ? (
+                        <span className="text-[10px] bg-sky-500/10 text-sky-400 px-2 py-1 rounded border border-sky-500/20 uppercase font-bold tracking-wider inline-block" title="Saiu da conta bancária, mas não conta como gasto novo (as compras do cartão já foram somadas)">
+                          Pagamento de fatura
+                        </span>
+                      ) : (
+                        <span className={`flex items-center gap-1.5 font-medium ${t.tipo === 'RECEITA' ? 'text-emerald-400' : 'text-red-400'}`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${t.tipo === 'RECEITA' ? 'bg-emerald-400' : 'bg-red-400'}`}></span>
+                          {t.tipo}
+                        </span>
+                      )}
                     </td>
                     <td className="p-4 text-right font-semibold whitespace-nowrap">
-                      {t.tipo === 'DESPESA' ? '-' : '+'} {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Math.abs(Number(t.valor) || 0))}
+                      {t.tipo === 'DESPESA' || t.tipo === 'PAGAMENTO_FATURA' ? '-' : '+'} {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Math.abs(Number(t.valor) || 0))}
                     </td>
                     <td className="p-4 text-center">
                       <span className={`px-2.5 py-1 rounded-md text-[10px] font-bold tracking-wider uppercase border ${t.situacao === 'PAGO' || t.situacao === 'RECEBIDO' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20'}`}>{t.situacao}</span>
@@ -546,6 +554,7 @@ export default function Transacoes() {
                   <option value="TODOS">Todos os tipos</option>
                   <option value="RECEITA">Receitas</option>
                   <option value="DESPESA">Despesas</option>
+                  <option value="PAGAMENTO_FATURA">Pagamentos de fatura</option>
                 </select>
               </div>
             </div>

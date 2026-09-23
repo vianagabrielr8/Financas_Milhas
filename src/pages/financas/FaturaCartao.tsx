@@ -187,6 +187,13 @@ export default function FaturaCartao() {
     return curr.tipo === 'ESTORNO' ? acc - valor : acc + valor;
   }, 0);
 
+  // Total da fatura INTEIRA (todos os cartões vinculados), ignorando o filtro da tela.
+  // É o valor usado no "Pagar Fatura", porque o pagamento quita a fatura toda.
+  const totalFaturaCompleta = transacoes.reduce((acc, curr) => {
+    const valor = Number(curr.valor);
+    return curr.tipo === 'ESTORNO' ? acc - valor : acc + valor;
+  }, 0);
+
   const faturaEstaPaga = useMemo(() => {
     if (transacoes.length === 0) return false;
     return transacoes.every((t: any) => t.situacao === 'PAGO');
@@ -656,7 +663,7 @@ export default function FaturaCartao() {
   const handleConfirmarPagamentoFatura = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!contaPagamentoId) return alert('Selecione uma conta bancária para efetuar o débito.');
-    if (transacoesFiltradas.length === 0) return alert('Não há transações nesta fatura para pagar.');
+    if (transacoes.length === 0) return alert('Não há transações nesta fatura para pagar.');
 
     setProcessandoPagamento(true);
     try {
@@ -679,8 +686,10 @@ export default function FaturaCartao() {
         .from('transacao_pessoal' as any)
         .insert([{
           descricao: `Pagamento Fatura ${cartaoAtivo.nome} (${faturaAtual})`,
-          valor: Math.abs(totalFatura),
-          tipo: 'DESPESA',
+          valor: Math.abs(totalFaturaCompleta),
+          // Tipo neutro: tira dinheiro da conta, mas não conta como gasto novo
+          // (as compras do cartão já foram contadas na fatura)
+          tipo: 'PAGAMENTO_FATURA',
           situacao: 'PAGO',
           data: dataPagamentoFatura,
           conta_id: contaPagamentoId,
@@ -1181,9 +1190,15 @@ export default function FaturaCartao() {
             <p className="text-sm text-zinc-400 mb-5">
               Confirmar o pagamento da fatura de <b className="text-white">{faturaAtual}</b> do cartão <b className="text-white">{cartaoAtivo?.nome}</b> no valor total de{' '}
               <span className="text-[#10b981] font-bold">
-                R$ {totalFatura.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                R$ {totalFaturaCompleta.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
               </span>.
             </p>
+            {filtroVinculado !== 'ALL' && (
+              <p className="text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-lg p-3 -mt-2 mb-5">
+                Atenção: há um filtro de cartão ativo na tela, mas o pagamento quita a fatura INTEIRA
+                (todos os cartões vinculados), no valor total acima.
+              </p>
+            )}
 
             <form onSubmit={handleConfirmarPagamentoFatura} className="space-y-4">
               <div>

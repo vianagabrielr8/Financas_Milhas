@@ -11,7 +11,11 @@ const supabase = createClient(
 );
 
 // Inicializa o Bot do Telegram com o seu Token Virtual
-const bot = new Telegraf('8767778879:AAGy6mqZBkagMmEEa30OxkWyCV_v3zqJBho');
+const token = process.env.TELEGRAM_BOT_TOKEN;
+if (!token) {
+  throw new Error('Defina TELEGRAM_BOT_TOKEN no arquivo .env (veja .env.example).');
+}
+const bot = new Telegraf(token);
 
 // Comando inicial do robô (/start)
 // Comando inicial do robô (/start)
