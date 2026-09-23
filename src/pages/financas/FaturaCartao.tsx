@@ -31,18 +31,17 @@ export default function FaturaCartao() {
   const [modalExclusaoAberto, setModalExclusaoAberto] = useState(false);
   const [transacaoParaExcluir, setTransacaoParaExcluir] = useState<any>(null);
 
-  // Edição em Lote
-  const [modalEdicaoLoteAberto, setModalEdicaoLoteAberto] = useState(false);
-  const [dadosEdicaoPendente, setDadosEdicaoPendente] = useState<any>(null);
-
   // Pagamento da Fatura
   const [modalPagarFaturaAberto, setModalPagarFaturaAberto] = useState(false);
   const [contaPagamentoId, setContaPagamentoId] = useState('');
   const [dataPagamentoFatura, setDataPagamentoFatura] = useState(new Date().toISOString().split('T')[0]);
   const [processandoPagamento, setProcessandoPagamento] = useState(false);
 
+  // Estados de Edição Lançamento/Parcela
   const [transacaoEditandoId, setTransacaoEditandoId] = useState<string | null>(null);
   const [transacaoEditandoOriginal, setTransacaoEditandoOriginal] = useState<any>(null);
+  const [formParcelaAtual, setFormParcelaAtual] = useState<number | null>(null);
+  const [formEdicaoLoteModo, setFormEdicaoLoteModo] = useState<'APENAS_ESTA' | 'DESTA_EM_DIANTE' | 'TODAS'>('APENAS_ESTA');
 
   const [formTipo, setFormTipo] = useState('DESPESA'); 
   const [formDescricao, setFormDescricao] = useState('');
@@ -280,6 +279,8 @@ export default function FaturaCartao() {
   const resetarFormulario = () => {
     setTransacaoEditandoId(null);
     setTransacaoEditandoOriginal(null);
+    setFormParcelaAtual(null);
+    setFormEdicaoLoteModo('APENAS_ESTA');
     setFormTipo('DESPESA');
     setFormDescricao('');
     setFormValor('');
@@ -303,7 +304,6 @@ export default function FaturaCartao() {
     setTransacaoEditandoId(t.id);
     setTransacaoEditandoOriginal(t);
     setFormTipo(t.tipo || 'DESPESA');
-    setFormDescricao(t.descricao);
     setFormValor(Math.abs(Number(t.valor)).toString());
     setFormData(t.data); 
     setFormObservacao(t.observacao || '');
@@ -320,7 +320,23 @@ export default function FaturaCartao() {
       setCategoriaSelecionada(null);
     }
     
-    setFormParcelado(false); 
+    const regexParcela = /(?:\(|\[Parc\s*)(\d+)\/(\d+)(?:\)|\])/i;
+    const match = t.descricao.match(regexParcela);
+    
+    if (match) {
+      setFormParcelaAtual(parseInt(match[1], 10));
+      setFormParcelas(parseInt(match[2], 10));
+      setFormDescricao(t.descricao.replace(regexParcela, '').trim());
+      setFormEdicaoLoteModo('DESTA_EM_DIANTE');
+      setFormParcelado(true);
+    } else {
+      setFormParcelaAtual(null);
+      setFormParcelas(2);
+      setFormDescricao(t.descricao);
+      setFormEdicaoLoteModo('APENAS_ESTA');
+      setFormParcelado(false);
+    }
+    
     setIsRateio(false); 
     setModalAberto(true);
   };
@@ -372,34 +388,128 @@ export default function FaturaCartao() {
     }
 
     if (transacaoEditandoId) {
-      // Regex que suporta (1/6), (02/05), [Parc 1/6] etc.
-      const regexParcela = /(?:\(|\[Parc\s*)(\d+)\/(\d+)(?:\)|\])/i;
-      const match = transacaoEditandoOriginal.descricao.match(regexParcela);
+      if (formParcelaAtual !== null) {
+        // --- EDIÇÃO INTEGRADA DE LOTE DE PARCELAS ---
+        const regexParcela = /(?:\(|\[Parc\s*)(\d+)\/(\d+)(?:\)|\])/i;
+        const matchOrig = transacaoEditandoOriginal.descricao.match(regexParcela);
+        const totalOriginal = parseInt(matchOrig[2], 10);
+        const nomeBaseOriginal = transacaoEditandoOriginal.descricao.replace(regexParcela, '').trim();
+        
+        // Se escolheu 'APENAS_ESTA', mantemos o total de parcelas original por segurança
+        const novoTotal = formEdicaoLoteModo === 'APENAS_ESTA' ? totalOriginal : formParcelas;
 
-      const dadosNovaEdicao = {
-        tipo: formTipo,
-        descricao: formDescricao,
-        valor: valorOriginal,
-        data: formData,
-        mes_fatura: formFaturaDestino,
-        observacao: formObservacao,
-        categoria_id: categoriaSelecionada?.catId || null,
-        subcategoria_id: categoriaSelecionada?.subId || null,
-        centro_custo_id: formCentroCusto,
-      };
+        // Busca todas as transações que podem pertencer a esse lote no cartão
+        const { data: todasDB } = await supabase
+          .from('transacao_pessoal' as any)
+          .select('*')
+          .eq('cartao_id', cartaoAtivo.id)
+          .ilike('descricao', `%${nomeBaseOriginal}%`);
 
-      if (match) {
-        // Fecha o modal de formulário e abre o modal de escolha do lote
-        setModalAberto(false);
-        setDadosEdicaoPendente({ 
-          id: transacaoEditandoId, 
-          transacaoOriginal: transacaoEditandoOriginal,
-          match, 
-          dados: dadosNovaEdicao 
+        const parcelasExistentes = (todasDB || []).filter((t: any) => {
+          const m = t.descricao.match(regexParcela);
+          return m && parseInt(m[2], 10) === totalOriginal; // Garante que é do mesmo lote original
         });
-        setModalEdicaoLoteAberto(true);
+
+        const operacoesUpdate = [];
+        const operacoesInsert = [];
+        const operacoesDelete = [];
+
+        // Varre de 1 até o maior número entre o Total Antigo e o Novo Total
+        for (let i = 1; i <= Math.max(novoTotal, totalOriginal); i++) {
+          const parcelaExistente = parcelasExistentes.find((t: any) => {
+            const m = t.descricao.match(regexParcela);
+            return m && parseInt(m[1], 10) === i;
+          });
+
+          let applyNewData = false;
+          if (formEdicaoLoteModo === 'TODAS') applyNewData = true;
+          if (formEdicaoLoteModo === 'DESTA_EM_DIANTE' && i >= formParcelaAtual) applyNewData = true;
+          if (formEdicaoLoteModo === 'APENAS_ESTA' && i === formParcelaAtual) applyNewData = true;
+
+          const novaDescricao = `${formDescricao.trim()} (${i}/${novoTotal})`;
+
+          if (i <= novoTotal) {
+            if (parcelaExistente) {
+              // UPDATE
+              const updateData: any = { descricao: novaDescricao };
+              if (applyNewData) {
+                updateData.valor = valorOriginal;
+                updateData.tipo = formTipo;
+                updateData.categoria_id = categoriaSelecionada?.catId || null;
+                updateData.subcategoria_id = categoriaSelecionada?.subId || null;
+                updateData.centro_custo_id = formCentroCusto;
+                updateData.observacao = formObservacao;
+                // Apenas altera a data/fatura se for exatamente a parcela sendo visualizada agora
+                if (i === formParcelaAtual) {
+                  updateData.data = formData;
+                  updateData.mes_fatura = formFaturaDestino;
+                }
+              }
+              operacoesUpdate.push({ id: parcelaExistente.id, ...updateData });
+            } else {
+              // INSERT (O usuário aumentou o total de parcelas, criando novas no futuro)
+              if (formEdicaoLoteModo !== 'APENAS_ESTA') {
+                const addMonths = i - formParcelaAtual;
+                const faturaAlvo = avancarMesFatura(formFaturaDestino, addMonths);
+                const dataObj = new Date(formData + 'T12:00:00Z');
+                dataObj.setUTCMonth(dataObj.getUTCMonth() + addMonths);
+
+                operacoesInsert.push({
+                  cartao_id: cartaoAtivo.id,
+                  cartao_vinculado_id: transacaoEditandoOriginal.cartao_vinculado_id,
+                  user_id: transacaoEditandoOriginal.user_id,
+                  descricao: novaDescricao,
+                  valor: valorOriginal,
+                  tipo: formTipo,
+                  situacao: 'PENDENTE',
+                  data: dataObj.toISOString().split('T')[0],
+                  mes_fatura: faturaAlvo,
+                  categoria_id: categoriaSelecionada?.catId || null,
+                  subcategoria_id: categoriaSelecionada?.subId || null,
+                  centro_custo_id: formCentroCusto,
+                  observacao: formObservacao,
+                  pluggy_transaction_id: `${transacaoEditandoOriginal.pluggy_transaction_id}_p${i}_ext`
+                });
+              }
+            }
+          } else {
+            // DELETE (O usuário diminuiu o total de parcelas, então i > novoTotal)
+            if (parcelaExistente && formEdicaoLoteModo !== 'APENAS_ESTA') {
+              operacoesDelete.push(parcelaExistente.id);
+            }
+          }
+        }
+
+        // Executar as mutações
+        const promises = [];
+        for (const upd of operacoesUpdate) {
+          const { id, ...rest } = upd;
+          promises.push(supabase.from('transacao_pessoal' as any).update(rest as any).eq('id', id));
+        }
+        if (operacoesInsert.length > 0) promises.push(supabase.from('transacao_pessoal' as any).insert(operacoesInsert as any));
+        if (operacoesDelete.length > 0) promises.push(supabase.from('transacao_pessoal' as any).delete().in('id', operacoesDelete));
+
+        await Promise.all(promises);
+
+        setModalAberto(false);
+        resetarFormulario();
+        refetch();
+        queryClient.invalidateQueries({ queryKey: ['transacoes_gerais'] });
         return;
       } else {
+        // --- EDIÇÃO SIMPLES (Transação normal, sem parcela) ---
+        const dadosNovaEdicao = {
+          tipo: formTipo,
+          descricao: formDescricao,
+          valor: valorOriginal,
+          data: formData,
+          mes_fatura: formFaturaDestino,
+          observacao: formObservacao,
+          categoria_id: categoriaSelecionada?.catId || null,
+          subcategoria_id: categoriaSelecionada?.subId || null,
+          centro_custo_id: formCentroCusto,
+        };
+
         const { error } = await supabase.from('transacao_pessoal' as any).update(dadosNovaEdicao as any).eq('id', transacaoEditandoId);
         if (error) alert('Erro ao editar: ' + error.message);
         else {
@@ -412,6 +522,7 @@ export default function FaturaCartao() {
       }
     }
 
+    // --- CRIAÇÃO DE NOVA DESPESA ---
     const transacoesParaInserir = [];
     const qtdParcelas = formParcelado ? formParcelas : 1;
     
@@ -473,61 +584,6 @@ export default function FaturaCartao() {
     }
   };
 
-  const executarEdicaoLote = async (modo: 'APENAS_ESTA' | 'DESTA_EM_DIANTE' | 'TODAS') => {
-    if (!dadosEdicaoPendente) return;
-    const { id, transacaoOriginal, match, dados } = dadosEdicaoPendente;
-    const parcelaAtual = parseInt(match[1], 10);
-    const totalParcelas = parseInt(match[2], 10);
-
-    // Extrai o nome base removendo qualquer marcação de parcela
-    const nomeBaseOriginal = transacaoOriginal.descricao.replace(/\s*(?:\(|\[Parc\s*)\d+\/\d+(?:\)|\])/i, '').trim();
-    const novoNomeBase = dados.descricao.replace(/\s*(?:\(|\[Parc\s*)\d+\/\d+(?:\)|\])/i, '').trim();
-
-    if (modo === 'APENAS_ESTA') {
-      await supabase.from('transacao_pessoal' as any).update(dados as any).eq('id', id);
-    } 
-    else {
-      // Busca todas as transações deste cartão que contenham o nome base
-      const { data: todasDoCartao } = await supabase
-        .from('transacao_pessoal' as any)
-        .select('*')
-        .eq('cartao_id', cartaoAtivo.id)
-        .ilike('descricao', `%${nomeBaseOriginal}%`);
-
-      if (todasDoCartao && todasDoCartao.length > 0) {
-        for (const t of todasDoCartao) {
-          const m = t.descricao.match(/(?:\(|\[Parc\s*)(\d+)\/(\d+)(?:\)|\])/i);
-          if (m) {
-            const p = parseInt(m[1], 10);
-            const tot = parseInt(m[2], 10);
-
-            if (tot === totalParcelas) {
-              if (modo === 'TODAS' || (modo === 'DESTA_EM_DIANTE' && p >= parcelaAtual)) {
-                await supabase.from('transacao_pessoal' as any).update({
-                  valor: dados.valor,
-                  tipo: dados.tipo,
-                  categoria_id: dados.categoria_id,
-                  subcategoria_id: dados.subcategoria_id,
-                  centro_custo_id: dados.centro_custo_id,
-                  observacao: dados.observacao,
-                  descricao: `${novoNomeBase} (${p}/${totalParcelas})`,
-                  data: t.id === id ? dados.data : t.data,
-                  mes_fatura: t.id === id ? dados.mes_fatura : t.mes_fatura
-                } as any).eq('id', t.id);
-              }
-            }
-          }
-        }
-      }
-    }
-
-    setModalEdicaoLoteAberto(false);
-    setDadosEdicaoPendente(null);
-    resetarFormulario();
-    refetch();
-    queryClient.invalidateQueries({ queryKey: ['transacoes_gerais'] });
-  };
-
   const iniciarExclusao = (t: any) => {
     const regexParcela = /(?:\(|\[Parc\s*)(\d+)\/(\d+)(?:\)|\])/i;
     if (regexParcela.test(t.descricao)) {
@@ -560,7 +616,7 @@ export default function FaturaCartao() {
 
     const parcelaAtual = parseInt(match[1], 10);
     const totalParcelas = parseInt(match[2], 10);
-    const nomeBaseOriginal = transacaoParaExcluir.descricao.replace(/\s*(?:\(|\[Parc\s*)\d+\/\d+(?:\)|\])/i, '').trim();
+    const nomeBaseOriginal = transacaoParaExcluir.descricao.replace(regexParcela, '').trim();
 
     if (modo === 'APENAS_ESTA') {
       await supabase.from('transacao_pessoal' as any).delete().eq('id', transacaoParaExcluir.id);
@@ -574,7 +630,7 @@ export default function FaturaCartao() {
       if (todasDoCartao && todasDoCartao.length > 0) {
         const idsParaDeletar: string[] = [];
         for (const t of todasDoCartao) {
-          const m = t.descricao.match(/(?:\(|\[Parc\s*)(\d+)\/(\d+)(?:\)|\])/i);
+          const m = t.descricao.match(regexParcela);
           if (m) {
             const p = parseInt(m[1], 10);
             const tot = parseInt(m[2], 10);
@@ -1179,61 +1235,6 @@ export default function FaturaCartao() {
         </div>
       )}
 
-      {/* MODAL DE EDIÇÃO EM LOTE (ESTILO IDÊNTICO AO DE EXCLUSÃO) */}
-      {modalEdicaoLoteAberto && dadosEdicaoPendente && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
-          <div className="bg-[#1a1a20] rounded-2xl w-full max-w-md border border-white/10 shadow-2xl p-6 animate-fade-in">
-            <div className="flex items-center gap-3 mb-4 text-[#3b82f6]">
-              <Edit2 className="w-6 h-6 shrink-0" />
-              <h3 className="text-lg font-bold text-white">Editar Compra Parcelada</h3>
-            </div>
-            
-            <p className="text-sm text-zinc-400 mb-6">
-              A transação <span className="text-white font-semibold">"{dadosEdicaoPendente.transacaoOriginal?.descricao}"</span> faz parte de uma compra parcelada. Como deseja aplicar as alterações?
-            </p>
-
-            <div className="space-y-3">
-              <button 
-                type="button"
-                onClick={() => executarEdicaoLote('APENAS_ESTA')} 
-                className="w-full bg-[#22222a] hover:bg-[#2c2c36] border border-white/5 text-white font-semibold py-3 px-4 rounded-xl text-sm transition-all text-left flex justify-between items-center"
-              >
-                <span>Apenas esta parcela</span>
-                <span className="text-xs text-zinc-500">Muda só este mês</span>
-              </button>
-              
-              <button 
-                type="button"
-                onClick={() => executarEdicaoLote('DESTA_EM_DIANTE')} 
-                className="w-full bg-[#22222a] hover:bg-[#2c2c36] border border-white/5 text-amber-400 font-semibold py-3 px-4 rounded-xl text-sm transition-all text-left flex justify-between items-center"
-              >
-                <span>Desta em diante</span>
-                <span className="text-xs text-zinc-500">Mantém faturas passadas</span>
-              </button>
-              
-              <button 
-                type="button"
-                onClick={() => executarEdicaoLote('TODAS')} 
-                className="w-full bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 text-[#3b82f6] font-semibold py-3 px-4 rounded-xl text-sm transition-all text-left flex justify-between items-center"
-              >
-                <span>Todas as parcelas</span>
-                <span className="text-xs text-[#3b82f6]/70">Atualiza o histórico todo</span>
-              </button>
-            </div>
-
-            <div className="mt-6 pt-4 border-t border-white/5 flex justify-end">
-              <button 
-                type="button"
-                onClick={() => { setModalEdicaoLoteAberto(false); setDadosEdicaoPendente(null); }} 
-                className="px-4 py-2 text-sm text-zinc-400 font-medium hover:text-white transition-colors"
-              >
-                Cancelar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Modal de Exclusão de Parcelas */}
       {modalExclusaoAberto && transacaoParaExcluir && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -1274,17 +1275,35 @@ export default function FaturaCartao() {
             </div>
             <div className="p-6 overflow-y-auto custom-scrollbar">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                
+                {/* COLUNA ESQUERDA */}
                 <div className="space-y-5">
                   <div className="flex bg-[#22222a] p-1 rounded-lg border border-white/5">
                     <button type="button" onClick={() => setFormTipo('DESPESA')} className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${formTipo === 'DESPESA' ? 'bg-[#e74c3c]/20 text-[#e74c3c] shadow-sm' : 'text-zinc-500 hover:text-zinc-300'}`}>Despesa</button>
                     <button type="button" onClick={() => setFormTipo('ESTORNO')} className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${formTipo === 'ESTORNO' ? 'bg-[#10b981]/20 text-[#10b981] shadow-sm' : 'text-zinc-500 hover:text-zinc-300'}`}>Estorno na Fatura</button>
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="col-span-2">
-                      <label className="text-zinc-400 text-[10px] font-bold uppercase block mb-1.5">Data da Compra (Fato Real)</label>
-                      <input type="date" required value={formData} onChange={(e) => setFormData(e.target.value)} className="w-full bg-[#1e1e24] text-white border border-white/10 rounded-xl p-3 focus:border-[#10b981] focus:outline-none transition-all [color-scheme:dark] text-sm" />
+                  
+                  {/* Se for edição de parcela, mostra o Total de Parcelas Editável */}
+                  {formParcelaAtual !== null ? (
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-zinc-400 text-[10px] font-bold uppercase block mb-1.5">Parcela Atual</label>
+                        <input type="text" disabled value={formParcelaAtual} className="w-full bg-[#1e1e24]/50 text-zinc-500 border border-white/5 rounded-xl p-3 cursor-not-allowed" />
+                      </div>
+                      <div>
+                        <label className="text-[#10b981] text-[10px] font-bold uppercase block mb-1.5">Total de Parcelas</label>
+                        <input type="number" min={formParcelaAtual} value={formParcelas} onChange={(e) => setFormParcelas(Number(e.target.value))} disabled={formEdicaoLoteModo === 'APENAS_ESTA'} className="w-full bg-[#1e1e24] text-white border border-[#10b981]/50 rounded-xl p-3 focus:border-[#10b981] focus:outline-none transition-all disabled:opacity-50" />
+                      </div>
                     </div>
-                  </div>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="col-span-2">
+                        <label className="text-zinc-400 text-[10px] font-bold uppercase block mb-1.5">Data da Compra (Fato Real)</label>
+                        <input type="date" required value={formData} onChange={(e) => setFormData(e.target.value)} className="w-full bg-[#1e1e24] text-white border border-white/10 rounded-xl p-3 focus:border-[#10b981] focus:outline-none transition-all [color-scheme:dark] text-sm" />
+                      </div>
+                    </div>
+                  )}
+
                   <div>
                     <label className="text-zinc-400 text-xs font-bold uppercase block mb-1.5">Valor Total</label>
                     <div className="relative flex items-center gap-2">
@@ -1314,6 +1333,7 @@ export default function FaturaCartao() {
                   </div>
                 </div>
 
+                {/* COLUNA DIREITA */}
                 <div className="space-y-5">
                   {!transacaoEditandoId && (
                     <div className="flex items-center justify-between bg-[#1e1e24] p-3 rounded-xl border border-white/5">
@@ -1440,14 +1460,49 @@ export default function FaturaCartao() {
                     </div>
                   )}
 
-                  <div className="grid grid-cols-1 gap-4">
-                    <div>
-                      <label className="text-[#10b981] text-[10px] font-bold uppercase block mb-1.5">Lançar/Alterar Para a Fatura de:</label>
-                      <select value={formFaturaDestino} onChange={(e) => setFormFaturaDestino(e.target.value)} className="w-full bg-[#10b981]/10 text-[#10b981] font-bold border border-[#10b981]/30 rounded-xl p-3 focus:outline-none transition-all text-sm appearance-none cursor-pointer">
-                        {opcoesFatura.map(f => <option key={f} value={f} className="bg-[#1e1e24] text-white">{f}</option>)}
-                      </select>
+                  {/* Seção Integrada de Lote para Edição de Parcelas */}
+                  {formParcelaAtual !== null ? (
+                    <div className="bg-[#141417] p-4 rounded-xl border border-white/5 space-y-4 mt-2">
+                      <div className="flex items-center gap-2 text-amber-400">
+                        <AlertTriangle className="w-4 h-4 shrink-0" />
+                        <span className="text-sm font-bold">Atenção! Esta é uma despesa parcelada ({formParcelaAtual}/{transacaoEditandoOriginal?.descricao.match(/(?:\(|\[Parc\s*)(\d+)\/(\d+)(?:\)\vert{}\])/i)?.[2]}).</span>
+                      </div>
+                      <span className="text-xs text-zinc-400 block mb-2">Como deseja aplicar as edições (valor, categoria, parcelas)?</span>
+
+                      <label className="flex items-center gap-3 cursor-pointer group">
+                        <div className={cn("w-4 h-4 rounded-full border flex items-center justify-center transition-colors", formEdicaoLoteModo === 'APENAS_ESTA' ? "border-[#10b981]" : "border-zinc-500 group-hover:border-zinc-400")}>
+                          {formEdicaoLoteModo === 'APENAS_ESTA' && <div className="w-2 h-2 rounded-full bg-[#10b981]" />}
+                        </div>
+                        <input type="radio" name="loteMode" className="hidden" checked={formEdicaoLoteModo === 'APENAS_ESTA'} onChange={() => setFormEdicaoLoteModo('APENAS_ESTA')} />
+                        <span className={cn("text-sm transition-colors font-medium", formEdicaoLoteModo === 'APENAS_ESTA' ? "text-white" : "text-zinc-400 group-hover:text-zinc-300")}>Editar somente esta</span>
+                      </label>
+                      
+                      <label className="flex items-center gap-3 cursor-pointer group">
+                        <div className={cn("w-4 h-4 rounded-full border flex items-center justify-center transition-colors", formEdicaoLoteModo === 'DESTA_EM_DIANTE' ? "border-[#10b981]" : "border-zinc-500 group-hover:border-zinc-400")}>
+                          {formEdicaoLoteModo === 'DESTA_EM_DIANTE' && <div className="w-2 h-2 rounded-full bg-[#10b981]" />}
+                        </div>
+                        <input type="radio" name="loteMode" className="hidden" checked={formEdicaoLoteModo === 'DESTA_EM_DIANTE'} onChange={() => setFormEdicaoLoteModo('DESTA_EM_DIANTE')} />
+                        <span className={cn("text-sm transition-colors font-medium", formEdicaoLoteModo === 'DESTA_EM_DIANTE' ? "text-white" : "text-zinc-400 group-hover:text-zinc-300")}>Editar esta, e as futuras</span>
+                      </label>
+                      
+                      <label className="flex items-center gap-3 cursor-pointer group">
+                        <div className={cn("w-4 h-4 rounded-full border flex items-center justify-center transition-colors", formEdicaoLoteModo === 'TODAS' ? "border-[#10b981]" : "border-zinc-500 group-hover:border-zinc-400")}>
+                          {formEdicaoLoteModo === 'TODAS' && <div className="w-2 h-2 rounded-full bg-[#10b981]" />}
+                        </div>
+                        <input type="radio" name="loteMode" className="hidden" checked={formEdicaoLoteModo === 'TODAS'} onChange={() => setFormEdicaoLoteModo('TODAS')} />
+                        <span className={cn("text-sm transition-colors font-medium", formEdicaoLoteModo === 'TODAS' ? "text-white" : "text-zinc-400 group-hover:text-zinc-300")}>Editar todas (incluindo efetivadas)</span>
+                      </label>
                     </div>
-                  </div>
+                  ) : (
+                    <div className="grid grid-cols-1 gap-4">
+                      <div>
+                        <label className="text-[#10b981] text-[10px] font-bold uppercase block mb-1.5">Lançar/Alterar Para a Fatura de:</label>
+                        <select value={formFaturaDestino} onChange={(e) => setFormFaturaDestino(e.target.value)} className="w-full bg-[#10b981]/10 text-[#10b981] font-bold border border-[#10b981]/30 rounded-xl p-3 focus:outline-none transition-all text-sm appearance-none cursor-pointer">
+                          {opcoesFatura.map(f => <option key={f} value={f} className="bg-[#1e1e24] text-white">{f}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                  )}
 
                   {!transacaoEditandoId && formTipo === 'DESPESA' && (
                     <div className="p-4 bg-[#1e1e24] border border-white/10 rounded-xl">
