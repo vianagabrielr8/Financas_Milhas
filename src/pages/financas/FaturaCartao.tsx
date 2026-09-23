@@ -372,7 +372,8 @@ export default function FaturaCartao() {
     }
 
     if (transacaoEditandoId) {
-      const regexParcela = /^(.*?)\s*\((\d+)\/(\d+)\)$/;
+      // Regex que suporta (1/6), (02/05), [Parc 1/6] etc.
+      const regexParcela = /(?:\(|\[Parc\s*)(\d+)\/(\d+)(?:\)|\])/i;
       const match = transacaoEditandoOriginal.descricao.match(regexParcela);
 
       const dadosNovaEdicao = {
@@ -388,7 +389,14 @@ export default function FaturaCartao() {
       };
 
       if (match) {
-        setDadosEdicaoPendente({ id: transacaoEditandoId, match, dados: dadosNovaEdicao });
+        // Fecha o modal de formulário e abre o modal de escolha do lote
+        setModalAberto(false);
+        setDadosEdicaoPendente({ 
+          id: transacaoEditandoId, 
+          transacaoOriginal: transacaoEditandoOriginal,
+          match, 
+          dados: dadosNovaEdicao 
+        });
         setModalEdicaoLoteAberto(true);
         return;
       } else {
@@ -398,6 +406,7 @@ export default function FaturaCartao() {
           setModalAberto(false);
           resetarFormulario();
           refetch();
+          queryClient.invalidateQueries({ queryKey: ['transacoes_gerais'] });
         }
         return;
       }
@@ -460,63 +469,67 @@ export default function FaturaCartao() {
       setModalAberto(false);
       resetarFormulario();
       refetch();
+      queryClient.invalidateQueries({ queryKey: ['transacoes_gerais'] });
     }
   };
 
   const executarEdicaoLote = async (modo: 'APENAS_ESTA' | 'DESTA_EM_DIANTE' | 'TODAS') => {
     if (!dadosEdicaoPendente) return;
-    const { id, match, dados } = dadosEdicaoPendente;
-    const [, nomeBase, parcelaAtualStr, totalParcelasStr] = match;
-    const parcelaAtual = parseInt(parcelaAtualStr, 10);
-    const totalParcelas = parseInt(totalParcelasStr, 10);
+    const { id, transacaoOriginal, match, dados } = dadosEdicaoPendente;
+    const parcelaAtual = parseInt(match[1], 10);
+    const totalParcelas = parseInt(match[2], 10);
 
-    const novoNomeBase = dados.descricao.replace(/\s*\(\d+\/\d+\)$/, '');
+    // Extrai o nome base removendo qualquer marcação de parcela
+    const nomeBaseOriginal = transacaoOriginal.descricao.replace(/\s*(?:\(|\[Parc\s*)\d+\/\d+(?:\)|\])/i, '').trim();
+    const novoNomeBase = dados.descricao.replace(/\s*(?:\(|\[Parc\s*)\d+\/\d+(?:\)|\])/i, '').trim();
 
     if (modo === 'APENAS_ESTA') {
       await supabase.from('transacao_pessoal' as any).update(dados as any).eq('id', id);
     } 
     else {
-      const descricoesOriginais = [];
-      const inicio = modo === 'DESTA_EM_DIANTE' ? parcelaAtual : 1;
-      for (let i = inicio; i <= totalParcelas; i++) {
-        descricoesOriginais.push(`${nomeBase.trim()} (${i}/${totalParcelas})`);
-      }
-
-      const { data: transacoesAlvo } = await supabase
+      // Busca todas as transações deste cartão que contenham o nome base
+      const { data: todasDoCartao } = await supabase
         .from('transacao_pessoal' as any)
-        .select('id, descricao, mes_fatura, data')
+        .select('*')
         .eq('cartao_id', cartaoAtivo.id)
-        .in('descricao', descricoesOriginais);
+        .ilike('descricao', `%${nomeBaseOriginal}%`);
 
-      if (transacoesAlvo && transacoesAlvo.length > 0) {
-        for (let t of transacoesAlvo) {
-          const matchTarget = t.descricao.match(/\((\d+)\/\d+\)$/);
-          const pTarget = matchTarget ? matchTarget[1] : '';
-          
-          await supabase.from('transacao_pessoal' as any).update({
-            valor: dados.valor,
-            tipo: dados.tipo,
-            categoria_id: dados.categoria_id,
-            subcategoria_id: dados.subcategoria_id,
-            centro_custo_id: dados.centro_custo_id,
-            observacao: dados.observacao,
-            descricao: `${novoNomeBase} (${pTarget}/${totalParcelas})`,
-            data: t.id === id ? dados.data : t.data,
-            mes_fatura: t.id === id ? dados.mes_fatura : t.mes_fatura
-          } as any).eq('id', t.id);
+      if (todasDoCartao && todasDoCartao.length > 0) {
+        for (const t of todasDoCartao) {
+          const m = t.descricao.match(/(?:\(|\[Parc\s*)(\d+)\/(\d+)(?:\)|\])/i);
+          if (m) {
+            const p = parseInt(m[1], 10);
+            const tot = parseInt(m[2], 10);
+
+            if (tot === totalParcelas) {
+              if (modo === 'TODAS' || (modo === 'DESTA_EM_DIANTE' && p >= parcelaAtual)) {
+                await supabase.from('transacao_pessoal' as any).update({
+                  valor: dados.valor,
+                  tipo: dados.tipo,
+                  categoria_id: dados.categoria_id,
+                  subcategoria_id: dados.subcategoria_id,
+                  centro_custo_id: dados.centro_custo_id,
+                  observacao: dados.observacao,
+                  descricao: `${novoNomeBase} (${p}/${totalParcelas})`,
+                  data: t.id === id ? dados.data : t.data,
+                  mes_fatura: t.id === id ? dados.mes_fatura : t.mes_fatura
+                } as any).eq('id', t.id);
+              }
+            }
+          }
         }
       }
     }
 
     setModalEdicaoLoteAberto(false);
     setDadosEdicaoPendente(null);
-    setModalAberto(false);
     resetarFormulario();
     refetch();
+    queryClient.invalidateQueries({ queryKey: ['transacoes_gerais'] });
   };
 
   const iniciarExclusao = (t: any) => {
-    const regexParcela = /\((\d+)\/(\d+)\)$/;
+    const regexParcela = /(?:\(|\[Parc\s*)(\d+)\/(\d+)(?:\)|\])/i;
     if (regexParcela.test(t.descricao)) {
       setTransacaoParaExcluir(t);
       setModalExclusaoAberto(true);
@@ -530,12 +543,13 @@ export default function FaturaCartao() {
   const executarExclusaoSimples = async (id: string) => {
     await supabase.from('transacao_pessoal' as any).delete().eq('id', id);
     refetch();
+    queryClient.invalidateQueries({ queryKey: ['transacoes_gerais'] });
   };
 
   const executarExclusaoParcelada = async (modo: 'APENAS_ESTA' | 'DESTA_EM_DIANTE' | 'TODAS') => {
     if (!transacaoParaExcluir) return;
 
-    const regexParcela = /^(.*?)\s*\((\d+)\/(\d+)\)$/;
+    const regexParcela = /(?:\(|\[Parc\s*)(\d+)\/(\d+)(?:\)|\])/i;
     const match = transacaoParaExcluir.descricao.match(regexParcela);
 
     if (!match) {
@@ -544,26 +558,43 @@ export default function FaturaCartao() {
       return;
     }
 
-    const [, nomeBase, parcelaAtualStr, totalParcelasStr] = match;
-    const parcelaAtual = parseInt(parcelaAtualStr, 10);
-    const totalParcelas = parseInt(totalParcelasStr, 10);
+    const parcelaAtual = parseInt(match[1], 10);
+    const totalParcelas = parseInt(match[2], 10);
+    const nomeBaseOriginal = transacaoParaExcluir.descricao.replace(/\s*(?:\(|\[Parc\s*)\d+\/\d+(?:\)|\])/i, '').trim();
 
     if (modo === 'APENAS_ESTA') {
       await supabase.from('transacao_pessoal' as any).delete().eq('id', transacaoParaExcluir.id);
-    } else if (modo === 'TODAS') {
-      const descricoes = Array.from({ length: totalParcelas }, (_, i) => `${nomeBase.trim()} (${i + 1}/${totalParcelas})`);
-      await supabase.from('transacao_pessoal' as any).delete().eq('cartao_id', transacaoParaExcluir.cartao_id).in('descricao', descricoes);
-    } else if (modo === 'DESTA_EM_DIANTE') {
-      const descricoes = [];
-      for (let i = parcelaAtual; i <= totalParcelas; i++) {
-        descricoes.push(`${nomeBase.trim()} (${i}/${totalParcelas})`);
+    } else {
+      const { data: todasDoCartao } = await supabase
+        .from('transacao_pessoal' as any)
+        .select('*')
+        .eq('cartao_id', transacaoParaExcluir.cartao_id)
+        .ilike('descricao', `%${nomeBaseOriginal}%`);
+
+      if (todasDoCartao && todasDoCartao.length > 0) {
+        const idsParaDeletar: string[] = [];
+        for (const t of todasDoCartao) {
+          const m = t.descricao.match(/(?:\(|\[Parc\s*)(\d+)\/(\d+)(?:\)|\])/i);
+          if (m) {
+            const p = parseInt(m[1], 10);
+            const tot = parseInt(m[2], 10);
+            if (tot === totalParcelas) {
+              if (modo === 'TODAS' || (modo === 'DESTA_EM_DIANTE' && p >= parcelaAtual)) {
+                idsParaDeletar.push(t.id);
+              }
+            }
+          }
+        }
+        if (idsParaDeletar.length > 0) {
+          await supabase.from('transacao_pessoal' as any).delete().in('id', idsParaDeletar);
+        }
       }
-      await supabase.from('transacao_pessoal' as any).delete().eq('cartao_id', transacaoParaExcluir.cartao_id).in('descricao', descricoes);
     }
 
     setModalExclusaoAberto(false);
     setTransacaoParaExcluir(null);
     refetch();
+    queryClient.invalidateQueries({ queryKey: ['transacoes_gerais'] });
   };
 
   const handleConfirmarPagamentoFatura = async (e: React.FormEvent) => {
@@ -573,7 +604,6 @@ export default function FaturaCartao() {
 
     setProcessandoPagamento(true);
     try {
-      // 1. Localiza o Centro de Custo neutro (Giro/Reembolso)
       const { data: ccGiro } = await supabase
         .from('centro_custo_projeto' as any)
         .select('id')
@@ -581,7 +611,6 @@ export default function FaturaCartao() {
         .limit(1)
         .maybeSingle();
 
-      // 2. Marca todas as transações desta fatura como PAGO
       const { error: errUpdate } = await supabase
         .from('transacao_pessoal' as any)
         .update({ situacao: 'PAGO' } as any)
@@ -590,7 +619,6 @@ export default function FaturaCartao() {
 
       if (errUpdate) throw errUpdate;
 
-      // 3. Insere a saída de caixa em transações (Conta Corrente)
       const { error: errInsert } = await supabase
         .from('transacao_pessoal' as any)
         .insert([{
@@ -609,7 +637,6 @@ export default function FaturaCartao() {
 
       if (errInsert) throw errInsert;
 
-      // 4. Atualiza todas as consultas
       queryClient.invalidateQueries({ queryKey: ['transacoes_gerais'] });
       queryClient.invalidateQueries({ queryKey: ['transacoes_cartao'] });
 
@@ -865,6 +892,7 @@ export default function FaturaCartao() {
         }
 
         refetch();
+        queryClient.invalidateQueries({ queryKey: ['transacoes_gerais'] });
 
       } catch (err) { alert("Erro no processamento do arquivo CSV."); }
     };
@@ -1151,7 +1179,7 @@ export default function FaturaCartao() {
         </div>
       )}
 
-      {/* MODAL DE EDIÇÃO EM LOTE */}
+      {/* MODAL DE EDIÇÃO EM LOTE (ESTILO IDÊNTICO AO DE EXCLUSÃO) */}
       {modalEdicaoLoteAberto && dadosEdicaoPendente && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
           <div className="bg-[#1a1a20] rounded-2xl w-full max-w-md border border-white/10 shadow-2xl p-6 animate-fade-in">
@@ -1161,22 +1189,46 @@ export default function FaturaCartao() {
             </div>
             
             <p className="text-sm text-zinc-400 mb-6">
-              Esta alteração afeta a compra parcelada <span className="text-white font-semibold">"{transacaoEditandoOriginal?.descricao}"</span>. Como deseja aplicar as mudanças?
+              A transação <span className="text-white font-semibold">"{dadosEdicaoPendente.transacaoOriginal?.descricao}"</span> faz parte de uma compra parcelada. Como deseja aplicar as alterações?
             </p>
 
             <div className="space-y-3">
-              <button onClick={() => executarEdicaoLote('APENAS_ESTA')} className="w-full bg-[#22222a] hover:bg-[#2c2c36] border border-white/5 text-white font-semibold py-3 px-4 rounded-xl text-sm transition-all text-left flex justify-between items-center">
-                <span>Apenas esta parcela</span><span className="text-xs text-zinc-500">Muda só este mês</span>
+              <button 
+                type="button"
+                onClick={() => executarEdicaoLote('APENAS_ESTA')} 
+                className="w-full bg-[#22222a] hover:bg-[#2c2c36] border border-white/5 text-white font-semibold py-3 px-4 rounded-xl text-sm transition-all text-left flex justify-between items-center"
+              >
+                <span>Apenas esta parcela</span>
+                <span className="text-xs text-zinc-500">Muda só este mês</span>
               </button>
-              <button onClick={() => executarEdicaoLote('DESTA_EM_DIANTE')} className="w-full bg-[#22222a] hover:bg-[#2c2c36] border border-white/5 text-amber-400 font-semibold py-3 px-4 rounded-xl text-sm transition-all text-left flex justify-between items-center">
-                <span>Desta em diante</span><span className="text-xs text-zinc-500">Aplica para o futuro</span>
+              
+              <button 
+                type="button"
+                onClick={() => executarEdicaoLote('DESTA_EM_DIANTE')} 
+                className="w-full bg-[#22222a] hover:bg-[#2c2c36] border border-white/5 text-amber-400 font-semibold py-3 px-4 rounded-xl text-sm transition-all text-left flex justify-between items-center"
+              >
+                <span>Desta em diante</span>
+                <span className="text-xs text-zinc-500">Mantém faturas passadas</span>
               </button>
-              <button onClick={() => executarEdicaoLote('TODAS')} className="w-full bg-[#3b82f6]/10 hover:bg-[#3b82f6]/20 border border-[#3b82f6]/20 text-[#3b82f6] font-semibold py-3 px-4 rounded-xl text-sm transition-all text-left flex justify-between items-center">
-                <span>Todas as parcelas</span><span className="text-xs text-[#3b82f6]/70">Histórico completo</span>
+              
+              <button 
+                type="button"
+                onClick={() => executarEdicaoLote('TODAS')} 
+                className="w-full bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 text-[#3b82f6] font-semibold py-3 px-4 rounded-xl text-sm transition-all text-left flex justify-between items-center"
+              >
+                <span>Todas as parcelas</span>
+                <span className="text-xs text-[#3b82f6]/70">Atualiza o histórico todo</span>
               </button>
             </div>
+
             <div className="mt-6 pt-4 border-t border-white/5 flex justify-end">
-              <button onClick={() => { setModalEdicaoLoteAberto(false); setDadosEdicaoPendente(null); }} className="px-4 py-2 text-sm text-zinc-400 font-medium hover:text-white transition-colors">Cancelar</button>
+              <button 
+                type="button"
+                onClick={() => { setModalEdicaoLoteAberto(false); setDadosEdicaoPendente(null); }} 
+                className="px-4 py-2 text-sm text-zinc-400 font-medium hover:text-white transition-colors"
+              >
+                Cancelar
+              </button>
             </div>
           </div>
         </div>
