@@ -177,6 +177,41 @@ Todas ganham a coluna `familia_id`.
   Os ids do Pluggy continuam únicos no banco inteiro.
 - **Não há funções nem gatilhos no esquema `public`.** As extensões instaladas incluem `pg_cron`, `pg_net`, `vector` e `supabase_vault`, então pode haver uma tarefa agendada chamando Edge Functions. Isso precisa ser conferido.
 - **O banco é PostgreSQL 17.6.**
+- **Contas de login:** só existem 2.
+  - A do dono, `d327ec3e-…`, dona de todos os dados.
+  - Uma conta de teste, criada em 13/08, sem nenhum dado. O dono disse que pode ser excluída.
+  - A esposa ainda não entrou no app.
+- **As 6 linhas de `transacao_pessoal` sem `user_id` parecem teste.**
+  - São UBER, PADARIA, IFOOD e FARMACIA, de 02/09 e 06/09, gravadas em 03/09 e 13/09.
+  - Estão com **valor negativo**, o que quebra a regra do CLAUDE.md de que o valor é sempre positivo.
+  - 5 delas não estão ligadas a nenhum cartão nem conta.
+  - Nenhuma veio do Pacote 1.
+  - Hoje ficam invisíveis no app, por causa da regra "por usuário".
+  - Decidir com o dono se apagamos ou atribuímos antes da etapa 3. Isso fica num arquivo em `supabase/manual/`.
+- **Endereço do projeto:** o bot usa o projeto `tdatvduchifakmocywhq`, mas o `supabase/config.toml` aponta para `nunbtbtktvzdlisshbij`, provavelmente um projeto antigo. Confirmar qual é o de produção.
+
+## O bot hoje (`supabase/functions/telegram-webhook/index.ts`, cópia fiel)
+
+O que ele faz hoje:
+1. A pessoa escolhe a origem do dinheiro (conta, cartão titular ou cartão adicional). A escolha fica guardada em `sessao_bot`, pelo `chat_id`.
+2. Manda o print. O Gemini lê o print, e o bot descarta as compras repetidas e põe o resto em `open_finance_staging`.
+3. O Gemini sugere categoria e centro de custo, e a pessoa ajusta por texto.
+4. Quando a pessoa aprova, as linhas são gravadas em `transacao_pessoal`, com o `user_id` do dono do cartão ou da conta. Se não achar o dono, usa o **id do dono do app, escrito direto no código**.
+
+**Problemas que o Pacote 2 precisa resolver** (entram no PR do bot, a etapa 5):
+- **Ninguém é identificado.** Qualquer pessoa que encontrar o bot no Telegram consegue:
+  - ver os nomes das suas contas e cartões;
+  - lançar despesas nas suas finanças;
+  - mudar a configuração de um cartão (`set_read_`);
+  - apagar a triagem inteira, com `limpar`.
+- **Não há senha no webhook.** Quem souber o endereço da função pode chamá-la direto, inclusive as tarefas internas `run_ai` e `edit_ai`.
+- **A triagem (`open_finance_staging`) é uma só para todo mundo.** Não é separada por pessoa nem por família, e `limpar` ou `cancel_ai` apagam tudo.
+- **Categorias, cartões e contas são buscados no banco inteiro**, sem filtrar por família.
+- **Diferenças para o formato do CLAUDE.md:**
+  - as parcelas vão para a descrição como `[Parc i/n]`, e não como ` (i/n)`;
+  - só existem botões de fatura de Jul a Dez/2026.
+
+  Corrigir junto com a etapa 5, ou num PR à parte.
 
 ## 6. Estimativa
 
