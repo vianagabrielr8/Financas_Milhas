@@ -140,6 +140,44 @@ Todas ganham a coluna `familia_id`.
    - busca categorias, cartões e contas **só da família** da pessoa.
 5. Para desvincular, existe um botão no app.
 
+## Resultado do inventário (set/2026) — ajusta o plano acima
+
+- **Dados reais estão em 6 tabelas**, todas com `user_id` do dono:
+  - `transacao_pessoal`: 1524 linhas, **6 delas sem `user_id`**;
+  - `subcategoria_pessoal`: 31;
+  - `categoria_pessoal`: 17;
+  - `cartao_pessoal`: 10;
+  - `centro_custo_projeto`: 6;
+  - `conta_financeira_pessoal`: 4;
+  - `cartao_vinculado`: 4 linhas, sem `user_id`.
+- **O RLS já está ligado em todas as tabelas.**
+  - As 6 principais têm a regra `Restricao_Absoluta_Dono` (`auth.uid() = user_id`). Hoje cada usuário vê só o que ele mesmo criou, então a esposa não veria nada. Na etapa 6, essa regra é **trocada** pela regra por família, no mesmo comando.
+  - `cartao_vinculado` tem a regra "Permitir Leitura" (`true`): qualquer pessoa logada lê. Será fechada por família.
+  - As demais tabelas não têm nenhuma regra. Só as funções do servidor, que usam a `service_role`, enxergam essas tabelas.
+- **Tabelas do código que NÃO existem no banco:**
+  - o modelo de Milhas em inglês: `programs`, `accounts`, `transactions`, `passengers`, `sales`, `sale_passengers`, `clients`, `suppliers`, `credit_cards`;
+  - `payables`, `payable_installments`, `receivables`, `receivable_installments`;
+  - `passageiros`;
+  - as views `expiring_miles` e `program_balance_summary`.
+
+  Não existe nenhuma view, então o cuidado com `security_invoker` não se aplica hoje. Consertar essas telas fica fora do Pacote 2.
+- **Tabelas que o plano não previa e que recebem `familia_id`:**
+  - `sessao_bot` (chave `chat_id`);
+  - `open_finance_staging` e colunas `pluggy_*` (integração Pluggy);
+  - `memoria_categorizacao` (usa `vector`);
+  - `auditoria_fila`, `movimentacao_milhas`, `transacoes_financeiras`, `parcelas_financeiras`;
+  - `categoria_financas`, `categorias`, `subcategorias`, `cartoes_credito`;
+  - `programas_fidelidade` e `contas_titulares` (vazias).
+- **Regras de "único" que passam a valer por família:**
+  - `centro_custo_projeto(nome)`;
+  - `programas_fidelidade(nome)`;
+  - `contas_titulares(cpf)`;
+  - também `categorias(nome)` e `cartoes_credito(nome)`, que estão vazias.
+
+  Os ids do Pluggy continuam únicos no banco inteiro.
+- **Não há funções nem gatilhos no esquema `public`.** As extensões instaladas incluem `pg_cron`, `pg_net`, `vector` e `supabase_vault`, então pode haver uma tarefa agendada chamando Edge Functions. Isso precisa ser conferido.
+- **O banco é PostgreSQL 17.6.**
+
 ## 6. Estimativa
 
 **8 PRs**, ou 9 se o PR 5 for dividido.

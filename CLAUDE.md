@@ -75,6 +75,11 @@ Atenção: as tabelas de finanças **não** estão em `supabase/migrations`
 Para conferir a estrutura real, use `supabase/manual/2026-09_inventario.sql`
 (só leitura).
 
+**Inventário de set/2026:** as tabelas `payables`, `payable_installments`,
+`receivables`, `receivable_installments`, `passageiros`, todo o modelo de Milhas
+em inglês e as views listadas acima **não existem** no banco. O resultado
+completo está em `docs/pacote2-familias-rls.md`.
+
 ## Pacote 2 (em andamento): famílias, papéis e RLS
 O plano aprovado está em `docs/pacote2-familias-rls.md`. Resumo:
 - **Cada usuário pertence a uma família**, e cada família vê só os próprios
