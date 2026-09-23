@@ -2,9 +2,9 @@ import { useState, useMemo, useRef, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useParams, Link } from 'react-router-dom';
-import { 
-  ChevronLeft, ChevronRight, Calendar, DollarSign, Receipt, 
-  FileText, Trash2, Edit2, Plus, CreditCard, ChevronDown, 
+import {
+  ChevronLeft, ChevronRight, Calendar, DollarSign, Receipt,
+  FileText, Trash2, Edit2, Plus, CreditCard, ChevronDown,
   Search, CornerDownRight, Upload, Download, Briefcase, AlertTriangle, X, DownloadCloud,
   ArrowUpDown, ArrowUp, ArrowDown, Calculator, SplitSquareHorizontal, Percent,
   Filter, CheckCircle2, Wallet
@@ -17,16 +17,16 @@ type SortKey = 'data' | 'descricao' | 'categoria' | 'valor';
 export default function FaturaCartao() {
   const queryClient = useQueryClient();
   const { id: urlCardId } = useParams();
-  
+
   const mesesNomes = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
   const [mesSelecionado, setMesSelecionado] = useState(mesesNomes[new Date().getMonth()]);
   const [anoSelecionado, setAnoSelecionado] = useState(new Date().getFullYear());
 
   const [cartaoAtivo, setCartaoAtivo] = useState<any>(null);
   const [filtroVinculado, setFiltroVinculado] = useState<string | 'ALL'>('ALL');
-  
+
   const [modalAberto, setModalAberto] = useState(false);
-  
+
   // Exclusão
   const [modalExclusaoAberto, setModalExclusaoAberto] = useState(false);
   const [transacaoParaExcluir, setTransacaoParaExcluir] = useState<any>(null);
@@ -43,16 +43,16 @@ export default function FaturaCartao() {
   const [formParcelaAtual, setFormParcelaAtual] = useState<number | null>(null);
   const [formEdicaoLoteModo, setFormEdicaoLoteModo] = useState<'APENAS_ESTA' | 'DESTA_EM_DIANTE' | 'TODAS'>('APENAS_ESTA');
 
-  const [formTipo, setFormTipo] = useState('DESPESA'); 
+  const [formTipo, setFormTipo] = useState('DESPESA');
   const [formDescricao, setFormDescricao] = useState('');
   const [formValor, setFormValor] = useState('');
   const [formData, setFormData] = useState(new Date().toISOString().split('T')[0]);
-  const [formFaturaDestino, setFormFaturaDestino] = useState(`${mesSelecionado}/${anoSelecionado}`); 
-  const [formCentroCusto, setFormCentroCusto] = useState(''); 
+  const [formFaturaDestino, setFormFaturaDestino] = useState(`${mesSelecionado}/${anoSelecionado}`);
+  const [formCentroCusto, setFormCentroCusto] = useState('');
   const [formParcelado, setFormParcelado] = useState(false);
   const [formParcelas, setFormParcelas] = useState(2);
   const [formObservacao, setFormObservacao] = useState('');
-  
+
   const [categoriaSelecionada, setCategoriaSelecionada] = useState<{catId: string, subId?: string, nomeDisplay: string} | null>(null);
   const [dropdownCatAberto, setDropdownCatAberto] = useState<number | null>(null);
   const [buscaCat, setBuscaCat] = useState('');
@@ -167,10 +167,10 @@ export default function FaturaCartao() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('transacao_pessoal' as any)
-        .select('*, centro_custo_projeto(nome)') 
+        .select('*, centro_custo_projeto(nome)')
         .eq('cartao_id', cartaoAtivo.id)
         .eq('mes_fatura', faturaAtual);
-      
+
       if (error) throw error;
       return data || [];
     }
@@ -199,14 +199,14 @@ export default function FaturaCartao() {
 
     let somaAtePenultima = 0;
     const novosRateios = [...rateios];
-    
+
     for (let i = 0; i < novosRateios.length - 1; i++) {
       somaAtePenultima += Number(novosRateios[i].valorStr) || 0;
     }
 
     const restante = Math.max(0, totalDesejado - somaAtePenultima);
     const indexUltima = novosRateios.length - 1;
-    
+
     if (Number(novosRateios[indexUltima].valorStr) !== restante) {
       novosRateios[indexUltima].valorStr = restante > 0 ? Number(restante.toFixed(2)).toString() : '';
       setRateios(novosRateios);
@@ -305,11 +305,11 @@ export default function FaturaCartao() {
     setTransacaoEditandoOriginal(t);
     setFormTipo(t.tipo || 'DESPESA');
     setFormValor(Math.abs(Number(t.valor)).toString());
-    setFormData(t.data); 
+    setFormData(t.data);
     setFormObservacao(t.observacao || '');
     setFormFaturaDestino(t.mes_fatura || faturaAtual);
     setFormCentroCusto(t.centro_custo_id || '');
-    
+
     if (t.categoria_id) {
       setCategoriaSelecionada({
         catId: t.categoria_id,
@@ -319,10 +319,10 @@ export default function FaturaCartao() {
     } else {
       setCategoriaSelecionada(null);
     }
-    
+
     const regexParcela = /(?:\(|\[Parc\s*)(\d+)\/(\d+)(?:\)|\])/i;
     const match = t.descricao.match(regexParcela);
-    
+
     if (match) {
       setFormParcelaAtual(parseInt(match[1], 10));
       setFormParcelas(parseInt(match[2], 10));
@@ -336,8 +336,8 @@ export default function FaturaCartao() {
       setFormEdicaoLoteModo('APENAS_ESTA');
       setFormParcelado(false);
     }
-    
-    setIsRateio(false); 
+
+    setIsRateio(false);
     setModalAberto(true);
   };
 
@@ -357,7 +357,7 @@ export default function FaturaCartao() {
     try {
       const expressaoTratada = calc.replace(/,/g, '.');
       const resultado = Function(`"use strict";return (${expressaoTratada})`)();
-      
+
       if (!isNaN(resultado) && isFinite(resultado)) {
         setFormValor(Math.abs(resultado).toFixed(2));
         setCalcAberto(false);
@@ -394,7 +394,7 @@ export default function FaturaCartao() {
         const matchOrig = transacaoEditandoOriginal.descricao.match(regexParcela);
         const totalOriginal = parseInt(matchOrig[2], 10);
         const nomeBaseOriginal = transacaoEditandoOriginal.descricao.replace(regexParcela, '').trim();
-        
+
         // Se escolheu 'APENAS_ESTA', mantemos o total de parcelas original por segurança
         const novoTotal = formEdicaoLoteModo === 'APENAS_ESTA' ? totalOriginal : formParcelas;
 
@@ -525,11 +525,11 @@ export default function FaturaCartao() {
     // --- CRIAÇÃO DE NOVA DESPESA ---
     const transacoesParaInserir = [];
     const qtdParcelas = formParcelado ? formParcelas : 1;
-    
+
     for (let i = 0; i < qtdParcelas; i++) {
       const faturaAlvo = avancarMesFatura(formFaturaDestino, i);
       const descBase = formParcelado ? `${formDescricao} (${i + 1}/${qtdParcelas})` : formDescricao;
-      
+
       if (isRateio) {
         for (let r of rateios) {
           let valorDestaLinha = 0;
@@ -543,15 +543,15 @@ export default function FaturaCartao() {
             transacoesParaInserir.push({
               descricao: descBase,
               valor: valorDestaLinha,
-              situacao: 'PENDENTE', 
+              situacao: 'PENDENTE',
               tipo: formTipo,
-              data: formData, 
+              data: formData,
               mes_fatura: faturaAlvo,
               observacao: formObservacao,
               cartao_id: cartaoAtivo.id,
               cartao_vinculado_id: filtroVinculado === 'ALL' || filtroVinculado === 'MAIN' ? null : filtroVinculado,
               categoria_id: r.cat?.catId || null,
-              subcategoria_id: r.cat?.subId || null, 
+              subcategoria_id: r.cat?.subId || null,
               centro_custo_id: r.cc,
             });
           }
@@ -560,15 +560,15 @@ export default function FaturaCartao() {
         transacoesParaInserir.push({
           descricao: descBase,
           valor: valorOriginal / qtdParcelas,
-          situacao: 'PENDENTE', 
+          situacao: 'PENDENTE',
           tipo: formTipo,
-          data: formData, 
+          data: formData,
           mes_fatura: faturaAlvo,
           observacao: formObservacao,
           cartao_id: cartaoAtivo.id,
           cartao_vinculado_id: filtroVinculado === 'ALL' || filtroVinculado === 'MAIN' ? null : filtroVinculado,
           categoria_id: categoriaSelecionada?.catId || null,
-          subcategoria_id: categoriaSelecionada?.subId || null, 
+          subcategoria_id: categoriaSelecionada?.subId || null,
           centro_custo_id: formCentroCusto,
         });
       }
@@ -711,8 +711,8 @@ export default function FaturaCartao() {
                      "30/08/2026;Uber;26,22;Set/2026;Transporte;360 Gestão;1;Corrida cliente\n" +
                      "15/08/2026;Supermercado;450,00;Set/2026;Alimentação;Familiar;1;Compras do mês\n" +
                      "20/08/2026;Estorno Anuidade;-120,00;Set/2026;;Familiar;1;Valores negativos viram Estorno automaticamente";
-    
-    const blob = new Blob(["\uFEFF" + conteudo], { type: 'text/csv;charset=utf-8;' });
+
+    const blob = new Blob(["﻿" + conteudo], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.setAttribute("href", url);
@@ -740,7 +740,7 @@ export default function FaturaCartao() {
       return `${dataFmt};${desc};${cat};${cc};${val};${sit};${obs}`;
     }).join('\n');
 
-    const blob = new Blob(["\uFEFF" + cabecalho + linhas], { type: 'text/csv;charset=utf-8;' });
+    const blob = new Blob(["﻿" + cabecalho + linhas], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.setAttribute("href", url);
@@ -754,23 +754,33 @@ export default function FaturaCartao() {
     const file = e.target.files?.[0];
     if (!file || !cartaoAtivo) return;
 
-    const { data: transacoesBancoRaw } = await supabase
-      .from('transacao_pessoal' as any)
-      .select('descricao, valor, data, tipo, centro_custo_id, categoria_id')
-      .eq('cartao_id', cartaoAtivo.id)
-      .limit(10000);
-    
-    const transacoesBanco = transacoesBancoRaw || [];
+    // Busca em páginas de 1000 (limite do Supabase) e traz CC/categoria para a checagem de duplicado
+    const transacoesBanco: any[] = [];
+    for (let de = 0; ; de += 1000) {
+      const { data: pagina, error: errBanco } = await supabase
+        .from('transacao_pessoal' as any)
+        .select('descricao, valor, data, tipo, centro_custo_id, categoria_id, subcategoria_id')
+        .eq('cartao_id', cartaoAtivo.id)
+        .order('id')
+        .range(de, de + 999);
+      if (errBanco) {
+        alert('Erro ao ler lançamentos existentes: ' + errBanco.message);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        return;
+      }
+      transacoesBanco.push(...(pagina || []));
+      if (!pagina || pagina.length < 1000) break;
+    }
 
     const reader = new FileReader();
     reader.onload = async ({ target }) => {
       try {
         const text = target?.result as string;
         const rows = text.split('\n').map(r => r.trim()).filter(r => r);
-        
+
         const transacoesImportadas: any[] = [];
         const linhasComErro = [];
-        
+
         linhasComErro.push("Data;Descricao;Valor Total;Fatura Alvo;Categoria;Centro Custo;Parcelas;Observacao;MOTIVO DO ERRO");
 
         for(let i = 1; i < rows.length; i++) {
@@ -784,7 +794,7 @@ export default function FaturaCartao() {
           }
 
           const [dataRaw, desc, valorRaw, faturaRaw, catRaw, ccRaw, parcelasRaw, obsRaw] = colunas;
-          
+
           if (!desc || desc.trim() === '') motivosErro.push("A descrição é obrigatória");
 
           let dataCompraObj: any = null;
@@ -806,7 +816,7 @@ export default function FaturaCartao() {
           let cleanVal = valorRaw?.replace('R$', '').trim() || '';
           if (cleanVal.includes('.') && cleanVal.includes(',')) cleanVal = cleanVal.replace(/\./g, '').replace(',', '.');
           else if (cleanVal.includes(',')) cleanVal = cleanVal.replace(',', '.');
-          
+
           const valorOriginalParsed = parseFloat(cleanVal);
           if (isNaN(valorOriginalParsed) || valorOriginalParsed === 0) motivosErro.push("Valor numérico inválido ou nulo");
 
@@ -837,7 +847,7 @@ export default function FaturaCartao() {
           if (catRaw && catRaw.trim() !== '') {
             const termo = catRaw.trim().toLowerCase();
             const catEncontrada = categorias.find((c: any) => c.nome.toLowerCase() === termo);
-            
+
             if (catEncontrada) {
               if (ccMatchId && catEncontrada.centro_custo_id && catEncontrada.centro_custo_id !== ccMatchId) {
                 motivosErro.push(`Categoria '${catEncontrada.nome}' não pertence ao CC '${ccEncontradoObj?.nome}'`);
@@ -858,34 +868,23 @@ export default function FaturaCartao() {
             }
           }
 
-          const isDuplicadaBanco = transacoesBanco.some((t: any) => {
-            const dbDesc = t.descricao ? t.descricao.replace(/\s+/g, ' ').trim().toLowerCase() : '';
-            const dbVal = Math.abs(Number(t.valor)).toFixed(2);
-            const dbData = t.data ? t.data.split('T')[0] : '';
-            const dbTipo = t.tipo || 'DESPESA';
-            const descMatch = dbDesc === descNormalizada || dbDesc.startsWith(`${descNormalizada} (`);
-            return descMatch && 
-                   dbVal === valorDaParcelaStr && 
-                   dbData === dataISO && 
-                   dbTipo === tipoTransacao &&
-                   t.centro_custo_id === ccMatchId &&
-                   t.categoria_id === categoriaMatchId;
-          });
+          // DUPLICADO = mesma descrição + valor + data + tipo + CENTRO DE CUSTO + CATEGORIA + SUBCATEGORIA
+          // (feito depois de identificar CC e categoria da linha)
+          const normDesc = (s: any) => (s ? String(s).replace(/\s+/g, ' ').trim().toLowerCase() : '');
+          const ehMesmaCompra = (t: any) => {
+            const tDesc = normDesc(t.descricao);
+            const descMatch = tDesc === descNormalizada || tDesc.startsWith(`${descNormalizada} (`);
+            return descMatch
+              && Math.abs(Number(t.valor)).toFixed(2) === valorDaParcelaStr
+              && (t.data ? String(t.data).split('T')[0] : '') === dataISO
+              && (t.tipo || 'DESPESA') === tipoTransacao
+              && (t.centro_custo_id || null) === (ccMatchId || null)
+              && (t.categoria_id || null) === (categoriaMatchId || null)
+              && (t.subcategoria_id || null) === (subcategoriaMatchId || null);
+          };
 
-          const isDuplicadaPlanilha = transacoesImportadas.some((t: any) => {
-            const planDesc = t.descricao ? t.descricao.replace(/\s+/g, ' ').trim().toLowerCase() : '';
-            const planVal = Math.abs(Number(t.valor)).toFixed(2);
-            const descMatch = planDesc === descNormalizada || planDesc.startsWith(`${descNormalizada} (`);
-            return descMatch && 
-                   planVal === valorDaParcelaStr && 
-                   t.data === dataISO && 
-                   t.tipo === tipoTransacao &&
-                   t.centro_custo_id === ccMatchId &&
-                   t.categoria_id === categoriaMatchId;
-          });
-
-          if (isDuplicadaBanco) motivosErro.push("Transação já existe no banco");
-          if (isDuplicadaPlanilha && (parcelasRaw === '1' || !parcelasRaw)) motivosErro.push("Transação duplicada dentro da própria planilha");
+          if (transacoesBanco.some(ehMesmaCompra)) motivosErro.push("Transação já existe no banco (mesmo CC e categoria)");
+          if (transacoesImportadas.some(ehMesmaCompra) && (parcelasRaw === '1' || !parcelasRaw)) motivosErro.push("Transação duplicada dentro da própria planilha (mesmo CC e categoria)");
 
           let faturaBaseImportacao = "";
           if (faturaRaw && faturaRaw.trim() !== '') {
@@ -904,7 +903,7 @@ export default function FaturaCartao() {
             let mesIdx = dataCompraObj.getUTCMonth();
             let anoObj = dataCompraObj.getUTCFullYear();
             const diaFechamento = cartaoAtivo?.dia_fechamento || 31;
-            
+
             if (dataCompraObj.getUTCDate() > diaFechamento) {
               mesIdx++;
               if (mesIdx > 11) { mesIdx = 0; anoObj++; }
@@ -925,7 +924,7 @@ export default function FaturaCartao() {
                 valor: valorParcela,
                 categoria_id: categoriaMatchId,
                 subcategoria_id: subcategoriaMatchId,
-                centro_custo_id: ccMatchId, 
+                centro_custo_id: ccMatchId,
                 tipo: tipoTransacao,
                 situacao: 'PENDENTE',
                 observacao: obsRaw ? obsRaw.trim() : 'Importado via CSV',
@@ -941,7 +940,7 @@ export default function FaturaCartao() {
 
         if (linhasComErro.length > 1) {
           const conteudoCsv = linhasComErro.join('\n');
-          const blob = new Blob(["\uFEFF" + conteudoCsv], { type: 'text/csv;charset=utf-8;' });
+          const blob = new Blob(["﻿" + conteudoCsv], { type: 'text/csv;charset=utf-8;' });
           const url = URL.createObjectURL(blob);
           const link = document.createElement("a");
           link.setAttribute("href", url);
@@ -949,7 +948,7 @@ export default function FaturaCartao() {
           document.body.appendChild(link);
           link.click();
           document.body.removeChild(link);
-          
+
           alert(`⚠️ Processamento concluído com ressalvas:\n\n✅ Sucesso: ${transacoesImportadas.length} parcelas registradas.\n❌ Rejeitadas: ${linhasComErro.length - 1} linhas inconsistentes.\n\nO arquivo 'erros_importacao_corrigir.csv' com as justificativas foi baixado automaticamente.`);
         } else if (transacoesImportadas.length > 0) {
            alert(`✅ Importação concluída! ${transacoesImportadas.length} lançamentos salvos com sucesso.`);
@@ -963,7 +962,7 @@ export default function FaturaCartao() {
       } catch (err) { alert("Erro no processamento do arquivo CSV."); }
     };
     reader.readAsText(file, 'ISO-8859-1');
-    if (fileInputRef.current) fileInputRef.current.value = ''; 
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   if (carregandoCartoes) return <div className="p-6 text-zinc-400">Carregando dados...</div>;
@@ -977,7 +976,7 @@ export default function FaturaCartao() {
 
   return (
     <div className="space-y-6 max-w-[1600px] mx-auto text-zinc-100 p-4 md:p-6 pb-24 relative">
-      
+
       <input type="file" accept=".csv" ref={fileInputRef} onChange={handleImportarCSV} className="hidden" />
 
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
@@ -999,10 +998,10 @@ export default function FaturaCartao() {
             </div>
           )}
         </div>
-        
+
         <div className="flex items-center gap-3 flex-wrap">
-          <Button 
-            onClick={() => setModalPagarFaturaAberto(true)} 
+          <Button
+            onClick={() => setModalPagarFaturaAberto(true)}
             disabled={faturaEstaPaga || transacoesFiltradas.length === 0}
             className={cn("font-bold flex items-center gap-2 h-9 shadow-sm transition-all", faturaEstaPaga ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 cursor-default" : "bg-[#10b981] hover:bg-[#059669] text-black")}
           >
@@ -1025,7 +1024,7 @@ export default function FaturaCartao() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
+
         <div className="lg:col-span-2 bg-[#1e1e24] border border-white/5 rounded-2xl p-6">
           <div className="flex items-center justify-center gap-4 mb-8">
             <Button variant="ghost" size="icon" onClick={() => setAnoSelecionado(a => a - 1)} className="text-[#10b981] hover:bg-[#10b981]/10"><ChevronLeft className="w-5 h-5" /></Button>
@@ -1109,7 +1108,7 @@ export default function FaturaCartao() {
         </div>
 
         <div className="space-y-4">
-          
+
           {/* FILTRO DE CARTÕES ADICIONAIS */}
           {cartoesVinculados.length > 0 && (
             <div className="bg-[#1e1e24] border border-white/5 rounded-2xl p-5 flex flex-col gap-3 relative overflow-hidden">
@@ -1157,7 +1156,7 @@ export default function FaturaCartao() {
             <div><p className="text-zinc-400 text-xs mb-1">Dia de fechamento</p><p className="text-xl font-bold text-white">{cartaoAtivo?.dia_fechamento || '--'} de {mesSelecionado}</p></div>
             <div className="w-10 h-10 rounded-full bg-amber-500/20 flex items-center justify-center"><Calendar className="w-5 h-5 text-amber-500" /></div>
           </div>
-          
+
           <div className="bg-[#1e1e24] border border-white/5 rounded-2xl p-5 flex justify-between items-center">
             <div><p className="text-zinc-400 text-xs mb-1">Data vencimento</p><p className="text-xl font-bold text-white">{cartaoAtivo?.dia_vencimento || '--'} de {mesSelecionado}</p></div>
             <div className="w-10 h-10 rounded-full bg-red-500/20 flex items-center justify-center"><Calendar className="w-5 h-5 text-red-500" /></div>
@@ -1245,61 +1244,6 @@ export default function FaturaCartao() {
         </div>
       )}
 
-      {/* MODAL DE EDIÇÃO EM LOTE (ESTILO IDÊNTICO AO DE EXCLUSÃO) */}
-      {modalEdicaoLoteAberto && dadosEdicaoPendente && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
-          <div className="bg-[#1a1a20] rounded-2xl w-full max-w-md border border-white/10 shadow-2xl p-6 animate-fade-in">
-            <div className="flex items-center gap-3 mb-4 text-[#3b82f6]">
-              <Edit2 className="w-6 h-6 shrink-0" />
-              <h3 className="text-lg font-bold text-white">Editar Compra Parcelada</h3>
-            </div>
-            
-            <p className="text-sm text-zinc-400 mb-6">
-              A transação <span className="text-white font-semibold">"{dadosEdicaoPendente.transacaoOriginal?.descricao}"</span> faz parte de uma compra parcelada. Como deseja aplicar as alterações?
-            </p>
-
-            <div className="space-y-3">
-              <button 
-                type="button"
-                onClick={() => executarEdicaoLote('APENAS_ESTA')} 
-                className="w-full bg-[#22222a] hover:bg-[#2c2c36] border border-white/5 text-white font-semibold py-3 px-4 rounded-xl text-sm transition-all text-left flex justify-between items-center"
-              >
-                <span>Apenas esta parcela</span>
-                <span className="text-xs text-zinc-500">Muda só este mês</span>
-              </button>
-              
-              <button 
-                type="button"
-                onClick={() => executarEdicaoLote('DESTA_EM_DIANTE')} 
-                className="w-full bg-[#22222a] hover:bg-[#2c2c36] border border-white/5 text-amber-400 font-semibold py-3 px-4 rounded-xl text-sm transition-all text-left flex justify-between items-center"
-              >
-                <span>Desta em diante</span>
-                <span className="text-xs text-zinc-500">Mantém faturas passadas</span>
-              </button>
-              
-              <button 
-                type="button"
-                onClick={() => executarEdicaoLote('TODAS')} 
-                className="w-full bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 text-[#3b82f6] font-semibold py-3 px-4 rounded-xl text-sm transition-all text-left flex justify-between items-center"
-              >
-                <span>Todas as parcelas</span>
-                <span className="text-xs text-[#3b82f6]/70">Atualiza o histórico todo</span>
-              </button>
-            </div>
-
-            <div className="mt-6 pt-4 border-t border-white/5 flex justify-end">
-              <button 
-                type="button"
-                onClick={() => { setModalEdicaoLoteAberto(false); setDadosEdicaoPendente(null); }} 
-                className="px-4 py-2 text-sm text-zinc-400 font-medium hover:text-white transition-colors"
-              >
-                Cancelar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Modal de Exclusão de Parcelas */}
       {modalExclusaoAberto && transacaoParaExcluir && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -1333,21 +1277,21 @@ export default function FaturaCartao() {
           <div className="bg-[#1a1a20] rounded-2xl w-full max-w-2xl border border-white/10 shadow-2xl flex flex-col max-h-[90vh]">
             <div className="px-6 py-5 border-b border-white/10 flex justify-between items-center shrink-0">
               <h2 className="text-xl text-white font-bold flex items-center gap-2">
-                <CreditCard className="text-[#10b981]" size={20} /> 
+                <CreditCard className="text-[#10b981]" size={20} />
                 {transacaoEditandoId ? 'Editar Lançamento' : 'Novo Lançamento'}
               </h2>
               <button onClick={() => setModalAberto(false)} className="text-zinc-500 hover:text-white transition-colors">✕</button>
             </div>
             <div className="p-6 overflow-y-auto custom-scrollbar">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                
+
                 {/* COLUNA ESQUERDA */}
                 <div className="space-y-5">
                   <div className="flex bg-[#22222a] p-1 rounded-lg border border-white/5">
                     <button type="button" onClick={() => setFormTipo('DESPESA')} className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${formTipo === 'DESPESA' ? 'bg-[#e74c3c]/20 text-[#e74c3c] shadow-sm' : 'text-zinc-500 hover:text-zinc-300'}`}>Despesa</button>
                     <button type="button" onClick={() => setFormTipo('ESTORNO')} className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${formTipo === 'ESTORNO' ? 'bg-[#10b981]/20 text-[#10b981] shadow-sm' : 'text-zinc-500 hover:text-zinc-300'}`}>Estorno na Fatura</button>
                   </div>
-                  
+
                   {/* Se for edição de parcela, mostra o Total de Parcelas Editável */}
                   {formParcelaAtual !== null ? (
                     <div className="grid grid-cols-2 gap-4">
@@ -1530,7 +1474,7 @@ export default function FaturaCartao() {
                     <div className="bg-[#141417] p-4 rounded-xl border border-white/5 space-y-4 mt-2">
                       <div className="flex items-center gap-2 text-amber-400">
                         <AlertTriangle className="w-4 h-4 shrink-0" />
-                        <span className="text-sm font-bold">Atenção! Esta é uma despesa parcelada ({formParcelaAtual}/{transacaoEditandoOriginal?.descricao.match(/(?:\(|\[Parc\s*)(\d+)\/(\d+)(?:\)\vert{}\])/i)?.[2]}).</span>
+                        <span className="text-sm font-bold">Atenção! Esta é uma despesa parcelada ({formParcelaAtual}/{transacaoEditandoOriginal?.descricao.match(/(?:\(|\[Parc\s*)(\d+)\/(\d+)(?:\)|\])/i)?.[2]}).</span>
                       </div>
                       <span className="text-xs text-zinc-400 block mb-2">Como deseja aplicar as edições (valor, categoria, parcelas)?</span>
 
@@ -1541,7 +1485,7 @@ export default function FaturaCartao() {
                         <input type="radio" name="loteMode" className="hidden" checked={formEdicaoLoteModo === 'APENAS_ESTA'} onChange={() => setFormEdicaoLoteModo('APENAS_ESTA')} />
                         <span className={cn("text-sm transition-colors font-medium", formEdicaoLoteModo === 'APENAS_ESTA' ? "text-white" : "text-zinc-400 group-hover:text-zinc-300")}>Editar somente esta</span>
                       </label>
-                      
+
                       <label className="flex items-center gap-3 cursor-pointer group">
                         <div className={cn("w-4 h-4 rounded-full border flex items-center justify-center transition-colors", formEdicaoLoteModo === 'DESTA_EM_DIANTE' ? "border-[#10b981]" : "border-zinc-500 group-hover:border-zinc-400")}>
                           {formEdicaoLoteModo === 'DESTA_EM_DIANTE' && <div className="w-2 h-2 rounded-full bg-[#10b981]" />}
@@ -1549,7 +1493,7 @@ export default function FaturaCartao() {
                         <input type="radio" name="loteMode" className="hidden" checked={formEdicaoLoteModo === 'DESTA_EM_DIANTE'} onChange={() => setFormEdicaoLoteModo('DESTA_EM_DIANTE')} />
                         <span className={cn("text-sm transition-colors font-medium", formEdicaoLoteModo === 'DESTA_EM_DIANTE' ? "text-white" : "text-zinc-400 group-hover:text-zinc-300")}>Editar esta, e as futuras</span>
                       </label>
-                      
+
                       <label className="flex items-center gap-3 cursor-pointer group">
                         <div className={cn("w-4 h-4 rounded-full border flex items-center justify-center transition-colors", formEdicaoLoteModo === 'TODAS' ? "border-[#10b981]" : "border-zinc-500 group-hover:border-zinc-400")}>
                           {formEdicaoLoteModo === 'TODAS' && <div className="w-2 h-2 rounded-full bg-[#10b981]" />}
