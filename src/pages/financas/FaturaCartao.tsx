@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useParams, Link } from 'react-router-dom';
 import { 
@@ -7,7 +7,7 @@ import {
   FileText, Trash2, Edit2, Plus, CreditCard, ChevronDown, 
   Search, CornerDownRight, Upload, Download, Briefcase, AlertTriangle, X, DownloadCloud,
   ArrowUpDown, ArrowUp, ArrowDown, Calculator, SplitSquareHorizontal, Percent,
-  Filter
+  Filter, CheckCircle2, Wallet
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -15,6 +15,7 @@ import { cn } from '@/lib/utils';
 type SortKey = 'data' | 'descricao' | 'categoria' | 'valor';
 
 export default function FaturaCartao() {
+  const queryClient = useQueryClient();
   const { id: urlCardId } = useParams();
   
   const mesesNomes = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
@@ -33,6 +34,12 @@ export default function FaturaCartao() {
   // Edição em Lote
   const [modalEdicaoLoteAberto, setModalEdicaoLoteAberto] = useState(false);
   const [dadosEdicaoPendente, setDadosEdicaoPendente] = useState<any>(null);
+
+  // Pagamento da Fatura
+  const [modalPagarFaturaAberto, setModalPagarFaturaAberto] = useState(false);
+  const [contaPagamentoId, setContaPagamentoId] = useState('');
+  const [dataPagamentoFatura, setDataPagamentoFatura] = useState(new Date().toISOString().split('T')[0]);
+  const [processandoPagamento, setProcessandoPagamento] = useState(false);
 
   const [transacaoEditandoId, setTransacaoEditandoId] = useState<string | null>(null);
   const [transacaoEditandoOriginal, setTransacaoEditandoOriginal] = useState<any>(null);
@@ -84,6 +91,21 @@ export default function FaturaCartao() {
       return data || [];
     }
   });
+
+  const { data: contas = [] } = useQuery({
+    queryKey: ['contas_financeiras'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('conta_financeira_pessoal' as any).select('*').order('nome');
+      if (error) throw error;
+      return data || [];
+    }
+  });
+
+  useEffect(() => {
+    if (contas.length > 0 && !contaPagamentoId) {
+      setContaPagamentoId(contas[0].id);
+    }
+  }, [contas, contaPagamentoId]);
 
   useEffect(() => {
     if (cartoes.length > 0) {
@@ -165,6 +187,11 @@ export default function FaturaCartao() {
     const valor = Number(curr.valor);
     return curr.tipo === 'ESTORNO' ? acc - valor : acc + valor;
   }, 0);
+
+  const faturaEstaPaga = useMemo(() => {
+    if (transacoes.length === 0) return false;
+    return transacoes.every((t: any) => t.situacao === 'PAGO');
+  }, [transacoes]);
 
   useEffect(() => {
     if (!isRateio) return;
@@ -539,6 +566,63 @@ export default function FaturaCartao() {
     refetch();
   };
 
+  const handleConfirmarPagamentoFatura = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!contaPagamentoId) return alert('Selecione uma conta bancária para efetuar o débito.');
+    if (transacoesFiltradas.length === 0) return alert('Não há transações nesta fatura para pagar.');
+
+    setProcessandoPagamento(true);
+    try {
+      // 1. Localiza o Centro de Custo neutro (Giro/Reembolso)
+      const { data: ccGiro } = await supabase
+        .from('centro_custo_projeto' as any)
+        .select('id')
+        .ilike('nome', '%Giro%')
+        .limit(1)
+        .maybeSingle();
+
+      // 2. Marca todas as transações desta fatura como PAGO
+      const { error: errUpdate } = await supabase
+        .from('transacao_pessoal' as any)
+        .update({ situacao: 'PAGO' } as any)
+        .eq('cartao_id', cartaoAtivo.id)
+        .eq('mes_fatura', faturaAtual);
+
+      if (errUpdate) throw errUpdate;
+
+      // 3. Insere a saída de caixa em transações (Conta Corrente)
+      const { error: errInsert } = await supabase
+        .from('transacao_pessoal' as any)
+        .insert([{
+          descricao: `Pagamento Fatura ${cartaoAtivo.nome} (${faturaAtual})`,
+          valor: Math.abs(totalFatura),
+          tipo: 'DESPESA',
+          situacao: 'PAGO',
+          data: dataPagamentoFatura,
+          conta_id: contaPagamentoId,
+          cartao_id: null,
+          centro_custo_id: ccGiro ? (ccGiro as any).id : null,
+          categoria_id: null,
+          subcategoria_id: null,
+          observacao: `Liquidação de fatura do cartão ${cartaoAtivo.nome}`
+        }] as any);
+
+      if (errInsert) throw errInsert;
+
+      // 4. Atualiza todas as consultas
+      queryClient.invalidateQueries({ queryKey: ['transacoes_gerais'] });
+      queryClient.invalidateQueries({ queryKey: ['transacoes_cartao'] });
+
+      alert(`Fatura de ${faturaAtual} liquidada com sucesso!`);
+      setModalPagarFaturaAberto(false);
+      refetch();
+    } catch (err: any) {
+      alert('Erro ao pagar fatura: ' + err.message);
+    } finally {
+      setProcessandoPagamento(false);
+    }
+  };
+
   const baixarModeloCSV = () => {
     const conteudo = "Data;Descricao;Valor Total;Fatura Alvo (Ex: Set/2026);Categoria (Opcional);Centro Custo;Parcelas (Opcional);Observacao (Opcional)\n" +
                      "30/08/2026;Uber;26,22;Set/2026;Transporte;360 Gestão;1;Corrida cliente\n" +
@@ -604,7 +688,6 @@ export default function FaturaCartao() {
         const transacoesImportadas: any[] = [];
         const linhasComErro = [];
         
-        // CUIDADO: Alteração para 'Valor Total'
         linhasComErro.push("Data;Descricao;Valor Total;Fatura Alvo;Categoria;Centro Custo;Parcelas;Observacao;MOTIVO DO ERRO");
 
         for(let i = 1; i < rows.length; i++) {
@@ -785,7 +868,7 @@ export default function FaturaCartao() {
 
       } catch (err) { alert("Erro no processamento do arquivo CSV."); }
     };
-reader.readAsText(file, 'ISO-8859-1');
+    reader.readAsText(file, 'ISO-8859-1');
     if (fileInputRef.current) fileInputRef.current.value = ''; 
   };
 
@@ -823,7 +906,15 @@ reader.readAsText(file, 'ISO-8859-1');
           )}
         </div>
         
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
+          <Button 
+            onClick={() => setModalPagarFaturaAberto(true)} 
+            disabled={faturaEstaPaga || transacoesFiltradas.length === 0}
+            className={cn("font-bold flex items-center gap-2 h-9 shadow-sm transition-all", faturaEstaPaga ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 cursor-default" : "bg-[#10b981] hover:bg-[#059669] text-black")}
+          >
+            <CheckCircle2 className="w-4 h-4" /> {faturaEstaPaga ? 'Fatura Paga' : 'Pagar Fatura'}
+          </Button>
+
           <Button onClick={exportarFaturaCSV} variant="outline" className="border-[#3b82f6]/50 text-[#3b82f6] hover:bg-[#3b82f6]/10 bg-transparent text-xs font-bold h-9">
             <DownloadCloud className="w-4 h-4 mr-2" /> Exportar Fatura
           </Button>
@@ -925,7 +1016,7 @@ reader.readAsText(file, 'ISO-8859-1');
 
         <div className="space-y-4">
           
-          {/* NOVO CARD DO FILTRO DE CARTÕES */}
+          {/* FILTRO DE CARTÕES ADICIONAIS */}
           {cartoesVinculados.length > 0 && (
             <div className="bg-[#1e1e24] border border-white/5 rounded-2xl p-5 flex flex-col gap-3 relative overflow-hidden">
               <div className="flex justify-between items-center">
@@ -955,20 +1046,110 @@ reader.readAsText(file, 'ISO-8859-1');
             <div><p className="text-zinc-400 text-xs mb-1">Valor da fatura</p><p className="text-2xl font-bold text-white">R$ {totalFatura.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</p></div>
             <div className="w-10 h-10 rounded-full bg-[#10b981]/20 flex items-center justify-center"><DollarSign className="w-5 h-5 text-[#10b981]" /></div>
           </div>
+
           <div className="bg-[#1e1e24] border border-white/5 rounded-2xl p-5 flex justify-between items-center">
-            <div><p className="text-zinc-400 text-xs mb-1">Status</p><p className="text-xl font-bold text-white">Fatura aberta</p></div>
-            <div className="w-10 h-10 rounded-full bg-[#3498db]/20 flex items-center justify-center"><Receipt className="w-5 h-5 text-[#3498db]" /></div>
+            <div>
+              <p className="text-zinc-400 text-xs mb-1">Status</p>
+              <p className={cn("text-xl font-bold", faturaEstaPaga ? "text-[#10b981]" : "text-white")}>
+                {faturaEstaPaga ? "Fatura Paga" : "Fatura Aberta"}
+              </p>
+            </div>
+            <div className={cn("w-10 h-10 rounded-full flex items-center justify-center", faturaEstaPaga ? "bg-[#10b981]/20" : "bg-[#3498db]/20")}>
+              {faturaEstaPaga ? <CheckCircle2 className="w-5 h-5 text-[#10b981]" /> : <Receipt className="w-5 h-5 text-[#3498db]" />}
+            </div>
           </div>
+
           <div className="bg-[#1e1e24] border border-white/5 rounded-2xl p-5 flex justify-between items-center">
             <div><p className="text-zinc-400 text-xs mb-1">Dia de fechamento</p><p className="text-xl font-bold text-white">{cartaoAtivo?.dia_fechamento || '--'} de {mesSelecionado}</p></div>
             <div className="w-10 h-10 rounded-full bg-amber-500/20 flex items-center justify-center"><Calendar className="w-5 h-5 text-amber-500" /></div>
           </div>
+          
           <div className="bg-[#1e1e24] border border-white/5 rounded-2xl p-5 flex justify-between items-center">
             <div><p className="text-zinc-400 text-xs mb-1">Data vencimento</p><p className="text-xl font-bold text-white">{cartaoAtivo?.dia_vencimento || '--'} de {mesSelecionado}</p></div>
             <div className="w-10 h-10 rounded-full bg-red-500/20 flex items-center justify-center"><Calendar className="w-5 h-5 text-red-500" /></div>
           </div>
         </div>
       </div>
+
+      {/* MODAL DE PAGAMENTO DE FATURA */}
+      {modalPagarFaturaAberto && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-[#1a1a20] rounded-2xl w-full max-w-md border border-white/10 shadow-2xl p-6 animate-fade-in">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                <CheckCircle2 className="w-5 h-5 text-[#10b981]" />
+                Liquidar Fatura
+              </h3>
+              <button onClick={() => setModalPagarFaturaAberto(false)} className="text-zinc-500 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-sm text-zinc-400 mb-5">
+              Confirmar o pagamento da fatura de <b className="text-white">{faturaAtual}</b> do cartão <b className="text-white">{cartaoAtivo?.nome}</b> no valor total de{' '}
+              <span className="text-[#10b981] font-bold">
+                R$ {totalFatura.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              </span>.
+            </p>
+
+            <form onSubmit={handleConfirmarPagamentoFatura} className="space-y-4">
+              <div>
+                <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1.5">
+                  Conta de Débito (Saída do Dinheiro)
+                </label>
+                <div className="flex items-center bg-[#1e1e24] border border-white/10 rounded-xl px-3">
+                  <Wallet className="w-4 h-4 text-zinc-400 mr-2" />
+                  <select
+                    required
+                    value={contaPagamentoId}
+                    onChange={(e) => setContaPagamentoId(e.target.value)}
+                    className="w-full bg-transparent text-sm text-white py-3 focus:outline-none cursor-pointer"
+                  >
+                    {contas.map((c: any) => (
+                      <option key={c.id} value={c.id} className="bg-[#1a1a20] text-white">
+                        {c.nome}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1.5">
+                  Data do Pagamento
+                </label>
+                <div className="flex items-center bg-[#1e1e24] border border-white/10 rounded-xl px-3">
+                  <Calendar className="w-4 h-4 text-zinc-400 mr-2" />
+                  <input
+                    type="date"
+                    required
+                    value={dataPagamentoFatura}
+                    onChange={(e) => setDataPagamentoFatura(e.target.value)}
+                    className="w-full bg-transparent text-sm text-white py-3 focus:outline-none [color-scheme:dark]"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-3 border-t border-white/5">
+                <button
+                  type="button"
+                  onClick={() => setModalPagarFaturaAberto(false)}
+                  className="px-4 py-2.5 text-sm text-zinc-400 hover:text-white rounded-lg hover:bg-white/5 font-bold transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={processandoPagamento}
+                  className="bg-[#10b981] hover:bg-[#059669] disabled:opacity-50 text-black px-6 py-2.5 rounded-lg text-sm font-bold transition-all shadow-lg shadow-[#10b981]/20"
+                >
+                  {processandoPagamento ? 'Processando...' : 'Confirmar Pagamento'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* MODAL DE EDIÇÃO EM LOTE */}
       {modalEdicaoLoteAberto && dadosEdicaoPendente && (
