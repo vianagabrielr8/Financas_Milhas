@@ -1,6 +1,15 @@
 # MilheiroSmart — regras para quem mexe neste projeto (IA ou pessoa)
 
 App de finanças pessoais + milhas. React (Vite) + Supabase (banco) + Vercel (site).
+
+**Projeto Supabase de PRODUÇÃO: `tdatvduchifakmocywhq`.** O id
+`nunbtbtktvzdlisshbij`, que aparece em `supabase/config.toml`, é de um projeto
+antigo: não use e não altere esse arquivo sem combinar antes.
+
+Edge Functions em produção:
+- `telegram-webhook`: o bot. O código está em `supabase/functions/`.
+- `cron-sync`: o código não está no repositório.
+- `pluggy-webhook`: integração Pluggy abandonada.
 Um bot do Telegram também grava lançamentos no mesmo banco. Outra IA (Gemini)
 também edita este repositório — estas regras valem para todos.
 
