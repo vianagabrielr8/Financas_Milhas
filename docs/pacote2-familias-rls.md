@@ -84,7 +84,7 @@ Todas ganham a coluna `familia_id`.
 |---|---|---|---|---|
 | 0 | 1 | Inventário (só leitura) e atualização do CLAUDE.md. O código atual do bot entra no repositório sem mudanças. | Não | Nada a desfazer |
 | 1 | — | ~~Projeto de teste~~: **cancelado** pelo dono. Os testes de "outra família" usam a conta de teste `360gestaoindaut@gmail.com` em produção. | — | — |
-| 2 | 3 | Tabelas e funções novas, já com RLS (estão vazias). Cria a família do dono (dono = admin e administrador da plataforma). Arquivo: `supabase/migrations/20260923120000_familias.sql`. Liberar o Daniel e convidar a esposa são passos opcionais do mesmo arquivo, rodados quando o dono quiser (os e-mails não ficam no GitHub). | Só tabelas novas | `DROP` das tabelas e funções novas |
+| 2 | 3 | Tabelas e funções novas, já com RLS (estão vazias). Cria a família do dono (dono = admin e administrador da plataforma). Arquivo: `supabase/migrations/20260923120000_familias.sql`. Liberar o Daniel e convidar a esposa são passos opcionais do mesmo arquivo, rodados quando o dono quiser (os e-mails não ficam no GitHub). **Rodado em produção em 23/09/2026.** | Só tabelas novas | `DROP` das tabelas e funções novas |
 | 3 | 4 | Coluna `familia_id` em tudo, sem ser obrigatória; preenchimento; índices; backup de `transacao_pessoal`; **rede de segurança** | Sim | `DROP COLUMN` e remover a rede |
 | 4 | 5 (ou 5a e 5b) | Telas: família e papel, "acesso não liberado", Família e convites, Liberar acesso, contestar, Contestações, "Conectar Telegram" | Não | Reverter o PR |
 | 5 | 6 | Bot com vínculo, bloqueio de desconhecidos e `familia_id` | Função publicada pelo dono | Publicar a versão anterior |
