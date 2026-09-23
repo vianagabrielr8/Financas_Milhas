@@ -756,7 +756,7 @@ export default function FaturaCartao() {
 
     const { data: transacoesBancoRaw } = await supabase
       .from('transacao_pessoal' as any)
-      .select('descricao, valor, data, tipo')
+      .select('descricao, valor, data, tipo, centro_custo_id, categoria_id')
       .eq('cartao_id', cartaoAtivo.id)
       .limit(10000);
     
@@ -823,25 +823,6 @@ export default function FaturaCartao() {
           const valorDaParcelaStr = (valorFinal / parcelas).toFixed(2);
           const descNormalizada = desc ? desc.replace(/\s+/g, ' ').trim().toLowerCase() : '';
 
-          const isDuplicadaBanco = transacoesBanco.some((t: any) => {
-            const dbDesc = t.descricao ? t.descricao.replace(/\s+/g, ' ').trim().toLowerCase() : '';
-            const dbVal = Math.abs(Number(t.valor)).toFixed(2);
-            const dbData = t.data ? t.data.split('T')[0] : '';
-            const dbTipo = t.tipo || 'DESPESA';
-            const descMatch = dbDesc === descNormalizada || dbDesc.startsWith(`${descNormalizada} (`);
-            return descMatch && dbVal === valorDaParcelaStr && dbData === dataISO && dbTipo === tipoTransacao;
-          });
-
-          const isDuplicadaPlanilha = transacoesImportadas.some((t: any) => {
-            const planDesc = t.descricao ? t.descricao.replace(/\s+/g, ' ').trim().toLowerCase() : '';
-            const planVal = Math.abs(Number(t.valor)).toFixed(2);
-            const descMatch = planDesc === descNormalizada || planDesc.startsWith(`${descNormalizada} (`);
-            return descMatch && planVal === valorDaParcelaStr && t.data === dataISO && t.tipo === tipoTransacao;
-          });
-
-          if (isDuplicadaBanco) motivosErro.push("Transação já existe no banco");
-          if (isDuplicadaPlanilha && (parcelasRaw === '1' || !parcelasRaw)) motivosErro.push("Transação duplicada dentro da própria planilha");
-
           let ccMatchId = null;
           let ccEncontradoObj: any = null;
           if (ccRaw && ccRaw.trim() !== '') {
@@ -876,6 +857,35 @@ export default function FaturaCartao() {
               } else motivosErro.push(`Categoria/Subcategoria '${catRaw.trim()}' não encontrada`);
             }
           }
+
+          const isDuplicadaBanco = transacoesBanco.some((t: any) => {
+            const dbDesc = t.descricao ? t.descricao.replace(/\s+/g, ' ').trim().toLowerCase() : '';
+            const dbVal = Math.abs(Number(t.valor)).toFixed(2);
+            const dbData = t.data ? t.data.split('T')[0] : '';
+            const dbTipo = t.tipo || 'DESPESA';
+            const descMatch = dbDesc === descNormalizada || dbDesc.startsWith(`${descNormalizada} (`);
+            return descMatch && 
+                   dbVal === valorDaParcelaStr && 
+                   dbData === dataISO && 
+                   dbTipo === tipoTransacao &&
+                   t.centro_custo_id === ccMatchId &&
+                   t.categoria_id === categoriaMatchId;
+          });
+
+          const isDuplicadaPlanilha = transacoesImportadas.some((t: any) => {
+            const planDesc = t.descricao ? t.descricao.replace(/\s+/g, ' ').trim().toLowerCase() : '';
+            const planVal = Math.abs(Number(t.valor)).toFixed(2);
+            const descMatch = planDesc === descNormalizada || planDesc.startsWith(`${descNormalizada} (`);
+            return descMatch && 
+                   planVal === valorDaParcelaStr && 
+                   t.data === dataISO && 
+                   t.tipo === tipoTransacao &&
+                   t.centro_custo_id === ccMatchId &&
+                   t.categoria_id === categoriaMatchId;
+          });
+
+          if (isDuplicadaBanco) motivosErro.push("Transação já existe no banco");
+          if (isDuplicadaPlanilha && (parcelasRaw === '1' || !parcelasRaw)) motivosErro.push("Transação duplicada dentro da própria planilha");
 
           let faturaBaseImportacao = "";
           if (faturaRaw && faturaRaw.trim() !== '') {
@@ -1231,6 +1241,61 @@ export default function FaturaCartao() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE EDIÇÃO EM LOTE (ESTILO IDÊNTICO AO DE EXCLUSÃO) */}
+      {modalEdicaoLoteAberto && dadosEdicaoPendente && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+          <div className="bg-[#1a1a20] rounded-2xl w-full max-w-md border border-white/10 shadow-2xl p-6 animate-fade-in">
+            <div className="flex items-center gap-3 mb-4 text-[#3b82f6]">
+              <Edit2 className="w-6 h-6 shrink-0" />
+              <h3 className="text-lg font-bold text-white">Editar Compra Parcelada</h3>
+            </div>
+            
+            <p className="text-sm text-zinc-400 mb-6">
+              A transação <span className="text-white font-semibold">"{dadosEdicaoPendente.transacaoOriginal?.descricao}"</span> faz parte de uma compra parcelada. Como deseja aplicar as alterações?
+            </p>
+
+            <div className="space-y-3">
+              <button 
+                type="button"
+                onClick={() => executarEdicaoLote('APENAS_ESTA')} 
+                className="w-full bg-[#22222a] hover:bg-[#2c2c36] border border-white/5 text-white font-semibold py-3 px-4 rounded-xl text-sm transition-all text-left flex justify-between items-center"
+              >
+                <span>Apenas esta parcela</span>
+                <span className="text-xs text-zinc-500">Muda só este mês</span>
+              </button>
+              
+              <button 
+                type="button"
+                onClick={() => executarEdicaoLote('DESTA_EM_DIANTE')} 
+                className="w-full bg-[#22222a] hover:bg-[#2c2c36] border border-white/5 text-amber-400 font-semibold py-3 px-4 rounded-xl text-sm transition-all text-left flex justify-between items-center"
+              >
+                <span>Desta em diante</span>
+                <span className="text-xs text-zinc-500">Mantém faturas passadas</span>
+              </button>
+              
+              <button 
+                type="button"
+                onClick={() => executarEdicaoLote('TODAS')} 
+                className="w-full bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 text-[#3b82f6] font-semibold py-3 px-4 rounded-xl text-sm transition-all text-left flex justify-between items-center"
+              >
+                <span>Todas as parcelas</span>
+                <span className="text-xs text-[#3b82f6]/70">Atualiza o histórico todo</span>
+              </button>
+            </div>
+
+            <div className="mt-6 pt-4 border-t border-white/5 flex justify-end">
+              <button 
+                type="button"
+                onClick={() => { setModalEdicaoLoteAberto(false); setDadosEdicaoPendente(null); }} 
+                className="px-4 py-2 text-sm text-zinc-400 font-medium hover:text-white transition-colors"
+              >
+                Cancelar
+              </button>
+            </div>
           </div>
         </div>
       )}
