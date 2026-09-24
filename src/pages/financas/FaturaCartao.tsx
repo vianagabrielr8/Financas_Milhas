@@ -988,24 +988,24 @@ export default function FaturaCartao() {
   );
 
   return (
-    <div className="space-y-6 max-w-[1600px] mx-auto text-zinc-100 p-4 md:p-6 pb-24 relative">
+    <div className="space-y-4 md:space-y-6 max-w-[1600px] mx-auto text-zinc-100 pb-24 relative">
       <ContestarModal transacao={contestando} onFechar={() => setContestando(null)} />
 
       <input type="file" accept=".csv" ref={fileInputRef} onChange={handleImportarCSV} className="hidden" />
 
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div className="flex items-center gap-4 flex-wrap">
-          <Link to="/financas/cartoes">
+        <div className="flex items-center gap-2 md:gap-4 w-full md:w-auto min-w-0">
+          <Link to="/financas/cartoes" className="shrink-0">
             <Button variant="ghost" size="icon" className="text-zinc-400 hover:text-white bg-white/5"><ChevronLeft className="w-5 h-5" /></Button>
           </Link>
-          <div className="bg-[#10b981] text-black px-4 py-2 rounded-full font-bold text-sm flex items-center gap-2">
+          <div className={cn("bg-[#10b981] text-black px-4 py-2 rounded-full font-bold text-sm items-center gap-2 truncate", cartoes.length > 1 ? "hidden" : "flex")}>
             Cartão: {cartaoAtivo?.nome}
           </div>
 
           {cartoes.length > 1 && (
-            <div className="flex gap-2 bg-[#1e1e24] border border-white/5 p-1 rounded-full">
+            <div className="flex gap-1 md:gap-2 bg-[#1e1e24] border border-white/5 p-1 rounded-full overflow-x-auto scrollbar-hide min-w-0 md:shrink-0">
               {cartoes.map((c: any) => (
-                <button key={c.id} onClick={() => setCartaoAtivo(c)} className={cn("px-3 py-1 rounded-full text-xs font-bold transition-all", cartaoAtivo?.id === c.id ? "bg-white/20 text-white" : "text-zinc-500 hover:text-zinc-300")}>
+                <button key={c.id} onClick={() => setCartaoAtivo(c)} className={cn("px-3 py-1.5 rounded-full text-xs font-bold transition-all whitespace-nowrap", cartaoAtivo?.id === c.id ? "bg-white/20 text-white" : "text-zinc-500 hover:text-zinc-300")}>
                   {c.nome}
                 </button>
               ))}
@@ -1013,7 +1013,7 @@ export default function FaturaCartao() {
           )}
         </div>
 
-        <div className="flex items-center gap-3 flex-wrap">
+        <div className="grid grid-cols-2 gap-2 w-full md:flex md:items-center md:gap-3 md:flex-wrap md:w-auto">
           {podeEditar && <Button
             onClick={() => setModalPagarFaturaAberto(true)}
             disabled={faturaEstaPaga || transacoesFiltradas.length === 0}
@@ -1023,39 +1023,74 @@ export default function FaturaCartao() {
           </Button>}
 
           <Button onClick={exportarFaturaCSV} variant="outline" className="border-[#3b82f6]/50 text-[#3b82f6] hover:bg-[#3b82f6]/10 bg-transparent text-xs font-bold h-9">
-            <DownloadCloud className="w-4 h-4 mr-2" /> Exportar Fatura
+            <DownloadCloud className="w-4 h-4 mr-2" /> <span>Exportar<span className="hidden md:inline"> Fatura</span></span>
           </Button>
           {podeEditar && <>
           <Button onClick={baixarModeloCSV} variant="outline" className="border-white/10 bg-transparent hover:bg-white/5 text-zinc-400 hover:text-white text-xs font-bold h-9">
-            <Download className="w-4 h-4 mr-2" /> Modelo CSV
+            <Download className="w-4 h-4 mr-2" /> <span>Modelo<span className="hidden md:inline"> CSV</span></span>
           </Button>
           <Button onClick={() => fileInputRef.current?.click()} variant="outline" className="border-[#10b981]/50 text-[#10b981] hover:bg-[#10b981]/10 bg-transparent text-xs font-bold h-9">
-            <Upload className="w-4 h-4 mr-2" /> Importar Planilha
+            <Upload className="w-4 h-4 mr-2" /> <span>Importar<span className="hidden md:inline"> Planilha</span></span>
           </Button>
-          <Button onClick={abrirModalNovaDespesa} className="bg-[#10b981] hover:bg-[#059669] text-black font-bold flex items-center gap-2 h-9">
+          <Button onClick={abrirModalNovaDespesa} className="bg-[#10b981] hover:bg-[#059669] text-black font-bold flex items-center gap-2 h-9 order-first md:order-none">
             <Plus className="w-4 h-4" /> Nova Despesa
           </Button>
           </>}
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
 
-        <div className="lg:col-span-2 bg-[#1e1e24] border border-white/5 rounded-2xl p-6">
-          <div className="flex items-center justify-center gap-4 mb-8">
+        <div className="lg:col-span-2 bg-[#1e1e24] border border-white/5 rounded-2xl p-3 md:p-6">
+          <div className="flex items-center justify-center gap-4 mb-3 md:mb-8">
             <Button variant="ghost" size="icon" onClick={() => setAnoSelecionado(a => a - 1)} className="text-[#10b981] hover:bg-[#10b981]/10"><ChevronLeft className="w-5 h-5" /></Button>
             <span className="text-[#10b981] font-bold text-sm">{anoSelecionado}</span>
             <Button variant="ghost" size="icon" onClick={() => setAnoSelecionado(a => a + 1)} className="text-[#10b981] hover:bg-[#10b981]/10"><ChevronRight className="w-5 h-5" /></Button>
           </div>
-          <div className="flex justify-between overflow-x-auto pb-4 scrollbar-hide gap-2 mb-6">
+          <div className="flex justify-between overflow-x-auto pb-2 md:pb-4 scrollbar-hide gap-2 mb-3 md:mb-6">
             {mesesNomes.map(m => (
-              <button key={m} onClick={() => setMesSelecionado(m)} className={cn("px-4 py-1.5 rounded-full text-xs font-bold border transition-colors", mesSelecionado === m ? "border-[#10b981] text-[#10b981] bg-[#10b981]/10" : "border-white/10 text-zinc-500 hover:border-[#10b981]/50")}>
+              <button key={m} ref={el => { if (el && mesSelecionado === m) el.scrollIntoView({ block: 'nearest', inline: 'center' }); }} onClick={() => setMesSelecionado(m)} className={cn("px-4 py-2 md:py-1.5 rounded-full shrink-0 text-xs font-bold border transition-colors", mesSelecionado === m ? "border-[#10b981] text-[#10b981] bg-[#10b981]/10" : "border-white/10 text-zinc-500 hover:border-[#10b981]/50")}>
                 {m}
               </button>
             ))}
           </div>
 
-          <div className="overflow-x-auto">
+          {/* CELULAR: um cartão por compra */}
+          <div className="md:hidden divide-y divide-white/5">
+            {transacoesOrdenadas.length === 0 ? (
+              <p className="py-8 text-center text-zinc-500 text-sm">Nenhuma compra listada na fatura de {faturaAtual}.</p>
+            ) : transacoesOrdenadas.map((t: any) => (
+              <div key={t.id} className="py-3 flex gap-3">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-white leading-snug break-words">{t.descricao}</p>
+                  <p className="text-[11px] text-zinc-500 mt-1">
+                    {new Date(t.data).toLocaleDateString('pt-BR', { timeZone: 'UTC', day: '2-digit', month: '2-digit', year: '2-digit' })}
+                    {t.cartao_vinculado_id && <> · <CreditCard className="w-3 h-3 inline -mt-0.5" /> {cartoesVinculados.find((cv: any) => cv.id === t.cartao_vinculado_id)?.nome_impresso || 'Adicional'}</>}
+                  </p>
+                  <div className="flex flex-wrap gap-1 mt-1.5">
+                    <span className={cn("border px-2 py-0.5 rounded-full text-[10px] max-w-full truncate", !t.categoria_id ? "bg-amber-500/10 border-amber-500/20 text-amber-500 font-bold" : "bg-[#1a1a20] border-white/5 text-zinc-300")}>
+                      {renderNomeCategoria(t.categoria_id, t.subcategoria_id)}
+                    </span>
+                    <span className={cn("border px-2 py-0.5 rounded-full text-[10px] font-bold truncate", !t.centro_custo_id ? "bg-red-500/10 border-red-500/20 text-red-400" : "bg-purple-500/10 border-purple-500/20 text-purple-400")}>
+                      {t.centro_custo_projeto?.nome || 'CC Pendente'}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex flex-col items-end gap-1 shrink-0">
+                  <span className={cn('text-sm font-bold whitespace-nowrap', t.tipo === 'ESTORNO' ? 'text-[#10b981]' : 'text-zinc-100')}>
+                    {t.tipo === 'ESTORNO' ? '+' : '-'} R$ {Number(t.valor).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                  </span>
+                  {podeEditar && <div className="flex -mr-2">
+                    <button onClick={() => abrirModalEdicao(t)} className="p-2 text-zinc-500 hover:text-white" title="Editar"><Edit2 className="w-4 h-4" /></button>
+                    <button onClick={() => iniciarExclusao(t)} className="p-2 text-zinc-500 hover:text-red-400" title="Apagar"><Trash2 className="w-4 h-4" /></button>
+                  </div>}
+                  {!podeEditar && podeContestar(renderNomeCategoria(t.categoria_id)) && <button onClick={() => setContestando(t)} className="text-[11px] font-bold text-amber-400 px-2 py-1.5 rounded-md bg-amber-500/10">Contestar</button>}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-sm text-left">
               <thead className="text-[11px] text-zinc-400 font-bold uppercase border-b border-white/5 select-none">
                 <tr>
@@ -1124,14 +1159,14 @@ export default function FaturaCartao() {
           </div>
         </div>
 
-        <div className="space-y-4">
+        <div className="order-first lg:order-none grid grid-cols-2 lg:grid-cols-1 gap-2 md:gap-4 content-start">
 
           {/* FILTRO DE CARTÕES ADICIONAIS */}
           {cartoesVinculados.length > 0 && (
-            <div className="bg-[#1e1e24] border border-white/5 rounded-2xl p-5 flex flex-col gap-3 relative overflow-hidden">
+            <div className="col-span-2 lg:col-span-1 bg-[#1e1e24] border border-white/5 rounded-2xl p-3 md:p-5 flex flex-col gap-3 relative overflow-hidden">
               <div className="flex justify-between items-center">
                 <p className="text-zinc-400 text-xs">Filtrar Lançamentos</p>
-                <div className="w-8 h-8 rounded-full bg-purple-500/20 flex items-center justify-center">
+                <div className="hidden md:flex w-8 h-8 rounded-full bg-purple-500/20 items-center justify-center">
                   <Filter className="w-4 h-4 text-purple-500" />
                 </div>
               </div>
@@ -1152,31 +1187,31 @@ export default function FaturaCartao() {
             </div>
           )}
 
-          <div className="bg-[#1e1e24] border border-white/5 rounded-2xl p-5 flex justify-between items-center">
-            <div><p className="text-zinc-400 text-xs mb-1">Valor da fatura</p><p className="text-2xl font-bold text-white">R$ {totalFatura.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</p></div>
-            <div className="w-10 h-10 rounded-full bg-[#10b981]/20 flex items-center justify-center"><DollarSign className="w-5 h-5 text-[#10b981]" /></div>
+          <div className="bg-[#1e1e24] border border-white/5 rounded-2xl p-3 md:p-5 flex justify-between items-center min-w-0">
+            <div><p className="text-zinc-400 text-xs mb-1">Valor da fatura</p><p className="text-lg md:text-2xl font-bold text-white truncate">R$ {totalFatura.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</p></div>
+            <div className="hidden md:flex w-10 h-10 rounded-full bg-[#10b981]/20 items-center justify-center"><DollarSign className="w-5 h-5 text-[#10b981]" /></div>
           </div>
 
-          <div className="bg-[#1e1e24] border border-white/5 rounded-2xl p-5 flex justify-between items-center">
+          <div className="bg-[#1e1e24] border border-white/5 rounded-2xl p-3 md:p-5 flex justify-between items-center min-w-0">
             <div>
               <p className="text-zinc-400 text-xs mb-1">Status</p>
-              <p className={cn("text-xl font-bold", faturaEstaPaga ? "text-[#10b981]" : "text-white")}>
+              <p className={cn("text-base md:text-xl font-bold", faturaEstaPaga ? "text-[#10b981]" : "text-white")}>
                 {faturaEstaPaga ? "Fatura Paga" : "Fatura Aberta"}
               </p>
             </div>
-            <div className={cn("w-10 h-10 rounded-full flex items-center justify-center", faturaEstaPaga ? "bg-[#10b981]/20" : "bg-[#3498db]/20")}>
+            <div className={cn("hidden md:flex w-10 h-10 rounded-full items-center justify-center", faturaEstaPaga ? "bg-[#10b981]/20" : "bg-[#3498db]/20")}>
               {faturaEstaPaga ? <CheckCircle2 className="w-5 h-5 text-[#10b981]" /> : <Receipt className="w-5 h-5 text-[#3498db]" />}
             </div>
           </div>
 
-          <div className="bg-[#1e1e24] border border-white/5 rounded-2xl p-5 flex justify-between items-center">
-            <div><p className="text-zinc-400 text-xs mb-1">Dia de fechamento</p><p className="text-xl font-bold text-white">{cartaoAtivo?.dia_fechamento || '--'} de {mesSelecionado}</p></div>
-            <div className="w-10 h-10 rounded-full bg-amber-500/20 flex items-center justify-center"><Calendar className="w-5 h-5 text-amber-500" /></div>
+          <div className="bg-[#1e1e24] border border-white/5 rounded-2xl p-3 md:p-5 flex justify-between items-center min-w-0">
+            <div><p className="text-zinc-400 text-xs mb-1">Dia de fechamento</p><p className="text-base md:text-xl font-bold text-white">{cartaoAtivo?.dia_fechamento || '--'} de {mesSelecionado}</p></div>
+            <div className="hidden md:flex w-10 h-10 rounded-full bg-amber-500/20 items-center justify-center"><Calendar className="w-5 h-5 text-amber-500" /></div>
           </div>
 
-          <div className="bg-[#1e1e24] border border-white/5 rounded-2xl p-5 flex justify-between items-center">
-            <div><p className="text-zinc-400 text-xs mb-1">Data vencimento</p><p className="text-xl font-bold text-white">{cartaoAtivo?.dia_vencimento || '--'} de {mesSelecionado}</p></div>
-            <div className="w-10 h-10 rounded-full bg-red-500/20 flex items-center justify-center"><Calendar className="w-5 h-5 text-red-500" /></div>
+          <div className="bg-[#1e1e24] border border-white/5 rounded-2xl p-3 md:p-5 flex justify-between items-center min-w-0">
+            <div><p className="text-zinc-400 text-xs mb-1">Data vencimento</p><p className="text-base md:text-xl font-bold text-white">{cartaoAtivo?.dia_vencimento || '--'} de {mesSelecionado}</p></div>
+            <div className="hidden md:flex w-10 h-10 rounded-full bg-red-500/20 items-center justify-center"><Calendar className="w-5 h-5 text-red-500" /></div>
           </div>
         </div>
       </div>
@@ -1184,7 +1219,7 @@ export default function FaturaCartao() {
       {/* MODAL DE PAGAMENTO DE FATURA */}
       {modalPagarFaturaAberto && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-[#1a1a20] rounded-2xl w-full max-w-md border border-white/10 shadow-2xl p-6 animate-fade-in">
+          <div className="bg-[#1a1a20] rounded-2xl w-full max-w-md border border-white/10 shadow-2xl p-6 animate-fade-in max-h-[90dvh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-bold text-white flex items-center gap-2">
                 <CheckCircle2 className="w-5 h-5 text-[#10b981]" />
@@ -1270,7 +1305,7 @@ export default function FaturaCartao() {
       {/* Modal de Exclusão de Parcelas */}
       {modalExclusaoAberto && transacaoParaExcluir && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-[#1a1a20] rounded-2xl w-full max-w-md border border-white/10 shadow-2xl p-6 animate-fade-in">
+          <div className="bg-[#1a1a20] rounded-2xl w-full max-w-md border border-white/10 shadow-2xl p-6 animate-fade-in max-h-[90dvh] overflow-y-auto">
             <div className="flex items-center gap-3 mb-4 text-amber-400">
               <AlertTriangle className="w-6 h-6 shrink-0" />
               <h3 className="text-lg font-bold text-white">Excluir Compra Parcelada</h3>
@@ -1296,8 +1331,8 @@ export default function FaturaCartao() {
 
       {/* Modal de Lançamento / Edição */}
       {modalAberto && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-[#1a1a20] rounded-2xl w-full max-w-2xl border border-white/10 shadow-2xl flex flex-col max-h-[90vh]">
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-0 sm:p-4">
+          <div className="bg-[#1a1a20] rounded-none sm:rounded-2xl w-full max-w-2xl border border-white/10 shadow-2xl flex flex-col h-[100dvh] sm:h-auto max-h-[100dvh] sm:max-h-[90vh]">
             <div className="px-6 py-5 border-b border-white/10 flex justify-between items-center shrink-0">
               <h2 className="text-xl text-white font-bold flex items-center gap-2">
                 <CreditCard className="text-[#10b981]" size={20} />

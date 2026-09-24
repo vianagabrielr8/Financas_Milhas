@@ -87,10 +87,10 @@ export default function Contas() {
   const filtradas = contas.filter(c => c.nome.toLowerCase().includes(busca.toLowerCase()));
 
   return (
-    <div className="space-y-6 max-w-[1600px] mx-auto text-zinc-100 p-6">
+    <div className="space-y-4 md:space-y-6 max-w-[1600px] mx-auto text-zinc-100">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+          <h1 className="text-2xl font-bold tracking-tight hidden md:flex items-center gap-2">
             <User className="w-6 h-6 text-emerald-500" /> Contas & Caixas
           </h1>
           <p className="text-zinc-400 text-xs mt-0.5">Gerencie suas contas bancárias, carteiras e saldos de caixas ativos.</p>

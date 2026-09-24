@@ -92,9 +92,9 @@ export default function Cartoes() {
   if (isLoading) return <div className="p-6 text-zinc-400">Carregando cartões...</div>;
 
   return (
-    <div className="space-y-6 p-6 max-w-[1600px] mx-auto text-zinc-100 relative">
+    <div className="space-y-4 md:space-y-6 max-w-[1600px] mx-auto text-zinc-100 relative">
       <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold flex items-center gap-2">
+        <h1 className="text-2xl font-bold hidden md:flex items-center gap-2">
           <CreditCard className="text-[#10b981]" /> Cartões
         </h1>
         {podeEditar && (
@@ -160,7 +160,7 @@ export default function Cartoes() {
 
       {modalAberto && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-[#1a1a20] rounded-2xl w-full max-w-md border border-white/10 shadow-2xl overflow-hidden">
+          <div className="bg-[#1a1a20] rounded-2xl w-full max-w-md border border-white/10 shadow-2xl overflow-y-auto max-h-[90dvh]">
             <div className="px-6 py-5 border-b border-white/10 flex justify-between items-center">
               <h2 className="text-xl text-white font-bold flex items-center gap-2">
                 <CreditCard className="text-[#10b981]" size={20} /> {cartaoEditandoId ? 'Editar Cartão' : 'Cadastrar Cartão'}

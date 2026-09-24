@@ -1,4 +1,5 @@
 import { useLocation } from 'react-router-dom';
+import { Menu } from 'lucide-react';
 
 // Título de cada página, com os mesmos nomes do menu lateral.
 const TITULOS: Record<string, string> = {
@@ -25,7 +26,7 @@ const TITULOS: Record<string, string> = {
   '/configuracoes/contestacoes': 'Contestações',
 };
 
-export const Header = () => {
+export const Header = ({ onAbrirMenu }: { onAbrirMenu?: () => void }) => {
   const { pathname } = useLocation();
   const caminho = pathname.replace(/\/+$/, '') || '/';
 
@@ -35,8 +36,11 @@ export const Header = () => {
       : '');
 
   return (
-    <header className="h-16 bg-[#141417] border-b border-white/5 flex items-center justify-between px-6 lg:px-8 flex-shrink-0 z-30">
-      <h1 className="text-xl font-bold text-zinc-100 truncate">{titulo}</h1>
+    <header className="h-14 md:h-16 bg-[#141417] border-b border-white/5 flex items-center gap-2 px-2 md:px-6 lg:px-8 flex-shrink-0 z-30">
+      <button onClick={onAbrirMenu} className="md:hidden p-2.5 text-zinc-300 hover:text-white rounded-lg hover:bg-white/5" aria-label="Abrir menu">
+        <Menu className="w-5 h-5" />
+      </button>
+      <h1 className="text-lg md:text-xl font-bold text-zinc-100 truncate">{titulo}</h1>
     </header>
   );
 };

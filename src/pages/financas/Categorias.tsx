@@ -108,10 +108,10 @@ export default function Categorias() {
   if (isLoading) return <div className="p-6 text-zinc-400">Carregando categorias...</div>;
 
   return (
-    <div className="flex flex-col w-full pb-20 p-6 max-w-[1600px] mx-auto">
+    <div className="flex flex-col w-full pb-20 max-w-[1600px] mx-auto">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-4">
         <div>
-          <h1 className="text-3xl text-white font-bold tracking-tight flex items-center gap-3">
+          <h1 className="text-3xl text-white font-bold tracking-tight hidden md:flex items-center gap-3">
             <Tags className="text-[#10b981]" /> Categorias e Subcategorias
           </h1>
           <p className="text-zinc-400 mt-1">Defina as gavetas exatas para onde vai cada centavo.</p>
@@ -168,7 +168,7 @@ export default function Categorias() {
                           <span className="text-xs text-zinc-300 font-medium flex items-center gap-2">
                             <ChevronRight className="w-3 h-3 text-zinc-600" /> {sub.nome}
                           </span>
-                          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <div className="flex gap-1 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                             <button onClick={() => abrirEdicaoSubcategoria(sub)} className="text-zinc-500 hover:text-white"><Edit2 size={12} /></button>
                             <button onClick={() => deletarSubcategoria(sub.id)} className="text-zinc-500 hover:text-red-400"><Trash2 size={12} /></button>
                           </div>
@@ -214,7 +214,7 @@ export default function Categorias() {
                     {cat.subcategoria_pessoal?.map((sub: any) => (
                       <div key={sub.id} className="group flex items-center justify-between bg-black/20 rounded-lg px-3 py-2">
                         <span className="text-xs text-zinc-400 flex items-center gap-2"><ChevronRight className="w-3 h-3 text-zinc-700" /> {sub.nome}</span>
-                        <div className="flex gap-1 opacity-0 group-hover:opacity-100">
+                        <div className="flex gap-1 md:opacity-0 md:group-hover:opacity-100">
                           <button onClick={() => abrirEdicaoSubcategoria(sub)} className="text-zinc-600 hover:text-white"><Edit2 size={12} /></button>
                           <button onClick={() => deletarSubcategoria(sub.id)} className="text-zinc-600 hover:text-red-400"><Trash2 size={12} /></button>
                         </div>
@@ -230,7 +230,7 @@ export default function Categorias() {
 
       {modalCatAberto && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-[#1a1a20] p-6 rounded-2xl w-full max-w-sm border border-white/10 shadow-2xl">
+          <div className="bg-[#1a1a20] p-6 rounded-2xl w-full max-w-sm border border-white/10 shadow-2xl max-h-[90dvh] overflow-y-auto">
             <h2 className="text-xl text-white font-bold mb-6 flex items-center gap-2">
               <Tags className="text-[#10b981]" size={20} /> {formCat.id ? 'Editar Categoria' : 'Nova Categoria'}
             </h2>
@@ -271,7 +271,7 @@ export default function Categorias() {
 
       {modalSubAberto && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-[#1a1a20] p-6 rounded-2xl w-full max-w-sm border border-white/10 shadow-2xl">
+          <div className="bg-[#1a1a20] p-6 rounded-2xl w-full max-w-sm border border-white/10 shadow-2xl max-h-[90dvh] overflow-y-auto">
             <h2 className="text-xl text-white font-bold mb-6 flex items-center gap-2">
               <ChevronRight className="text-[#10b981]" size={20} /> {formSub.id ? 'Editar Subcategoria' : 'Nova Subcategoria'}
             </h2>

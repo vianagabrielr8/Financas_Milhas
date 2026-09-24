@@ -330,24 +330,24 @@ export default function Transacoes() {
   };
 
   return (
-    <div className="flex flex-col w-full min-h-screen pb-10 p-4 md:p-6 text-gray-200 relative overflow-hidden">
+    <div className="flex flex-col w-full pb-10 text-gray-200 relative">
       <ContestarModal transacao={contestando} onFechar={() => setContestando(null)} />
       
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
-        <div>
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 md:gap-4 mb-4 md:mb-6">
+        <div className="hidden md:block">
           <h1 className="text-3xl text-white font-bold tracking-tight">Transações</h1>
           <p className="text-gray-400 mt-1 text-sm">Gestão de fluxo de caixa direto e movimentações.</p>
         </div>
         
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="relative w-full md:w-64">
+        <div className="grid grid-cols-2 gap-2 w-full md:flex md:flex-wrap md:items-center md:gap-3 md:w-auto">
+          <div className="relative col-span-2 md:w-64">
             <Search className="w-4 h-4 text-gray-500 absolute left-3 top-1/2 -translate-y-1/2" />
             <input type="text" placeholder="Buscar transação..." value={filtrosAtivos.busca} onChange={(e) => setFiltrosAtivos({...filtrosAtivos, busca: e.target.value})} className="w-full bg-[#1a1a20] text-sm text-white border border-gray-800 rounded-lg py-2 pl-9 pr-4 focus:border-emerald-500 focus:outline-none transition-colors h-[42px]" />
           </div>
 
-          <div className="flex items-center bg-[#1a1a20] border border-gray-800 rounded-lg px-3 focus-within:border-emerald-500 transition-colors h-[42px]">
-            <Calendar className="w-4 h-4 text-gray-400 mr-2" />
-            <input type="month" value={`${anoSelecionado}-${mesFormatado}`} onChange={(e) => { const [ano, mes] = e.target.value.split('-'); setAnoSelecionado(Number(ano)); setMesSelecionado(Number(mes)); }} className="bg-transparent text-sm text-white focus:outline-none [color-scheme:dark]" />
+          <div className="flex items-center bg-[#1a1a20] border border-gray-800 rounded-lg px-3 focus-within:border-emerald-500 transition-colors h-[42px] min-w-0">
+            <Calendar className="w-4 h-4 text-gray-400 mr-2 shrink-0" />
+            <input type="month" value={`${anoSelecionado}-${mesFormatado}`} onChange={(e) => { const [ano, mes] = e.target.value.split('-'); setAnoSelecionado(Number(ano)); setMesSelecionado(Number(mes)); }} className="bg-transparent text-sm text-white focus:outline-none [color-scheme:dark] min-w-0 w-full" />
           </div>
 
           <button onClick={abrirFiltros} className={cn("flex items-center justify-center h-[42px] px-4 rounded-lg border transition-colors text-sm font-medium", temFiltroAtivo ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20" : "bg-[#1a1a20] border-gray-800 text-gray-400 hover:text-white hover:border-gray-600")}>
@@ -359,7 +359,7 @@ export default function Transacoes() {
           </button>
 
           {podeEditar && (
-            <button onClick={() => { resetForm(); setModalAberto(true); }} className="bg-emerald-500 hover:bg-emerald-600 text-white px-5 h-[42px] rounded-lg font-medium transition-all shadow-lg shadow-emerald-500/20 flex items-center gap-2">
+            <button onClick={() => { resetForm(); setModalAberto(true); }} className="bg-emerald-500 hover:bg-emerald-600 text-white px-5 h-[42px] rounded-lg font-medium transition-all shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2">
               <Plus className="w-4 h-4" /> Nova
             </button>
           )}
@@ -367,49 +367,89 @@ export default function Transacoes() {
       </div>
 
       {/* CARDS TOTALIZADORES */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        <div className="bg-[#1a1a20] border border-gray-800 rounded-xl p-5 hover:border-gray-700 transition-colors shadow-sm">
+      <div className="grid grid-cols-3 gap-2 md:gap-4 mb-4 md:mb-6">
+        <div className="bg-[#1a1a20] border border-gray-800 rounded-xl p-3 md:p-5 hover:border-gray-700 transition-colors shadow-sm min-w-0">
           <div className="flex justify-between items-start">
             <div>
-              <p className="text-gray-400 text-xs font-medium mb-1">Receitas Encontradas</p>
-              <p className="text-xl font-bold text-emerald-500">
+              <p className="text-gray-400 text-[11px] md:text-xs font-medium mb-1"><span className="md:hidden">Receitas</span><span className="hidden md:inline">Receitas Encontradas</span></p>
+              <p className="text-sm md:text-xl font-bold text-emerald-500 truncate">
                 {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalReceitas)}
               </p>
             </div>
-            <div className="h-8 w-8 rounded-full bg-emerald-500/10 flex items-center justify-center">
+            <div className="hidden md:flex h-8 w-8 rounded-full bg-emerald-500/10 flex items-center justify-center">
               <TrendingUp className="w-4 h-4 text-emerald-500" />
             </div>
           </div>
         </div>
-        <div className="bg-[#1a1a20] border border-gray-800 rounded-xl p-5 hover:border-gray-700 transition-colors shadow-sm">
+        <div className="bg-[#1a1a20] border border-gray-800 rounded-xl p-3 md:p-5 hover:border-gray-700 transition-colors shadow-sm min-w-0">
           <div className="flex justify-between items-start">
             <div>
-              <p className="text-gray-400 text-xs font-medium mb-1">Despesas Encontradas</p>
-              <p className="text-xl font-bold text-red-500">
+              <p className="text-gray-400 text-[11px] md:text-xs font-medium mb-1"><span className="md:hidden">Despesas</span><span className="hidden md:inline">Despesas Encontradas</span></p>
+              <p className="text-sm md:text-xl font-bold text-red-500 truncate">
                 {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalDespesas)}
               </p>
             </div>
-            <div className="h-8 w-8 rounded-full bg-red-500/10 flex items-center justify-center">
+            <div className="hidden md:flex h-8 w-8 rounded-full bg-red-500/10 flex items-center justify-center">
               <TrendingDown className="w-4 h-4 text-red-500" />
             </div>
           </div>
         </div>
-        <div className="bg-[#1a1a20] border border-gray-800 rounded-xl p-5 hover:border-gray-700 transition-colors shadow-sm">
+        <div className="bg-[#1a1a20] border border-gray-800 rounded-xl p-3 md:p-5 hover:border-gray-700 transition-colors shadow-sm min-w-0">
           <div className="flex justify-between items-start">
             <div>
-              <p className="text-gray-400 text-xs font-medium mb-1">Saldo da Pesquisa</p>
-              <p className="text-xl font-bold text-white">
+              <p className="text-gray-400 text-[11px] md:text-xs font-medium mb-1"><span className="md:hidden">Saldo</span><span className="hidden md:inline">Saldo da Pesquisa</span></p>
+              <p className="text-sm md:text-xl font-bold text-white truncate">
                 {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(saldoFiltro)}
               </p>
             </div>
-            <div className="h-8 w-8 rounded-full bg-blue-500/10 flex items-center justify-center">
+            <div className="hidden md:flex h-8 w-8 rounded-full bg-blue-500/10 flex items-center justify-center">
               <Wallet className="w-4 h-4 text-blue-500" />
             </div>
           </div>
         </div>
       </div>
 
-      <div className="bg-[#1a1a20] rounded-xl border border-gray-800 overflow-hidden shadow-sm">
+      {/* CELULAR: um cartão por lançamento */}
+      <div className="md:hidden bg-[#1a1a20] rounded-xl border border-gray-800 divide-y divide-gray-800/60">
+        {isLoading ? (
+          <p className="p-6 text-center text-emerald-500 font-medium">Carregando...</p>
+        ) : transacoesFiltradas.length === 0 ? (
+          <p className="p-6 text-center text-gray-500 text-sm">Nenhuma transação encontrada para este mês.</p>
+        ) : transacoesFiltradas.map((t: any) => {
+          const saida = t.tipo === 'DESPESA' || t.tipo === 'PAGAMENTO_FATURA';
+          return (
+            <div key={t.id} className="p-3 flex gap-3">
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-white leading-snug break-words">{t.descricao}</p>
+                <p className="text-[11px] text-zinc-500 mt-1 leading-relaxed">
+                  {new Date(t.data).toLocaleDateString('pt-BR', { timeZone: 'UTC', day: '2-digit', month: '2-digit' })}
+                  {' · '}{renderNomeCategoria(t.categoria_id, t.subcategoria_id)}
+                  {' · '}{t.cartao_pessoal ? `💳 ${t.cartao_pessoal.nome} (${t.mes_fatura})` : (t.conta_financeira_pessoal?.nome || '—')}
+                </p>
+                {t.tipo === 'PAGAMENTO_FATURA' && <p className="text-[10px] text-sky-400 font-bold uppercase mt-1">Pagamento de fatura</p>}
+              </div>
+              <div className="flex flex-col items-end gap-1.5 shrink-0">
+                <span className={cn('text-sm font-bold whitespace-nowrap', t.tipo === 'RECEITA' ? 'text-emerald-400' : saida ? 'text-zinc-100' : 'text-zinc-300')}>
+                  {saida ? '-' : '+'} {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Math.abs(Number(t.valor) || 0))}
+                </span>
+                <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase border ${t.situacao === 'PAGO' || t.situacao === 'RECEBIDO' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20'}`}>{t.situacao}</span>
+                {podeEditar && (
+                  <div className="flex gap-1 -mr-1.5">
+                    <button onClick={() => iniciarEdicao(t)} className="p-2 text-gray-400 hover:text-white rounded-md" title="Editar"><Edit2 className="w-4 h-4" /></button>
+                    <button onClick={() => iniciarExclusao(t.id)} className="p-2 text-gray-400 hover:text-red-500 rounded-md" title="Apagar"><Trash2 className="w-4 h-4" /></button>
+                  </div>
+                )}
+                {!podeEditar && podeContestar(renderNomeCategoria(t.categoria_id)) && (
+                  <button onClick={() => setContestando(t)} className="text-[11px] font-bold text-amber-400 px-2 py-1.5 rounded-md bg-amber-500/10">Contestar</button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* PC: tabela */}
+      <div className="hidden md:block bg-[#1a1a20] rounded-xl border border-gray-800 overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
@@ -489,7 +529,7 @@ export default function Transacoes() {
                     </td>
                     <td className="p-4 text-center">
                       {!podeEditar && podeContestar(renderNomeCategoria(t.categoria_id)) && <button onClick={() => setContestando(t)} className="text-[11px] font-bold text-amber-400 hover:text-amber-300 px-2 py-1 rounded-md hover:bg-amber-500/10" title="Contestar classificação">Contestar</button>}
-                      {podeEditar && <div className="flex justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      {podeEditar && <div className="flex justify-center gap-2 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                         <button onClick={() => iniciarEdicao(t)} className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-800 rounded-md transition-colors" title="Editar">
                           <Edit2 className="w-4 h-4" />
                         </button>
@@ -611,10 +651,10 @@ export default function Transacoes() {
 
       {/* Modal de Nova / Editar Transação */}
       {modalAberto && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-[#15151a] p-8 rounded-2xl w-full max-w-xl border border-gray-800 shadow-2xl flex flex-col max-h-[90vh]">
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-0 sm:p-4">
+          <div className="bg-[#15151a] p-5 sm:p-8 rounded-none sm:rounded-2xl w-full max-w-xl border border-gray-800 shadow-2xl flex flex-col h-[100dvh] sm:h-auto max-h-[100dvh] sm:max-h-[90vh]">
             <div className="flex justify-between items-center mb-6 shrink-0">
-              <h2 className="text-2xl text-white font-bold">{transacaoEditandoId ? 'Editar Transação' : 'Nova Transação'}</h2>
+              <h2 className="text-xl sm:text-2xl text-white font-bold">{transacaoEditandoId ? 'Editar Transação' : 'Nova Transação'}</h2>
               <button onClick={() => { setModalAberto(false); resetForm(); }} className="text-gray-500 hover:text-white transition-colors"><X size={20} /></button>
             </div>
             

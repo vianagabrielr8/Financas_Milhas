@@ -9,10 +9,12 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useFamilia } from '@/contexts/FamiliaContext';
 
-export const Sidebar = () => {
+// gaveta = versão do celular (dentro do menu que desliza): sempre aberta, sem botão de recolher.
+export const Sidebar = ({ gaveta = false }: { gaveta?: boolean }) => {
   const navigate = useNavigate();
   const { pathname } = useLocation();
-  const [collapsed, setCollapsed] = useState(false);
+  const [recolhido, setCollapsed] = useState(false);
+  const collapsed = !gaveta && recolhido;
   const { isAdmin } = useFamilia();
   // O módulo vem da página aberta: /milhas... = MILHAS, /financas... = FINANÇAS.
   // Nas configurações, vale o último módulo escolhido.
@@ -90,8 +92,8 @@ export const Sidebar = () => {
 
   return (
     <aside className={cn(
-      "h-screen bg-[#0a0a0b] border-r border-white/5 transition-all duration-300 flex flex-col shrink-0 z-40 relative", 
-      collapsed ? "w-20" : "w-64"
+      "h-full bg-[#0a0a0b] transition-all duration-300 flex flex-col shrink-0 z-40 relative",
+      gaveta ? "w-full" : cn("h-screen border-r border-white/5", collapsed ? "w-20" : "w-64")
     )}>
       
       <div className={cn("h-16 flex items-center border-b border-white/5", collapsed ? "justify-center" : "px-6 justify-between")}>
@@ -100,9 +102,9 @@ export const Sidebar = () => {
             Milheiro<span className="text-[#10b981]">Smart</span>
           </span>
         )}
-        <Button variant="ghost" size="icon" onClick={() => setCollapsed(!collapsed)} className="text-zinc-400 hover:text-white shrink-0">
+        {!gaveta && <Button variant="ghost" size="icon" onClick={() => setCollapsed(!collapsed)} className="text-zinc-400 hover:text-white shrink-0">
           {collapsed ? <Menu className="w-5 h-5" /> : <ChevronLeft className="w-5 h-5" />}
-        </Button>
+        </Button>}
       </div>
 
       {isAdmin && <div className="p-4 border-b border-white/5">
@@ -160,10 +162,9 @@ export const Sidebar = () => {
             <p className="text-[10px] text-zinc-500 truncate" title={userRole}>{userRole}</p>
           </div>
         )}
-        <LogOut 
-          className="w-4 h-4 text-zinc-500 cursor-pointer hover:text-red-400 shrink-0 transition-colors" 
-          onClick={handleLogout}
-        />
+        <button onClick={handleLogout} title="Sair" className="p-2 -m-2 text-zinc-500 hover:text-red-400 shrink-0 transition-colors">
+          <LogOut className="w-4 h-4" />
+        </button>
       </div>
     </aside>
   );

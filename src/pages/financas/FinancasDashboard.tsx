@@ -175,17 +175,17 @@ function Variacao({ atual, referencia, sobeEhBom, rotulo }: { atual: number; ref
 
 function CardKpi({ titulo, valor, corValor, icone: Icone, corIcone, dica, sub, children }: any) {
   return (
-    <div className="bg-[#1e1e24] border border-white/5 rounded-xl p-5 hover:border-white/10 transition-colors">
+    <div className="bg-[#1e1e24] border border-white/5 rounded-xl p-3 md:p-5 hover:border-white/10 transition-colors min-w-0">
       <div className="flex justify-between items-start gap-2">
         <div className="min-w-0">
-          <p className="text-zinc-400 text-xs font-medium mb-1 flex items-center gap-1.5">
+          <p className="text-zinc-400 text-[11px] md:text-xs font-medium mb-1 flex items-center gap-1.5">
             {titulo} {dica && <Dica texto={dica} />}
           </p>
-          <p className="text-xl font-bold truncate" style={{ color: corValor }}>{valor}</p>
+          <p className="text-base md:text-xl font-bold truncate" style={{ color: corValor }}>{valor}</p>
           {sub && <p className="text-[10px] text-zinc-500 mt-1">{sub}</p>}
           {children}
         </div>
-        <div className="h-8 w-8 shrink-0 rounded-full flex items-center justify-center" style={{ backgroundColor: `${corIcone}1a` }}>
+        <div className="hidden md:flex h-8 w-8 shrink-0 rounded-full items-center justify-center" style={{ backgroundColor: `${corIcone}1a` }}>
           <Icone className="w-4 h-4" style={{ color: corIcone }} />
         </div>
       </div>
@@ -195,7 +195,7 @@ function CardKpi({ titulo, valor, corValor, icone: Icone, corIcone, dica, sub, c
 
 function Bloco({ titulo, icone: Icone, corIcone, dica, children, className = '', extra }: any) {
   return (
-    <div className={`bg-[#1e1e24] border border-white/5 rounded-2xl p-5 ${className}`}>
+    <div className={`bg-[#1e1e24] border border-white/5 rounded-2xl p-3 md:p-5 min-w-0 ${className}`}>
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <h3 className="text-sm font-bold flex items-center gap-2">
           <Icone className="w-4 h-4" style={{ color: corIcone }} /> {titulo} {dica && <Dica texto={dica} />}
@@ -553,25 +553,25 @@ export default function FinancasDashboard() {
 
   /* ------------------------------- tela ------------------------------- */
   return (
-    <div className="space-y-6 max-w-[1600px] mx-auto text-zinc-100 p-4 md:p-6 animate-fade-in">
+    <div className="space-y-4 md:space-y-6 max-w-[1600px] mx-auto text-zinc-100 animate-fade-in">
       {/* CABEÇALHO + FILTROS */}
-      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 bg-[#141417] p-4 rounded-xl border border-white/5 shadow-md">
+      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-3 md:gap-4 bg-[#141417] p-3 md:p-4 rounded-xl border border-white/5 shadow-md">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Dashboard Financeira</h1>
+          <h1 className="hidden md:block text-2xl font-bold tracking-tight">Dashboard Financeira</h1>
           <p className="text-zinc-400 text-xs mt-0.5">
             {filtroCentro === TODOS ? 'Todos os centros de custo' : `Centro: ${filtroCentro}`} · {rotuloMesLongo(mesSel)}
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center bg-[#1a1a20] border border-gray-800 rounded-lg px-3 focus-within:border-[#10b981] transition-colors h-[42px]">
-            <Calendar className="w-4 h-4 text-gray-400 mr-2" />
-            <input type="month" value={mesSel} onChange={(e) => e.target.value && setMesSel(e.target.value)} className="bg-transparent text-sm text-white focus:outline-none [color-scheme:dark] cursor-pointer" />
+        <div className="grid grid-cols-2 gap-2 w-full md:flex md:flex-wrap md:items-center md:w-auto">
+          <div className="flex items-center bg-[#1a1a20] border border-gray-800 rounded-lg px-3 focus-within:border-[#10b981] transition-colors h-[42px] min-w-0">
+            <Calendar className="w-4 h-4 text-gray-400 mr-2 shrink-0" />
+            <input type="month" value={mesSel} onChange={(e) => e.target.value && setMesSel(e.target.value)} className="bg-transparent text-sm text-white focus:outline-none [color-scheme:dark] cursor-pointer min-w-0 w-full" />
           </div>
 
-          <div className="flex items-center gap-2 bg-[#1a1a20] border border-gray-800 rounded-lg px-3 h-[42px]">
+          <div className="flex items-center gap-2 bg-[#1a1a20] border border-gray-800 rounded-lg px-3 h-[42px] min-w-0">
             <Layers className="w-4 h-4 text-gray-400" />
-            <select value={filtroCentro} onChange={(e) => setFiltroCentro(e.target.value)} className="bg-transparent text-xs font-semibold text-white focus:outline-none cursor-pointer max-w-[170px] truncate">
+            <select value={filtroCentro} onChange={(e) => setFiltroCentro(e.target.value)} className="bg-transparent text-xs font-semibold text-white focus:outline-none cursor-pointer max-w-[170px] truncate min-w-0 w-full">
               <option value={TODOS} className="bg-[#1a1a20]">{TODOS}</option>
               {centrosCusto.map((cc: any) => (
                 <option key={cc.id} value={cc.nome} className="bg-[#1a1a20]">{cc.nome}</option>
@@ -579,14 +579,14 @@ export default function FinancasDashboard() {
             </select>
           </div>
 
-          <div className="flex items-center bg-[#1a1a20] border border-gray-800 rounded-lg p-1 h-[42px] gap-1">
+          <div className="col-span-2 flex items-center bg-[#1a1a20] border border-gray-800 rounded-lg p-1 h-[42px] gap-1">
             {(
               [
                 ['fatura', 'Quando pagou'],
                 ['compra', 'Quando comprou'],
               ] as const
             ).map(([v, l]) => (
-              <button key={v} onClick={() => setVisao(v)} className={`px-3 h-full rounded-md text-[11px] font-semibold transition-colors ${visao === v ? 'bg-[#10b981] text-black' : 'text-zinc-400 hover:text-white'}`}>
+              <button key={v} onClick={() => setVisao(v)} className={`flex-1 md:flex-none px-3 h-full rounded-md text-[11px] font-semibold transition-colors ${visao === v ? 'bg-[#10b981] text-black' : 'text-zinc-400 hover:text-white'}`}>
                 {l}
               </button>
             ))}
@@ -595,7 +595,7 @@ export default function FinancasDashboard() {
             </span>
           </div>
 
-          <div className="flex items-center gap-2 bg-[#1a1a20] border border-gray-800 rounded-lg px-3 h-[42px]">
+          <div className="col-span-2 flex items-center gap-2 bg-[#1a1a20] border border-gray-800 rounded-lg px-3 h-[42px]">
             <Eye className="w-4 h-4 text-gray-400" />
             <select value={comparar} onChange={(e) => setComparar(e.target.value as any)} className="bg-transparent text-xs font-semibold text-white focus:outline-none cursor-pointer">
               <option value="media3" className="bg-[#1a1a20]">Comparar: média 3 meses</option>
@@ -613,7 +613,7 @@ export default function FinancasDashboard() {
       {isLoading && <p className="text-xs text-zinc-500">Carregando 12 meses de lançamentos…</p>}
 
       {/* KPIs */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-2 md:gap-4">
         <CardKpi titulo="Receita do mês" valor={brl(atual.receita)} corValor={VERDE} icone={ArrowUpCircle} corIcone={VERDE}
           dica="Todo dinheiro que ENTROU neste centro no mês: salário, retirada da empresa, reembolso recebido. Se estiver zerado, os percentuais ficam sem sentido.">
           <Variacao atual={atual.receita} referencia={A.ref((m) => m.receita)} sobeEhBom rotulo={rotuloComp} />
@@ -656,7 +656,7 @@ export default function FinancasDashboard() {
       </div>
 
       {/* TERMÔMETRO + PARA ONDE VAI CADA R$ 100 */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
         <Bloco titulo={A.ehMesCorrente ? 'Termômetro do mês' : 'Resumo do mês'} icone={Gauge} corIcone={VERDE} className="lg:col-span-2"
           dica="Compara o que você já gastou com a sua própria média dos últimos 3 meses. Quando as metas estiverem preenchidas, a referência passa a ser a meta.">
           {A.refConsumo == null ? (
@@ -749,7 +749,7 @@ export default function FinancasDashboard() {
       </div>
 
       {/* CATEGORIAS + INSIGHTS */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
         <Bloco titulo="Gastos por categoria" icone={BarChart3} corIcone="#8b5cf6" className="lg:col-span-2"
           dica="Clique numa categoria para ver as subcategorias e os maiores lançamentos. O ícone de fogo marca categorias bem acima da sua média."
           extra={<span className="text-[10px] text-zinc-500">variação vs {rotuloComp}</span>}>
@@ -902,7 +902,7 @@ export default function FinancasDashboard() {
       </Bloco>
 
       {/* CARTÕES */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
         <Bloco titulo="Gasto por cartão no mês" icone={CreditCard} corIcone={AMARELO} dica="Quanto do gasto deste centro passou por cada cartão, e quanto isso representa do limite total do cartão.">
           {A.porCartao.length === 0 ? (
             <Vazio texto="Nenhum gasto no cartão neste mês." />
@@ -967,7 +967,7 @@ export default function FinancasDashboard() {
       </div>
 
       {/* TERCEIROS + QUALIDADE */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
         <Bloco titulo="Terceiros e Reembolsos (últimos 12 meses)" icone={Users} corIcone="#8b5cf6"
           dica="Compras que você fez para outras pessoas ou que vão ser reembolsadas. Não é gasto seu — é dinheiro a receber. O certo é o saldo fechar em zero.">
           <div className="space-y-2">

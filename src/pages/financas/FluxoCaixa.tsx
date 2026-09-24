@@ -95,11 +95,11 @@ export default function FluxoCaixa() {
 
 
   return (
-    <div className="space-y-6 max-w-[1000px] mx-auto text-zinc-100 p-4 md:p-6 pb-24">
+    <div className="space-y-6 max-w-[1000px] mx-auto text-zinc-100 pb-24">
       
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-[#141417] p-4 rounded-xl border border-white/5">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Fluxo de Pagamentos</h1>
+          <h1 className="hidden md:block text-2xl font-bold tracking-tight">Fluxo de Pagamentos</h1>
           <p className="text-zinc-400 text-xs mt-0.5">Visão detalhada das movimentações do dia.</p>
         </div>
         <div className="flex items-center gap-2 bg-black/40 px-3 py-1.5 rounded-lg border border-white/10">
