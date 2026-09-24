@@ -281,9 +281,12 @@ export default function Metas() {
             <p className="text-[11px] text-zinc-500 -mt-1">
               <span className="text-emerald-400">● até 80%</span> &nbsp; <span className="text-amber-400">● 80% a 100%</span> &nbsp; <span className="text-red-400">● acima da meta</span>
             </p>
-            {/* Do maior gasto para o menor; "Sem categoria" sempre por último */}
+            {/* Do maior % da meta consumido para o menor; "Sem categoria" sempre por último */}
             {[...metasDoMes.map((m: any) => m.categoria_id)]
-              .sort((a: string, b: string) => (gastoPorCat.get(b) || 0) - (gastoPorCat.get(a) || 0))
+              .sort((a: string, b: string) => {
+                const pct = (id: string) => { const m = metaPorCat.get(id) || 0; return m > 0 ? (gastoPorCat.get(id) || 0) / m : 0; };
+                return pct(b) - pct(a);
+              })
               .concat(gastoPorCat.has('') ? [''] : [])
               .map((catId: string) => {
               const meta = metaPorCat.get(catId) ?? 0;
