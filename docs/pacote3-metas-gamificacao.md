@@ -234,3 +234,15 @@ A meta do jogo é o **orçamento completo da casa**. A categoria Ingrid (R$ 2.80
 | 🥇 Trimestre | **Soma dos 3 meses da casa** dentro da soma das 3 metas (T1 = R$ 55.500); um mês compensa o outro | Prêmio grande (ex.: viagem R$ 3–5 mil) |
 
 - **A categoria Ingrid (R$ 2.800/mês)** decide só o prêmio da quinzena. Nos outros níveis, é um indicador de apoio.
+
+## Etapa 3 feita (bot): "📊 Como estou?" e aviso da categoria Ingrid
+
+- **Botão "📊 Como estou?"** no menu do bot. Também responde se a pessoa escrever `como estou` ou `/status`. Mostra:
+  - a quinzena da Ingrid (R$ 1.400 = metade da meta do mês, pela data da compra) e se a 1ª quinzena foi batida;
+  - a categoria Ingrid no mês, a casa no mês e o trimestre (soma dos meses que têm meta);
+  - os prêmios em jogo (o 1º desejo "DESEJADO" de cada nível).
+  As contas são as mesmas da tela Metas.
+- **Aviso automático:** quando o bot grava algo na categoria **Ingrid** (lançado por ela ou pelo dono), manda a situação para quem tem papel **membro** na família e Telegram conectado (hoje, só a Ingrid). O dono (admin) não recebe. Compra parcelada aparece uma vez, com o valor da 1ª parcela.
+- **Frases sorteadas** em 3 faixas pela quinzena: 🟢 até 70% usado, 🟡 até 100%, 🔴 acima. No aviso, a frase muda a cada lançamento, então nunca repete duas vezes seguidas.
+- **Mês sem meta** (setembro/2026): o botão avisa que não tem meta e o aviso não é enviado.
+- **Ainda não faz:** avisar quando o dono lança ou muda algo **pelo app**, e o fechamento com "🏆 Você ganhou!". Isso é a etapa 4.

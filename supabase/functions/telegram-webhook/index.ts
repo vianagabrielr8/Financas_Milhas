@@ -85,10 +85,311 @@ function addMonthsToFatura(fatura: string, add: number) {
 // ------------------------------------------------------------------
 async function sendMainMenu(chatId: number) {
   const botoes = [
-    [{ text: "📸 Lançar Despesas por Print", callback_data: "start_upload" }]
+    [{ text: "📸 Lançar Despesas por Print", callback_data: "start_upload" }],
+    [{ text: "📊 Como estou?", callback_data: "como_estou" }]
   ];
   await sendKeyboard(chatId, "👋 Olá, Detetive de Caixa! O que vamos fazer hoje?", botoes);
 }
+
+// ------------------------------------------------------------------
+// PLACAR DAS METAS (Pacote 3): "📊 Como estou?" e aviso da categoria Ingrid.
+// Mesma conta da tela Metas: só centros de custo que contam na meta,
+// DESPESA soma, ESTORNO desconta; cartão pelo mês da fatura, conta pela data;
+// a casa soma as categorias que têm meta no mês + "sem categoria".
+// A quinzena da Ingrid é pela data da compra, com verba = metade da meta do mês.
+// ------------------------------------------------------------------
+// === PLACAR INICIO ===
+const MESES_CURTOS = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+const MESES_LONGOS = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
+
+const normalizarNome = (t: string) => (t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase();
+const valorGasto = (t: any) => (t.tipo === 'ESTORNO' ? -1 : t.tipo === 'DESPESA' ? 1 : 0) * Math.abs(Number(t.valor) || 0);
+const reais = (v: number) => 'R$ ' + Math.round(v).toLocaleString('pt-BR');
+const doisDig = (n: number) => String(n).padStart(2, '0');
+const chaveDoMes = (ano: number, mes: number) => `${ano}-${doisDig(mes)}-01`; // mes 1..12 (aceita 13 = jan do ano seguinte)
+const chaveNormal = (ano: number, mes: number) => mes > 12 ? chaveDoMes(ano + 1, mes - 12) : chaveDoMes(ano, mes);
+
+// "Hoje" no horário de Brasília (o servidor roda em UTC; o Brasil não tem mais horário de verão).
+function hojeBrasil() {
+  const d = new Date(Date.now() - 3 * 3600 * 1000);
+  return { ano: d.getUTCFullYear(), mes: d.getUTCMonth() + 1, dia: d.getUTCDate() };
+}
+
+// O Supabase devolve no máximo 1000 linhas por vez: busca em páginas.
+async function buscarTudoBot(montar: () => any) {
+  const todas: any[] = [];
+  for (let i = 0; ; i += 1000) {
+    const { data, error } = await montar().range(i, i + 999);
+    if (error) throw error;
+    todas.push(...(data || []));
+    if (!data || data.length < 1000) return todas;
+  }
+}
+
+type Placar = {
+  hoje: { ano: number; mes: number; dia: number };
+  ultimoDia: number;
+  primeiraQuinzena: boolean;
+  temIngrid: boolean;
+  metaIngridMes: number;      // 0 = sem meta neste mês
+  gastoIngridMes: number;
+  gastoQuinzena: number;
+  gastoPrimeiraQuinzena: number;
+  lancamentosIngridMes: number;
+  metaCasa: number;           // 0 = sem meta neste mês
+  gastoCasa: number;
+  triMeses: string[];         // ex.: ['Jul','Ago','Set']
+  metaTri: number;
+  gastoTri: number;
+  premios: Record<string, string>; // nível -> 1º desejo ainda não conquistado
+};
+
+// Junta os lançamentos já buscados e devolve os números do placar.
+function montarPlacar(d: { hoje: { ano: number; mes: number; dia: number }; centros: any[]; categorias: any[]; metas: any[];
+  cartao: any[]; conta: any[]; ingrid: any[]; desejos: any[] }): Placar {
+  const { ano, mes, dia } = d.hoje;
+  const ultimoDia = new Date(Date.UTC(ano, mes, 0)).getUTCDate();
+  const primeiraQuinzena = dia <= 15;
+  const idsNaMeta = new Set(d.centros.filter(c => c.conta_na_meta).map(c => c.id));
+  const idIngrid = d.categorias.find(c => normalizarNome(c.nome) === 'ingrid')?.id;
+
+  const triIni = Math.floor((mes - 1) / 3) * 3 + 1;
+  const triChaves = [0, 1, 2].map(i => chaveDoMes(ano, triIni + i));
+  const chaveAtual = chaveDoMes(ano, mes);
+
+  // gasto por mês e categoria ('' = sem categoria)
+  const porMes = new Map<string, Map<string, number>>();
+  const somar = (chave: string, t: any) => {
+    if (!idsNaMeta.has(t.centro_custo_id)) return;
+    if (!porMes.has(chave)) porMes.set(chave, new Map());
+    const m = porMes.get(chave)!;
+    const k = t.categoria_id || '';
+    m.set(k, (m.get(k) || 0) + valorGasto(t));
+  };
+  for (const t of d.cartao) {
+    const [mm, aa] = String(t.mes_fatura || '').split('/');
+    const idx = MESES_CURTOS.indexOf(mm);
+    if (idx >= 0) somar(chaveDoMes(Number(aa), idx + 1), t);
+  }
+  for (const t of d.conta) somar(String(t.data).slice(0, 7) + '-01', t);
+
+  const metasDe = (chave: string) => new Map(d.metas.filter(m => m.mes === chave).map(m => [m.categoria_id, Number(m.valor)]));
+  const casaDe = (chave: string) => {
+    const metas = metasDe(chave);
+    const metaTotal = Array.from(metas.values()).reduce((s, v) => s + v, 0);
+    const gastos = porMes.get(chave) || new Map();
+    const gasto = Array.from(gastos.entries()).filter(([k]) => k === '' || metas.has(k)).reduce((s, [, v]) => s + v, 0);
+    return { metaTotal, gasto, metas, gastos };
+  };
+
+  const atual = casaDe(chaveAtual);
+  let metaTri = 0, gastoTri = 0;
+  for (const ch of triChaves) {
+    const c = casaDe(ch);
+    if (c.metaTotal > 0) { metaTri += c.metaTotal; gastoTri += c.gasto; } // mês sem meta não entra no trimestre
+  }
+
+  const ingridNoMes = d.ingrid.filter(t => String(t.data).slice(0, 7) === chaveAtual.slice(0, 7));
+  const diaDe = (t: any) => Number(String(t.data).slice(8, 10));
+  const gastoQuinzena = ingridNoMes.filter(t => primeiraQuinzena ? diaDe(t) <= 15 : diaDe(t) >= 16).reduce((s, t) => s + valorGasto(t), 0);
+  const gastoPrimeiraQuinzena = ingridNoMes.filter(t => diaDe(t) <= 15).reduce((s, t) => s + valorGasto(t), 0);
+
+  const premios: Record<string, string> = {};
+  for (const w of d.desejos) if (w.situacao === 'DESEJADO' && !premios[w.nivel]) premios[w.nivel] = w.titulo;
+
+  return {
+    hoje: d.hoje, ultimoDia, primeiraQuinzena,
+    temIngrid: !!idIngrid,
+    metaIngridMes: idIngrid ? (atual.metas.get(idIngrid) || 0) : 0,
+    gastoIngridMes: idIngrid ? (atual.gastos.get(idIngrid) || 0) : 0,
+    gastoQuinzena, gastoPrimeiraQuinzena,
+    lancamentosIngridMes: ingridNoMes.length,
+    metaCasa: atual.metaTotal, gastoCasa: atual.gasto,
+    triMeses: triChaves.map(ch => MESES_CURTOS[Number(ch.slice(5, 7)) - 1]),
+    metaTri, gastoTri, premios,
+  };
+}
+
+// Busca tudo o que o placar precisa, SEMPRE filtrando pela família.
+async function calcularPlacar(familiaId: string, hoje = hojeBrasil()): Promise<Placar> {
+  const { ano, mes } = hoje;
+  const triIni = Math.floor((mes - 1) / 3) * 3 + 1;
+  const rotulos = [0, 1, 2].map(i => `${MESES_CURTOS[triIni - 1 + i]}/${ano}`);
+  const cols = 'valor, tipo, centro_custo_id, categoria_id, data, mes_fatura';
+
+  const [{ data: centros }, { data: categorias }, metas, { data: desejos }] = await Promise.all([
+    supabase.from('centro_custo_projeto').select('id, conta_na_meta').eq('familia_id', familiaId),
+    supabase.from('categoria_pessoal').select('id, nome').eq('familia_id', familiaId),
+    buscarTudoBot(() => supabase.from('meta_categoria').select('mes, categoria_id, valor').eq('familia_id', familiaId)
+      .gte('mes', chaveDoMes(ano, triIni)).lt('mes', chaveNormal(ano, triIni + 3)).order('id')),
+    supabase.from('desejo').select('titulo, nivel, situacao, criado_em').eq('familia_id', familiaId).order('criado_em'),
+  ]);
+  const idIngrid = (categorias || []).find((c: any) => normalizarNome(c.nome) === 'ingrid')?.id;
+
+  const [cartao, conta, ingrid] = await Promise.all([
+    buscarTudoBot(() => supabase.from('transacao_pessoal').select(cols).eq('familia_id', familiaId)
+      .not('cartao_id', 'is', null).in('mes_fatura', rotulos).order('id')),
+    buscarTudoBot(() => supabase.from('transacao_pessoal').select(cols).eq('familia_id', familiaId)
+      .is('cartao_id', null).gte('data', chaveDoMes(ano, triIni)).lt('data', chaveNormal(ano, triIni + 3)).order('id')),
+    idIngrid
+      ? buscarTudoBot(() => supabase.from('transacao_pessoal').select(cols).eq('familia_id', familiaId)
+          .eq('categoria_id', idIngrid).gte('data', chaveDoMes(ano, mes)).lt('data', chaveNormal(ano, mes + 1)).order('id'))
+      : Promise.resolve([]),
+  ]);
+
+  return montarPlacar({ hoje, centros: centros || [], categorias: categorias || [], metas: metas || [], cartao, conta, ingrid, desejos: desejos || [] });
+}
+
+// ---------- mensagens ----------
+// Cada faixa tem várias frases. {livre} {acima} {dias} {porDia} {fim} {proxima} são trocados pelos números.
+const FRASES: Record<'verde' | 'amarelo' | 'vermelho', string[]> = {
+  verde: [
+    '🌿 Tranquilo por aqui! Ainda tem {livre} livres na sua quinzena.',
+    '✨ Tá indo lindo: {livre} livres e {dias} dias pela frente.',
+    '💚 Folga boa: dá pra usar uns {porDia} por dia até o dia {fim} sem sair do combinado.',
+    '😎 Quinzena sob controle. Sobram {livre}.',
+    '🌸 Suas escolhas estão jogando a favor: {livre} livres.',
+    '🎯 No alvo! {livre} ainda disponíveis nesta quinzena.',
+    '🙌 Mandou bem. Ainda cabem {livre} até o dia {fim}.',
+    '🧘 Zen financeiro: {livre} livres, sem pressa.',
+    '🏅 Do jeito que está, o prêmio da quinzena vem. Livres: {livre}.',
+    '🌞 Céu limpo na quinzena: {livre} livres.',
+  ],
+  amarelo: [
+    '🟡 Atenção carinhosa: restam {livre} para os próximos {dias} dias (uns {porDia} por dia).',
+    '⏳ Tá chegando perto: {livre} livres até o dia {fim}. Vale segurar o que puder esperar.',
+    '💡 Dica: antes da próxima compra, pensa se ela pode ficar para a quinzena que vem. Livres: {livre}.',
+    '🟡 Ainda dá! São {livre} livres, e dá para fechar a quinzena no verde.',
+    '🧭 Hora de pilotar com cuidado: {livre} livres, {dias} dias.',
+    '🍃 Tá apertando, mas está sob controle: {livre} livres.',
+    '🛒 Dica: lista antes de sair ajuda a não levar extra. Ainda livres: {livre}.',
+    '🎯 Reta final da quinzena: {livre} livres. O prêmio ainda está na mão!',
+  ],
+  vermelho: [
+    '❤️ Passou {acima} da quinzena. Acontece! A próxima começa no dia {proxima}, zerada.',
+    '🫶 Essa quinzena passou {acima} do combinado. Sem drama: segurar um pouco agora ajuda o mês da casa.',
+    '🔴 {acima} acima da quinzena. Respira: cada compra que ficar para depois conta a favor.',
+    '🌧️ Quinzena {acima} acima. O mês ainda pode fechar bem se a gente segurar junto.',
+    '🤝 Passou {acima}, mas o placar do mês da casa ainda está em jogo.',
+    '🌱 Essa passou {acima}. No dia {proxima} começa uma quinzena nova, e prêmio novo.',
+  ],
+};
+
+function faixaDe(gasto: number, meta: number): 'verde' | 'amarelo' | 'vermelho' {
+  if (gasto > meta) return 'vermelho';
+  return gasto <= meta * 0.7 ? 'verde' : 'amarelo';
+}
+const bolinha = (f: string) => f === 'verde' ? '🟢' : f === 'amarelo' ? '🟡' : '🔴';
+
+function barrinha(gasto: number, meta: number) {
+  const pct = meta > 0 ? gasto / meta : 0;
+  const cheios = Math.max(0, Math.min(10, Math.round(pct * 10)));
+  return '▓'.repeat(cheios) + '░'.repeat(10 - cheios) + ` ${Math.round(pct * 100)}%`;
+}
+
+function linhaLivre(gasto: number, meta: number) {
+  const livre = meta - gasto;
+  return livre >= 0
+    ? `${bolinha(faixaDe(gasto, meta))} <b>${reais(livre)} livres</b> de ${reais(meta)}`
+    : `🔴 <b>${reais(-livre)} acima</b> de ${reais(meta)}`;
+}
+
+// Frase da quinzena. "sorteio" escolhe a frase: no aviso usamos o nº de
+// lançamentos do mês, assim dois avisos seguidos nunca repetem a frase.
+function fraseQuinzena(p: Placar, sorteio: number) {
+  const verba = p.metaIngridMes / 2;
+  const fim = p.primeiraQuinzena ? 15 : p.ultimoDia;
+  const dias = fim - p.hoje.dia + 1;
+  const livre = verba - p.gastoQuinzena;
+  const faixa = faixaDe(p.gastoQuinzena, verba);
+  const lista = FRASES[faixa];
+  const proxima = p.primeiraQuinzena ? `16/${doisDig(p.hoje.mes)}` : `1º/${doisDig(p.hoje.mes === 12 ? 1 : p.hoje.mes + 1)}`;
+  return lista[((sorteio % lista.length) + lista.length) % lista.length]
+    .replaceAll('{livre}', reais(Math.max(livre, 0)))
+    .replaceAll('{acima}', reais(Math.max(-livre, 0)))
+    .replaceAll('{dias}', String(dias))
+    .replaceAll('{porDia}', reais(Math.max(livre, 0) / Math.max(dias, 1)))
+    .replaceAll('{fim}', String(fim))
+    .replaceAll('{proxima}', proxima);
+}
+
+// Texto do botão "📊 Como estou?". souMembro = quem pergunta é a própria Ingrid.
+function textoComoEstou(p: Placar, souMembro: boolean, sorteio: number) {
+  const { dia, mes, ano } = p.hoje;
+  const nomeMes = MESES_LONGOS[mes - 1];
+  let t = `📊 <b>Como estou — ${doisDig(dia)}/${doisDig(mes)}</b>\n\n`;
+
+  if (p.temIngrid && p.metaIngridMes > 0) {
+    const verba = p.metaIngridMes / 2;
+    const ini = p.primeiraQuinzena ? 1 : 16;
+    const fim = p.primeiraQuinzena ? 15 : p.ultimoDia;
+    const dias = fim - dia + 1;
+    t += `<i>${fraseQuinzena(p, sorteio)}</i>\n\n`;
+    t += `👛 <b>${souMembro ? 'Sua quinzena' : 'Quinzena da Ingrid'}</b> (${ini} a ${fim}/${doisDig(mes)})\n`;
+    t += `${linhaLivre(p.gastoQuinzena, verba)}\n`;
+    t += `Gasto: ${reais(p.gastoQuinzena)} · ${dias === 1 ? 'último dia' : `faltam ${dias} dias`}\n`;
+    t += `<code>${barrinha(p.gastoQuinzena, verba)}</code>\n`;
+    if (!p.primeiraQuinzena) {
+      t += p.gastoPrimeiraQuinzena <= verba
+        ? `✅ 1ª quinzena: batida (${reais(p.gastoPrimeiraQuinzena)} de ${reais(verba)})!\n`
+        : `❌ 1ª quinzena: passou ${reais(p.gastoPrimeiraQuinzena - verba)}.\n`;
+    }
+    t += `\n👛 <b>${souMembro ? 'Sua categoria' : 'Categoria Ingrid'} em ${nomeMes}</b>\n${linhaLivre(p.gastoIngridMes, p.metaIngridMes)}\n\n`;
+  } else if (p.temIngrid) {
+    t += `👛 Ainda não tem meta da categoria Ingrid para ${nomeMes}.\n\n`;
+  }
+
+  if (p.metaCasa > 0) {
+    t += `🏠 <b>Casa em ${nomeMes}</b>\n${linhaLivre(p.gastoCasa, p.metaCasa)}\n<code>${barrinha(p.gastoCasa, p.metaCasa)}</code>\n\n`;
+  } else {
+    t += `🏠 Ainda não tem meta da casa para ${nomeMes}.\n\n`;
+  }
+
+  if (p.metaTri > 0) {
+    t += `🥇 <b>Trimestre ${p.triMeses.join('/')} ${ano}</b>\n${linhaLivre(p.gastoTri, p.metaTri)}\n<i>Um mês bom compensa um mês ruim.</i>\n\n`;
+  }
+
+  const premios = [['QUINZENA', '🥉 Quinzena'], ['MES', '🥈 Mês'], ['TRIMESTRE', '🥇 Trimestre']]
+    .filter(([n]) => p.premios[n]).map(([n, rot]) => `${rot}: ${p.premios[n]}`);
+  if (premios.length) t += `🎁 <b>Prêmios em jogo</b>\n${premios.join('\n')}\n\n`;
+
+  t += `<i>Os números são os mesmos da tela Metas do app.</i>`;
+  return t;
+}
+
+// Aviso enviado quando entra lançamento na categoria Ingrid.
+function textoAviso(p: Placar, novos: { descricao: string; valor: number }[]) {
+  const verba = p.metaIngridMes / 2;
+  let t = '🛍️ <b>Novo lançamento na sua categoria</b>\n';
+  for (const n of novos.slice(0, 5)) t += `• ${n.descricao}: ${reais(n.valor)}\n`;
+  if (novos.length > 5) t += `• e mais ${novos.length - 5}\n`;
+  t += `\n<i>${fraseQuinzena(p, p.lancamentosIngridMes)}</i>\n\n`;
+  t += `👛 Quinzena: ${linhaLivre(p.gastoQuinzena, verba)}\n`;
+  t += `👛 Mês: ${linhaLivre(p.gastoIngridMes, p.metaIngridMes)}\n`;
+  if (p.metaCasa > 0) t += `🏠 Casa: ${linhaLivre(p.gastoCasa, p.metaCasa)}\n`;
+  return t;
+}
+
+// Manda o aviso para quem é "membro" da família e tem Telegram conectado
+// (hoje, só a Ingrid). O admin (dono) não recebe.
+async function avisarCategoriaIngrid(familiaId: string, novos: { descricao: string; valor: number }[]) {
+  if (novos.length === 0) return;
+  const p = await calcularPlacar(familiaId);
+  if (!p.temIngrid || p.metaIngridMes <= 0) return; // sem meta no mês: não tem o que comparar
+  const { data: membros } = await supabase.from('familia_membro').select('user_id').eq('familia_id', familiaId).eq('papel', 'membro');
+  const ids = (membros || []).map((m: any) => m.user_id);
+  if (ids.length === 0) return;
+  const { data: vinculos } = await supabase.from('telegram_vinculo').select('telegram_user_id')
+    .eq('familia_id', familiaId).in('user_id', ids);
+  const texto = textoAviso(p, novos);
+  for (const v of vinculos || []) await sendMessage(v.telegram_user_id, texto);
+}
+
+async function responderComoEstou(pessoa: Pessoa) {
+  const p = await calcularPlacar(pessoa.familiaId);
+  await sendMessage(pessoa.chatId, textoComoEstou(p, pessoa.papel === 'membro', Math.floor(Math.random() * 1000)));
+}
+// === PLACAR FIM ===
 
 // ------------------------------------------------------------------
 // MOTOR 1: OCR
@@ -439,6 +740,8 @@ async function executarTarefaGravacao(p: Pessoa, mesFaturaEscolhida: string | nu
     const { data: cartoesVinculados } = await supabase.from('cartao_vinculado').select('id, cartao_pessoal_id').eq('familia_id', p.familiaId);
 
     let sucessoCount = 0;
+    const idCatIngrid = catData?.find(c => normalizarNome(c.nome) === 'ingrid')?.id;
+    const novosIngrid: { descricao: string; valor: number }[] = [];
 
     for (const tx of stagingData) {
       let matchCat = null;
@@ -514,9 +817,13 @@ async function executarTarefaGravacao(p: Pessoa, mesFaturaEscolhida: string | nu
       if (!insertError && insertedData) {
         await supabase.from('open_finance_staging').delete().eq('id', tx.id);
         sucessoCount += rowsInsert.length;
+        // parcelado: avisa a compra uma vez, com o valor da 1ª parcela
+        if (idCatIngrid && matchCat?.id === idCatIngrid) novosIngrid.push({ descricao: descLimpa, valor: rowsInsert[0].valor });
       }
     }
     if (sucessoCount > 0) await sendMessage(chatId, `🎉 <b>${sucessoCount}</b> linhas foram projetadas no sistema!`);
+    // Aviso para a Ingrid (se entrou algo na categoria dela). Erro aqui não atrapalha a gravação.
+    try { await avisarCategoriaIngrid(p.familiaId, novosIngrid); } catch (e) { console.error('aviso Ingrid', e); }
   } catch (err: any) { console.error(err); }
 }
 
@@ -580,14 +887,20 @@ serve(async (req) => {
           return new Response("OK", { status: 200 });
         }
 
-        // 3. MENU DIRETO
+        // 3. PLACAR DAS METAS
+        if (['/status', 'status', 'como estou', 'como estou?', '/comoestou'].includes(textoLower)) {
+          await responderComoEstou(pessoa);
+          return new Response("OK", { status: 200 });
+        }
+
+        // 4. MENU DIRETO
         const isMenuCommand = ['/start', 'menu', 'oi', 'olá', 'ola'].includes(textoLower);
         if (isMenuCommand) {
             await sendMainMenu(chatId);
             return new Response("OK", { status: 200 });
         }
 
-        // 4. EDIÇÃO DE TEXTO NO LOTE
+        // 5. EDIÇÃO DE TEXTO NO LOTE
         const { count } = await supabase.from('open_finance_staging').select('*', { count: 'exact', head: true }).eq('chat_id', chatId);
 
         if (count && count > 0 && !texto.startsWith('/')) {
@@ -605,7 +918,10 @@ serve(async (req) => {
         const action = payload.callback_query.data;
         const messageId = payload.callback_query.message.message_id;
 
-        if (action === 'start_upload') {
+        if (action === 'como_estou') {
+          await responderComoEstou(pessoa);
+        }
+        else if (action === 'start_upload') {
           await removeKeyboard(chatId, messageId);
           await sendKeyboard(chatId, "De onde saiu o dinheiro?", [
             [{ text: "🏦 Débito / Pix (Contas)", callback_data: "choose_type_conta" }],
