@@ -170,3 +170,43 @@ Cada faixa terá **vários modelos**, sorteados sem repetir o anterior.
   - A compra deles no cartão fica com o centro de custo "Terceiros – nome".
   - Quando eles pagam, o dono lança uma `RECEITA` no mesmo centro de custo.
   - Nada disso conta na meta da casa, e o app mostra quanto cada um ainda deve.
+
+## PLANO FECHADO (24/09/2026): vale por cima de tudo acima
+
+**Receitas ficam para um pacote futuro.** O jogo mede **só custos**: economia = meta de gasto − gasto real.
+
+### Números
+
+- **Primeiro trimestre do jogo: out/nov/dez de 2026.** O prêmio grande é entregue em janeiro.
+- **Gasto da casa** = todas as despesas, **menos** os centros de custo marcados como **"fora da meta"** (Terceiros, Milhas, Investimentos). A marcação é feita pelo dono na tela Centros de Custo.
+- **Rampa da meta da casa:**
+
+| Mês | Meta |
+|---|---|
+| Out/2026 | R$ 19.000 |
+| Nov/2026 | R$ 18.500 |
+| Dez/2026 | R$ 18.000 |
+| A partir de jan/2027 | R$ 17.000 |
+
+  O dono pode ajustar qualquer mês na tela Metas.
+- **Verba da Ingrid:** **R$ 2.800/mês**, dividida em quinzenas de R$ 1.400. Vale para a categoria Ingrid (Fixo + Variável).
+- **Prêmios fixos**, cada um ligado a um item da **lista de desejos**:
+
+| Nível | Condição | Prêmio |
+|---|---|---|
+| Quinzena | Ingrid dentro de R$ 1.400 | Item pequeno (R$ 50–100) |
+| Mês | Ingrid dentro de R$ 2.800 **e** casa dentro da meta do mês | Item médio (R$ 300–500) |
+| Trimestre | Ingrid em pelo menos 2 dos 3 meses **e** casa dentro da soma das 3 metas | Prêmio grande (ex.: viagem de R$ 3–5 mil, pode ser parcelada) |
+
+- **Parcelas de prêmio** entram na linha **"Prêmios"** (um centro de custo próprio), que **conta** na meta da casa.
+- **1 coringa por trimestre** (uma quinzena ruim que não conta), e **estourar uma quinzena não zera o trimestre.**
+
+### Etapas (cada uma é um PR)
+
+| Etapa | O que faz |
+|---|---|
+| 1 | Marcar centros de custo "fora da meta"; tabelas `meta_mes` (meta da casa e verba da Ingrid por mês) e `desejo` (lista de desejos); tela **Metas** de verdade (rampa e lista de desejos) |
+| 2 | **Painel do jogo** no app: quanto está livre na quinzena e no mês, progresso do trimestre, prêmios. A Ingrid vê o dela, o dono vê a casa |
+| 3 | Bot: botão **"📊 Como estou?"** e aviso a cada lançamento da categoria Ingrid, com mensagens sorteadas |
+| 4 | Aviso quando o dono muda algo, mais o fechamento automático de quinzena, mês e trimestre, com o "🏆 Você ganhou!" e o registro do prêmio a entregar |
+| 5 | Receitas e "a receber" dos terceiros (pacote futuro) |
