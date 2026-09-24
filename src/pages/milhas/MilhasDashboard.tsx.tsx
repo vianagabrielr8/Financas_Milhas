@@ -124,7 +124,7 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-3 gap-4">
-        <Link to="/estoque"><CustomCard title="Milhas em Estoque" value={formatNumber(stats.miles)} subtitle="Total consolidado" icon={Plane} variant="success" /></Link>
+        <Link to="/milhas/estoque"><CustomCard title="Milhas em Estoque" value={formatNumber(stats.miles)} subtitle="Total consolidado" icon={Plane} variant="success" /></Link>
         <CustomCard title="CPM Médio Global" value={formatCPM(stats.miles > 0 ? (stats.invested / stats.miles) * 1000 : 0)} subtitle="Custo médio aquisição" icon={TrendingDown} variant="destructive" />
         <CustomCard title="Custo do Estoque" value={formatCurrency(stats.invested)} subtitle="Capital alocado" icon={Wallet} variant="success" />
       </div>

@@ -1,4 +1,4 @@
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { 
   LayoutDashboard, Package, ArrowRightLeft, DollarSign,
@@ -11,13 +11,16 @@ import { useFamilia } from '@/contexts/FamiliaContext';
 
 export const Sidebar = () => {
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const [collapsed, setCollapsed] = useState(false);
   const { isAdmin } = useFamilia();
-  const [moduloEscolhido, setModuloAtivo] = useState<'FINANCAS' | 'MILHAS'>(() => {
-    return (localStorage.getItem('erp_modulo_ativo') as 'FINANCAS' | 'MILHAS') || 'FINANCAS';
-  });
+  // O módulo vem da página aberta: /milhas... = MILHAS, /financas... = FINANÇAS.
+  // Nas configurações, vale o último módulo escolhido.
+  const moduloGuardado = (localStorage.getItem('erp_modulo_ativo') as 'FINANCAS' | 'MILHAS') || 'FINANCAS';
+  const moduloDaPagina = pathname.startsWith('/milhas') ? 'MILHAS' : pathname.startsWith('/financas') ? 'FINANCAS' : moduloGuardado;
   // O membro só usa Finanças (o módulo Milhas é só do admin).
-  const moduloAtivo = isAdmin ? moduloEscolhido : 'FINANCAS';
+  const moduloAtivo = isAdmin ? moduloDaPagina : 'FINANCAS';
+  useEffect(() => { localStorage.setItem('erp_modulo_ativo', moduloAtivo); }, [moduloAtivo]);
 
   // Estados para armazenar os dados reais do usuário logado
   const [userName, setUserName] = useState('Carregando...');
@@ -39,15 +42,13 @@ export const Sidebar = () => {
   }, []);
 
   const alterarModulo = (modulo: 'FINANCAS' | 'MILHAS') => {
-    setModuloAtivo(modulo);
     localStorage.setItem('erp_modulo_ativo', modulo);
-    window.location.reload();
+    navigate(modulo === 'MILHAS' ? '/milhas' : '/financas');
   };
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
-    navigate('/login'); 
-    window.location.reload();
+    navigate('/');
   };
 
   const menuCompleto = moduloAtivo === 'FINANCAS' ? [
@@ -64,7 +65,7 @@ export const Sidebar = () => {
       { icon: Tags, label: 'Categorias', path: '/financas/categorias' },
     ]}
   ] : [
-    { group: "PRINCIPAL", items: [{ icon: LayoutDashboard, label: 'Dashboard', path: '/' }] },
+    { group: "PRINCIPAL", items: [{ icon: LayoutDashboard, label: 'Dashboard', path: '/milhas' }] },
     { group: "OPERACIONAL", items: [
       { icon: Package, label: 'Estoque', path: '/milhas/estoque' },
       { icon: ArrowRightLeft, label: 'Transferências', path: '/milhas/transferencias' },
@@ -114,7 +115,7 @@ export const Sidebar = () => {
           </button>
           <button 
             onClick={() => alterarModulo('MILHAS')} 
-            className={cn("py-1.5 text-[10px] font-bold rounded transition-colors text-center", collapsed ? "w-full" : "flex-1", moduloAtivo === 'MILHAS' ? "bg-indigo-500 text-white" : "text-zinc-500 hover:text-zinc-300")}
+            className={cn("py-1.5 text-[10px] font-bold rounded transition-colors text-center", collapsed ? "w-full" : "flex-1", moduloAtivo === 'MILHAS' ? "bg-violet-500 text-white" : "text-zinc-500 hover:text-zinc-300")}
           >
             {collapsed ? "M" : "MILHAS"}
           </button>
@@ -130,13 +131,13 @@ export const Sidebar = () => {
                 <NavLink 
                   key={item.label} 
                   to={item.path} 
-                  end={item.path === '/financas' || item.path === '/'}
+                  end={item.path === '/financas' || item.path === '/milhas'}
                   title={collapsed ? item.label : undefined}
                   className={({isActive}) => cn(
                     "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors", 
                     collapsed ? "justify-center" : "",
                     isActive 
-                      ? (moduloAtivo === 'FINANCAS' ? 'bg-[#10b981]/10 text-[#10b981]' : 'bg-indigo-500/10 text-indigo-500') 
+                      ? (moduloAtivo === 'FINANCAS' ? 'bg-[#10b981]/10 text-[#10b981]' : 'bg-violet-500/10 text-violet-400') 
                       : "text-zinc-400 hover:text-zinc-100 hover:bg-white/5"
                   )}
                 >

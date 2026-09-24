@@ -10,7 +10,7 @@ import {
   Filter, CheckCircle2, Wallet
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
+import { cn, hojeLocal } from '@/lib/utils';
 import { useFamilia } from '@/contexts/FamiliaContext';
 import { ContestarModal, podeContestar } from '@/components/finance/ContestarModal';
 
@@ -38,7 +38,7 @@ export default function FaturaCartao() {
   // Pagamento da Fatura
   const [modalPagarFaturaAberto, setModalPagarFaturaAberto] = useState(false);
   const [contaPagamentoId, setContaPagamentoId] = useState('');
-  const [dataPagamentoFatura, setDataPagamentoFatura] = useState(new Date().toISOString().split('T')[0]);
+  const [dataPagamentoFatura, setDataPagamentoFatura] = useState(hojeLocal());
   const [processandoPagamento, setProcessandoPagamento] = useState(false);
 
   // Estados de Edição Lançamento/Parcela
@@ -50,7 +50,7 @@ export default function FaturaCartao() {
   const [formTipo, setFormTipo] = useState('DESPESA');
   const [formDescricao, setFormDescricao] = useState('');
   const [formValor, setFormValor] = useState('');
-  const [formData, setFormData] = useState(new Date().toISOString().split('T')[0]);
+  const [formData, setFormData] = useState(hojeLocal());
   const [formFaturaDestino, setFormFaturaDestino] = useState(`${mesSelecionado}/${anoSelecionado}`);
   const [formCentroCusto, setFormCentroCusto] = useState('');
   const [formParcelado, setFormParcelado] = useState(false);
@@ -300,7 +300,7 @@ export default function FaturaCartao() {
     setFormParcelado(false);
     setFormParcelas(2);
     setFormObservacao('');
-    setFormData(new Date().toISOString().split('T')[0]);
+    setFormData(hojeLocal());
     setFormFaturaDestino(faturaAtual);
     setIsRateio(false);
     setRateios([{ id: 1, cc: '', cat: null as any, valorStr: '' }, { id: 2, cc: '', cat: null as any, valorStr: '' }]);

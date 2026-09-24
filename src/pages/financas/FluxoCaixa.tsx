@@ -1,12 +1,13 @@
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { hojeLocal } from '@/lib/utils';
 import { CalendarDays, ArrowDownCircle, ArrowUpCircle } from 'lucide-react';
 import { ptBR } from 'date-fns/locale';
 import { format, parseISO } from 'date-fns';
 
 export default function FluxoCaixa() {
-  const [dataSelecionada, setDataSelecionada] = useState(new Date().toISOString().split('T')[0]);
+  const [dataSelecionada, setDataSelecionada] = useState(hojeLocal());
 
   const [anoSel, mesSel] = dataSelecionada.split('-');
   // Nomes dos meses para comparar com "mes_fatura" (ex: "Set/2026")

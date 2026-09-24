@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Search, Plus, X, Calendar, ChevronDown, CornerDownRight, Filter, TrendingUp, TrendingDown, Wallet, Edit2, Trash2, FileText, Download } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, hojeLocal } from '@/lib/utils';
 import { useFamilia } from '@/contexts/FamiliaContext';
 import { ContestarModal, podeContestar } from '@/components/finance/ContestarModal';
 
@@ -39,7 +39,7 @@ export default function Transacoes() {
   const [formValor, setFormValor] = useState('');
   const [formSituacao, setFormSituacao] = useState('PAGO');
   const [formTipo, setFormTipo] = useState('DESPESA'); 
-  const [formData, setFormData] = useState(new Date().toISOString().split('T')[0]);
+  const [formData, setFormData] = useState(hojeLocal());
   const [formRecorrente, setFormRecorrente] = useState(false);
   const [formFrequencia, setFormFrequencia] = useState('MENSAL');
   const [formObservacao, setFormObservacao] = useState('');
@@ -200,7 +200,7 @@ export default function Transacoes() {
     setTransacaoEditandoId(null);
     setTransacaoEditandoOriginal(null);
     setFormDescricao(''); setFormValor(''); setFormSituacao('PAGO'); setFormTipo('DESPESA');
-    setFormData(new Date().toISOString().split('T')[0]); setFormRecorrente(false);
+    setFormData(hojeLocal()); setFormRecorrente(false);
     setFormFrequencia('MENSAL'); setFormObservacao(''); setFormContaId('');
     setFormCentroCustoId(''); setCategoriaSelecionada(null); setBuscaCat('');
   };
@@ -426,7 +426,7 @@ export default function Transacoes() {
             </thead>
             <tbody className="divide-y divide-gray-800/50">
               {isLoading ? (
-                <tr><td colSpan={8} className="p-8 text-center text-emerald-500 font-medium">A carregar dados...</td></tr>
+                <tr><td colSpan={8} className="p-8 text-center text-emerald-500 font-medium">Carregando...</td></tr>
               ) : transacoesFiltradas.length === 0 ? (
                 <tr><td colSpan={8} className="p-8 text-center text-gray-500">Nenhuma transação encontrada para este mês.</td></tr>
               ) : (
@@ -493,7 +493,7 @@ export default function Transacoes() {
                         <button onClick={() => iniciarEdicao(t)} className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-800 rounded-md transition-colors" title="Editar">
                           <Edit2 className="w-4 h-4" />
                         </button>
-                        <button onClick={() => iniciarExclusao(t.id)} className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-500/10 rounded-md transition-colors" title="Eliminar">
+                        <button onClick={() => iniciarExclusao(t.id)} className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-500/10 rounded-md transition-colors" title="Apagar">
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </div>}

@@ -136,7 +136,7 @@ const ProgramDetails = () => {
         {/* TOPO */}
         <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 border-b pb-6">
             <div className="flex items-center gap-4">
-                <Button variant="outline" size="icon" onClick={() => navigate('/estoque')}>
+                <Button variant="outline" size="icon" onClick={() => navigate('/milhas/estoque')}>
                     <ArrowLeft className="h-4 w-4" />
                 </Button>
                 <div>

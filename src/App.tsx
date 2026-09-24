@@ -64,7 +64,10 @@ const AppLogado = () => {
   return (
     <MainLayout>
       <Routes>
-        <Route path="/" element={<SomenteAdmin><Index /></SomenteAdmin>} />
+        {/* Depois do login, cai sempre no painel de Finanças. O painel de Milhas fica em /milhas. */}
+        <Route path="/" element={<Navigate to="/financas" replace />} />
+        <Route path="/login" element={<Navigate to="/financas" replace />} />
+        <Route path="/milhas" element={<SomenteAdmin><Index /></SomenteAdmin>} />
 
         <Route path="/milhas/estoque" element={<SomenteAdmin><Estoque /></SomenteAdmin>} />
         <Route path="/milhas/estoque/:id" element={<SomenteAdmin><ProgramDetails /></SomenteAdmin>} />
