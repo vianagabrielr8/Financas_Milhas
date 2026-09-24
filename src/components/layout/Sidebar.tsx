@@ -2,7 +2,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { 
   LayoutDashboard, Package, ArrowRightLeft, DollarSign,
-  Wallet, UserCircle, Plane, Users, ShieldCheck, LogOut, ChevronLeft, Menu, Target, CalendarDays, Tags, FolderTree, Landmark, Home 
+  Wallet, UserCircle, Plane, Users, ShieldCheck, LogOut, ChevronLeft, Menu, Target, CalendarDays, Tags, FolderTree, Landmark, Home, Send 
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useState, useEffect } from 'react';
@@ -77,13 +77,15 @@ export const Sidebar = () => {
     { group: "SEGURANÇA", items: [{ icon: ShieldCheck, label: 'Limites CPF', path: '/milhas/limites' }]}
   ];
 
-  // Admin vê tudo + a tela Família. Membro só vê as telas de consulta.
+  // Admin vê tudo + Família e Telegram. Membro só vê as telas de consulta + Telegram.
   const PATHS_DO_MEMBRO = ['/financas', '/financas/transacoes', '/financas/metas', '/financas/fluxo-caixa', '/financas/cartoes'];
+  const itemTelegram = { icon: Send, label: 'Telegram', path: '/configuracoes/telegram' };
   const menuConfig = isAdmin
-    ? [...menuCompleto, { group: "CONFIGURAÇÕES", items: [{ icon: Home, label: 'Família', path: '/configuracoes/familia' }] }]
-    : menuCompleto
+    ? [...menuCompleto, { group: "CONFIGURAÇÕES", items: [{ icon: Home, label: 'Família', path: '/configuracoes/familia' }, itemTelegram] }]
+    : [...menuCompleto
         .map(g => ({ ...g, items: g.items.filter(i => PATHS_DO_MEMBRO.includes(i.path)) }))
-        .filter(g => g.items.length > 0);
+        .filter(g => g.items.length > 0),
+       { group: "CONFIGURAÇÕES", items: [itemTelegram] }];
 
   return (
     <aside className={cn(

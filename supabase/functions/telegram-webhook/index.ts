@@ -6,17 +6,62 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
 const SUPABASE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY');
 
-// TRAVA DE ACESSO: senha do webhook e lista de chats permitidos (Secrets do Supabase)
+// TRAVA DE ACESSO: senha do webhook (Secret do Supabase)
 const WEBHOOK_SECRET = Deno.env.get('TELEGRAM_WEBHOOK_SECRET') ?? '';
-const CHATS_PERMITIDOS = new Set(
-  (Deno.env.get('TELEGRAM_ALLOWED_CHAT_IDS') ?? '').split(',').map(s => s.trim()).filter(Boolean)
-);
-
-function chatPermitido(chatId: unknown) {
-  return chatId !== undefined && chatId !== null && CHATS_PERMITIDOS.has(String(chatId));
-}
 
 const supabase = createClient(SUPABASE_URL!, SUPABASE_KEY!);
+
+// ------------------------------------------------------------------
+// QUEM ESTÁ FALANDO: só atende contas do Telegram vinculadas no app
+// (tabela telegram_vinculo). Tudo que o bot lê ou grava fica restrito
+// à família dessa pessoa, e a triagem (open_finance_staging) ao chat dela.
+// ------------------------------------------------------------------
+type Pessoa = { chatId: number; userId: string; familiaId: string; papel: 'admin' | 'membro' };
+
+async function obterPessoa(telegramId: number): Promise<Pessoa | null> {
+  const { data: vinculo } = await supabase.from('telegram_vinculo')
+    .select('user_id, familia_id').eq('telegram_user_id', telegramId).maybeSingle();
+  if (!vinculo) return null;
+  // Confere se a pessoa ainda é da família (pode ter sido removida no app).
+  const { data: membro } = await supabase.from('familia_membro')
+    .select('familia_id, papel').eq('user_id', vinculo.user_id).maybeSingle();
+  if (!membro || membro.familia_id !== vinculo.familia_id) return null;
+  return { chatId: telegramId, userId: vinculo.user_id, familiaId: vinculo.familia_id, papel: membro.papel };
+}
+
+// Confere se um id (conta, cartão...) é mesmo da família da pessoa.
+async function daFamilia(tabela: string, id: string, familiaId: string) {
+  const { data } = await supabase.from(tabela).select('id').eq('id', id).eq('familia_id', familiaId).maybeSingle();
+  return !!data;
+}
+
+// /vincular 123456 -> liga esta conta do Telegram ao usuário que gerou o código no app.
+async function vincularTelegram(telegramId: number, codigo: string) {
+  const { data: cod } = await supabase.from('telegram_codigo_vinculo')
+    .select('user_id, expira_em').eq('codigo', codigo).maybeSingle();
+  if (!cod || new Date(cod.expira_em) < new Date()) {
+    await sendMessage(telegramId, "❌ Código inválido ou vencido. Gere um novo no app (menu Telegram).");
+    return;
+  }
+  const { data: membro } = await supabase.from('familia_membro')
+    .select('familia_id').eq('user_id', cod.user_id).maybeSingle();
+  if (!membro) {
+    await sendMessage(telegramId, "❌ Sua conta do app ainda não tem família.");
+    return;
+  }
+  // Um Telegram por pessoa: remove vínculos antigos deste Telegram ou deste usuário.
+  await supabase.from('telegram_vinculo').delete().eq('telegram_user_id', telegramId);
+  await supabase.from('telegram_vinculo').delete().eq('user_id', cod.user_id);
+  const { error } = await supabase.from('telegram_vinculo')
+    .insert({ telegram_user_id: telegramId, user_id: cod.user_id, familia_id: membro.familia_id });
+  await supabase.from('telegram_codigo_vinculo').delete().eq('codigo', codigo);
+  if (error) {
+    await sendMessage(telegramId, "❌ Não consegui conectar. Gere um novo código e tente de novo.");
+    return;
+  }
+  await sendMessage(telegramId, "✅ Telegram conectado! Tudo que você lançar aqui vai para a sua família.");
+  await sendMainMenu(telegramId);
+}
 const URL_PUBLICA = 'https://tdatvduchifakmocywhq.supabase.co/functions/v1/telegram-webhook';
 
 function chunkArray(array: any[], size: number) {
@@ -49,7 +94,8 @@ async function sendMainMenu(chatId: number) {
 // ------------------------------------------------------------------
 // MOTOR 1: OCR
 // ------------------------------------------------------------------
-async function processarImagem(chatId: number, fileId: string) {
+async function processarImagem(p: Pessoa, fileId: string) {
+  const chatId = p.chatId;
   try {
     const { data: sessao } = await supabase.from('sessao_bot').select('conta_id, cartao_ativo_id, cartao_principal_id').eq('chat_id', chatId).single();
 
@@ -85,8 +131,8 @@ Regras OBRIGATÓRIAS:
     const transacoes = JSON.parse(geminiData.candidates[0].content.parts[0].text.trim().replace(/```json/g, '').replace(/```/g, '').trim());
     if (!transacoes || transacoes.length === 0) return;
 
-    let stagingQuery = supabase.from('open_finance_staging').select('descricao, valor, data');
-    let consolidadasQuery = supabase.from('transacao_pessoal').select('descricao, valor, data');
+    let stagingQuery = supabase.from('open_finance_staging').select('descricao, valor, data').eq('familia_id', p.familiaId);
+    let consolidadasQuery = supabase.from('transacao_pessoal').select('descricao, valor, data').eq('familia_id', p.familiaId);
 
     if (sessao.conta_id) {
         stagingQuery = stagingQuery.eq('conta_id', sessao.conta_id);
@@ -131,11 +177,13 @@ Regras OBRIGATÓRIAS:
       pluggy_transaction_id: 'print_' + Date.now() + '_' + idx,
       cartao_vinculado_id: sessao.cartao_ativo_id,
       cartao_principal_id: sessao.cartao_principal_id,
-      conta_id: sessao.conta_id
+      conta_id: sessao.conta_id,
+      chat_id: chatId,
+      familia_id: p.familiaId
     }));
 
     await supabase.from('open_finance_staging').insert(payloadInsert);
-    const { count } = await supabase.from('open_finance_staging').select('*', { count: 'exact', head: true });
+    const { count } = await supabase.from('open_finance_staging').select('*', { count: 'exact', head: true }).eq('chat_id', chatId);
 
     let msg = `✅ <b>${transacoesNovas.length}</b> salvas. `;
     if (ignoradas > 0) msg += `(🛡️ ${ignoradas} repetidas barradas). `;
@@ -149,10 +197,10 @@ Regras OBRIGATÓRIAS:
 // ------------------------------------------------------------------
 // GERADORES DE CONTEXTO E ÁRVORE
 // ------------------------------------------------------------------
-async function montarArvoreCategorias() {
-    const { data: catData } = await supabase.from('categoria_pessoal').select('id, nome, centro_custo_id');
-    const { data: subData } = await supabase.from('subcategoria_pessoal').select('id, nome, categoria_id');
-    const { data: ccData } = await supabase.from('centro_custo_projeto').select('id, nome');
+async function montarArvoreCategorias(p: Pessoa) {
+    const { data: catData } = await supabase.from('categoria_pessoal').select('id, nome, centro_custo_id').eq('familia_id', p.familiaId);
+    const { data: subData } = await supabase.from('subcategoria_pessoal').select('id, nome, categoria_id').eq('familia_id', p.familiaId);
+    const { data: ccData } = await supabase.from('centro_custo_projeto').select('id, nome').eq('familia_id', p.familiaId);
 
     let arvore = "";
     if (ccData && catData) {
@@ -170,10 +218,10 @@ async function montarArvoreCategorias() {
     return arvore;
 }
 
-async function obterRegraCartaoSessao(chatId: number) {
-    const { data: sessao } = await supabase.from('sessao_bot').select('cartao_principal_id').eq('chat_id', chatId).single();
+async function obterRegraCartaoSessao(p: Pessoa) {
+    const { data: sessao } = await supabase.from('sessao_bot').select('cartao_principal_id').eq('chat_id', p.chatId).single();
     if (sessao && sessao.cartao_principal_id) {
-        const { data: cartao } = await supabase.from('cartao_pessoal').select('tipo_leitura_parcela').eq('id', sessao.cartao_principal_id).single();
+        const { data: cartao } = await supabase.from('cartao_pessoal').select('tipo_leitura_parcela').eq('id', sessao.cartao_principal_id).eq('familia_id', p.familiaId).single();
         if (cartao && cartao.tipo_leitura_parcela === 'TOTAL') {
             return "VALOR_TOTAL";
         }
@@ -184,10 +232,11 @@ async function obterRegraCartaoSessao(chatId: number) {
 // ------------------------------------------------------------------
 // MOTOR 2: CATEGORIZAÇÃO IA EM LOTE
 // ------------------------------------------------------------------
-async function executarTarefaIA(chatId: number) {
+async function executarTarefaIA(p: Pessoa) {
+  const chatId = p.chatId;
   try {
-    const arvoreCategorias = await montarArvoreCategorias();
-    const { data: stagingData } = await supabase.from('open_finance_staging').select('*').order('data').order('id');
+    const arvoreCategorias = await montarArvoreCategorias(p);
+    const { data: stagingData } = await supabase.from('open_finance_staging').select('*').eq('chat_id', chatId).order('data').order('id');
     if (!stagingData || stagingData.length === 0) return;
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${GEMINI_API_KEY}`;
@@ -212,18 +261,19 @@ Responda APENAS em JSON: [{"id": "id-da-tx", "categoria": "Cat • Sub", "centro
           }).eq('id', tx.id);
         }
     }
-    await exibirResumo(chatId);
+    await exibirResumo(p);
   } catch (err) { await sendMessage(chatId, "❌ Falha no processamento da IA."); }
 }
 
 // ------------------------------------------------------------------
 // MOTOR 3: IA BLINDADA COM PROJEÇÃO VIRTUAL DE PARCELAS
 // ------------------------------------------------------------------
-async function processarEdicaoTexto(chatId: number, textoUsuario: string) {
+async function processarEdicaoTexto(p: Pessoa, textoUsuario: string) {
+    const chatId = p.chatId;
     try {
-        const arvoreCategorias = await montarArvoreCategorias();
-        const regraCartao = await obterRegraCartaoSessao(chatId);
-        const { data: stagingData } = await supabase.from('open_finance_staging').select('*').order('data').order('id');
+        const arvoreCategorias = await montarArvoreCategorias(p);
+        const regraCartao = await obterRegraCartaoSessao(p);
+        const { data: stagingData } = await supabase.from('open_finance_staging').select('*').eq('chat_id', chatId).order('data').order('id');
         if (!stagingData || stagingData.length === 0) return;
 
         let contextoTriagem = "";
@@ -335,7 +385,7 @@ FORMATO EXATO DE SAÍDA:
         else if (alterado) await sendMessage(chatId, "✅ Atualizações registradas com sucesso.");
         else await sendMessage(chatId, "⚠️ Não consegui validar a alteração. Tente novamente.");
 
-        await exibirResumo(chatId);
+        await exibirResumo(p);
 
     } catch (error) {
         console.error(error);
@@ -350,8 +400,8 @@ async function removeKeyboard(chatId: number, messageId: number) {
     await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/editMessageReplyMarkup`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_id: chatId, message_id: messageId, reply_markup: { inline_keyboard: [] } }) });
 }
 
-async function obterTextoResumo() {
-  const { data: stagingData } = await supabase.from('open_finance_staging').select('*').order('data').order('id');
+async function obterTextoResumo(p: Pessoa) {
+  const { data: stagingData } = await supabase.from('open_finance_staging').select('*').eq('chat_id', p.chatId).order('data').order('id');
   if (!stagingData || stagingData.length === 0) return null;
 
   let resumo = "📋 <b>Resumo da Classificação:</b>\n<i>💡 Mande os ajustes (Ex: A 2 é CC Familiar)</i>\n\n";
@@ -368,27 +418,26 @@ async function obterTextoResumo() {
   return resumo;
 }
 
-async function exibirResumo(chatId: number) {
-  const resumo = await obterTextoResumo();
+async function exibirResumo(p: Pessoa) {
+  const resumo = await obterTextoResumo(p);
   if (!resumo) return;
-  await sendKeyboard(chatId, resumo, [
+  await sendKeyboard(p.chatId, resumo, [
     [{ text: "✅ Aprovar e Salvar Lote", callback_data: "confirm_ai" }],
     [{ text: "📝 Editar via Texto (Copiar)", callback_data: "get_edit_template" }],
     [{ text: "🗑️ Cancelar Lote", callback_data: "cancel_ai" }]
   ]);
 }
 
-async function executarTarefaGravacao(chatId: number, mesFaturaEscolhida: string | null) {
+async function executarTarefaGravacao(p: Pessoa, mesFaturaEscolhida: string | null) {
+  const chatId = p.chatId;
   try {
-    const { data: stagingData } = await supabase.from('open_finance_staging').select('*').not('sugestao_ia', 'is', null);
+    const { data: stagingData } = await supabase.from('open_finance_staging').select('*').eq('chat_id', chatId).not('sugestao_ia', 'is', null);
     if (!stagingData || stagingData.length === 0) return;
 
-    const { data: catData } = await supabase.from('categoria_pessoal').select('id, nome');
-    const { data: subData } = await supabase.from('subcategoria_pessoal').select('id, nome, categoria_id');
-    const { data: ccData } = await supabase.from('centro_custo_projeto').select('id, nome');
-    const { data: cartoesVinculados } = await supabase.from('cartao_vinculado').select('id, cartao_pessoal_id');
-    const { data: cartoesPrincipais } = await supabase.from('cartao_pessoal').select('id, user_id');
-    const { data: contas } = await supabase.from('conta_financeira_pessoal').select('id, user_id');
+    const { data: catData } = await supabase.from('categoria_pessoal').select('id, nome').eq('familia_id', p.familiaId);
+    const { data: subData } = await supabase.from('subcategoria_pessoal').select('id, nome, categoria_id').eq('familia_id', p.familiaId);
+    const { data: ccData } = await supabase.from('centro_custo_projeto').select('id, nome').eq('familia_id', p.familiaId);
+    const { data: cartoesVinculados } = await supabase.from('cartao_vinculado').select('id, cartao_pessoal_id').eq('familia_id', p.familiaId);
 
     let sucessoCount = 0;
 
@@ -414,15 +463,6 @@ async function executarTarefaGravacao(chatId: number, mesFaturaEscolhida: string
       if (tx.cartao_vinculado_id) {
         const matchVinculo = cartoesVinculados?.find(v => v.id === tx.cartao_vinculado_id);
         if (matchVinculo) cartaoPrincipalId = matchVinculo.cartao_pessoal_id;
-      }
-
-      let donoId = "d327ec3e-5f8c-4b13-b023-fc1c3b37c8d2";
-      if (cartaoPrincipalId) {
-          const c = cartoesPrincipais?.find(cp => cp.id === cartaoPrincipalId);
-          if (c) donoId = c.user_id;
-      } else if (tx.conta_id) {
-          const c = contas?.find(ct => ct.id === tx.conta_id);
-          if (c) donoId = c.user_id;
       }
 
       let qtdParcelas = 1;
@@ -466,7 +506,8 @@ async function executarTarefaGravacao(chatId: number, mesFaturaEscolhida: string
             conta_id: tx.conta_id,
             observacao: "Extraído via Lupa Bot",
             mes_fatura: mesFaturaFinal,
-            user_id: donoId
+            user_id: p.userId,          // quem lançou (pessoa vinculada)
+            familia_id: p.familiaId
           });
       }
 
@@ -494,14 +535,23 @@ serve(async (req) => {
     try {
       const payload = await req.json();
 
-      // TRAVA 2: chat fora da lista -> não responde nada e não grava nada.
-      const chatIdDaMensagem = payload.internal_task
-        ? payload.chatId
-        : (payload.message?.chat?.id ?? payload.callback_query?.message?.chat?.id);
-      if (!chatPermitido(chatIdDaMensagem)) return new Response("OK", { status: 200 });
+      // TRAVA 2: só conversa privada; quem fala tem que estar vinculado.
+      // Sem vínculo, o bot só aceita "/vincular 123456" e ignora o resto.
+      const chatDaMensagem = payload.message?.chat ?? payload.callback_query?.message?.chat;
+      if (!payload.internal_task && chatDaMensagem?.type !== 'private') return new Response("OK", { status: 200 });
+      const telegramId = payload.internal_task ? payload.chatId : chatDaMensagem?.id;
 
-      if (payload.internal_task === 'run_ai') { await executarTarefaIA(payload.chatId); return new Response("OK", { status: 200 }); }
-      if (payload.internal_task === 'edit_ai') { await processarEdicaoTexto(payload.chatId, payload.texto); return new Response("OK", { status: 200 }); }
+      const textoVincular = (payload.message?.text ?? '').trim().match(/^\/vincular\s+(\d{6})$/i);
+      if (!payload.internal_task && textoVincular) {
+        await vincularTelegram(telegramId, textoVincular[1]);
+        return new Response("OK", { status: 200 });
+      }
+
+      const pessoa = await obterPessoa(telegramId);
+      if (!pessoa) return new Response("OK", { status: 200 });
+
+      if (payload.internal_task === 'run_ai') { await executarTarefaIA(pessoa); return new Response("OK", { status: 200 }); }
+      if (payload.internal_task === 'edit_ai') { await processarEdicaoTexto(pessoa, payload.texto); return new Response("OK", { status: 200 }); }
 
       if (payload.message && payload.message.photo) {
         const chatId = payload.message.chat.id;
@@ -509,7 +559,7 @@ serve(async (req) => {
         const fileId = photos[photos.length - 1].file_id;
 
         await sendMessage(chatId, "👀 Lendo a imagem com a lupa...");
-        EdgeRuntime.waitUntil(processarImagem(chatId, fileId));
+        EdgeRuntime.waitUntil(processarImagem(pessoa, fileId));
         return new Response("OK", { status: 200 });
       }
 
@@ -520,14 +570,18 @@ serve(async (req) => {
 
         // 1. LIMPAR LOTE
         if (textoLower === 'limpar' || textoLower === '/limpar') {
-            await supabase.from('open_finance_staging').delete().not('id', 'is', null);
+            await supabase.from('open_finance_staging').delete().eq('chat_id', chatId);
             await sendMessage(chatId, "🗑️ Triagem limpa com sucesso!");
             return new Response("OK", { status: 200 });
         }
 
         // 2. CONFIGURAR PADRÕES DE CARTÃO
         if (textoLower === '/config' || textoLower === 'config') {
-          const { data: cartoesPrincipais } = await supabase.from('cartao_pessoal').select('id, nome').order('nome');
+          if (pessoa.papel !== 'admin') {
+            await sendMessage(chatId, "⚙️ Só o admin da família pode mudar a configuração dos cartões.");
+            return new Response("OK", { status: 200 });
+          }
+          const { data: cartoesPrincipais } = await supabase.from('cartao_pessoal').select('id, nome').eq('familia_id', pessoa.familiaId).order('nome');
           if (cartoesPrincipais && cartoesPrincipais.length > 0) {
               const botoes = cartoesPrincipais.map(c => ({ text: `⚙️ ${c.nome}`, callback_data: `config_card_${c.id}` }));
               await sendKeyboard(chatId, "Selecione o cartão para configurar a leitura de parcelas:", chunkArray(botoes, 1));
@@ -543,7 +597,7 @@ serve(async (req) => {
         }
 
         // 4. EDIÇÃO DE TEXTO NO LOTE
-        const { count } = await supabase.from('open_finance_staging').select('*', { count: 'exact', head: true });
+        const { count } = await supabase.from('open_finance_staging').select('*', { count: 'exact', head: true }).eq('chat_id', chatId);
 
         if (count && count > 0 && !texto.startsWith('/')) {
              await sendMessage(chatId, "🧠 Processando suas edições em lote...");
@@ -569,7 +623,7 @@ serve(async (req) => {
         }
         else if (action === 'choose_type_conta') {
           await removeKeyboard(chatId, messageId);
-          const { data: contas } = await supabase.from('conta_financeira_pessoal').select('id, nome').order('nome');
+          const { data: contas } = await supabase.from('conta_financeira_pessoal').select('id, nome').eq('familia_id', pessoa.familiaId).order('nome');
           const botoes = [];
           if (contas && contas.length > 0) {
              botoes.push(...chunkArray(contas.map(c => ({ text: `🏦 ${c.nome}`, callback_data: `set_up_conta_${c.id}` })), 2));
@@ -580,7 +634,7 @@ serve(async (req) => {
         }
         else if (action === 'choose_type_cartao') {
           await removeKeyboard(chatId, messageId);
-          const { data: cartoesP } = await supabase.from('cartao_pessoal').select('id, nome').order('nome');
+          const { data: cartoesP } = await supabase.from('cartao_pessoal').select('id, nome').eq('familia_id', pessoa.familiaId).order('nome');
           const botoes = [];
           if (cartoesP && cartoesP.length > 0) {
              botoes.push(...chunkArray(cartoesP.map(c => ({ text: `💳 ${c.nome}`, callback_data: `sel_main_card_${c.id}` })), 2));
@@ -598,13 +652,16 @@ serve(async (req) => {
         }
         else if (action.startsWith('set_up_conta_')) {
           await removeKeyboard(chatId, messageId);
-          await supabase.from('sessao_bot').upsert({ chat_id: chatId, conta_id: action.replace('set_up_conta_', ''), cartao_ativo_id: null, cartao_principal_id: null, atualizado_em: new Date().toISOString() });
+          const contaId = action.replace('set_up_conta_', '');
+          if (!(await daFamilia('conta_financeira_pessoal', contaId, pessoa.familiaId))) return new Response("OK", { status: 200 });
+          await supabase.from('sessao_bot').upsert({ chat_id: chatId, conta_id: contaId, cartao_ativo_id: null, cartao_principal_id: null, atualizado_em: new Date().toISOString(), familia_id: pessoa.familiaId });
           await sendMessage(chatId, "🏦 Conta Bancária selecionada!\n\n📸 Pode mandar as fotos dos recibos e prints de tela.");
         }
         else if (action.startsWith('sel_main_card_')) {
           await removeKeyboard(chatId, messageId);
           const mainId = action.replace('sel_main_card_', '');
-          const { data: vinculados } = await supabase.from('cartao_vinculado').select('id, nome_impresso').eq('cartao_pessoal_id', mainId);
+          if (!(await daFamilia('cartao_pessoal', mainId, pessoa.familiaId))) return new Response("OK", { status: 200 });
+          const { data: vinculados } = await supabase.from('cartao_vinculado').select('id, nome_impresso').eq('cartao_pessoal_id', mainId).eq('familia_id', pessoa.familiaId);
           const botoes = [[{ text: "⭐ Titular", callback_data: `set_up_main_${mainId}` }]];
           if (vinculados && vinculados.length > 0) {
             botoes.push(...chunkArray(vinculados.map(c => ({ text: `🔹 ${c.nome_impresso}`, callback_data: `set_up_card_${c.id}` })), 2));
@@ -613,17 +670,22 @@ serve(async (req) => {
         }
         else if (action.startsWith('set_up_main_')) {
           await removeKeyboard(chatId, messageId);
-          await supabase.from('sessao_bot').upsert({ chat_id: chatId, conta_id: null, cartao_ativo_id: null, cartao_principal_id: action.replace('set_up_main_', ''), atualizado_em: new Date().toISOString() });
+          const cartaoId = action.replace('set_up_main_', '');
+          if (!(await daFamilia('cartao_pessoal', cartaoId, pessoa.familiaId))) return new Response("OK", { status: 200 });
+          await supabase.from('sessao_bot').upsert({ chat_id: chatId, conta_id: null, cartao_ativo_id: null, cartao_principal_id: cartaoId, atualizado_em: new Date().toISOString(), familia_id: pessoa.familiaId });
           await sendMessage(chatId, "💳 Cartão Titular selecionado!\n\n📸 Pode mandar as fotos e prints da fatura.");
         }
         else if (action.startsWith('set_up_card_')) {
           await removeKeyboard(chatId, messageId);
-          await supabase.from('sessao_bot').upsert({ chat_id: chatId, conta_id: null, cartao_ativo_id: action.replace('set_up_card_', ''), cartao_principal_id: null, atualizado_em: new Date().toISOString() });
+          const vinculadoId = action.replace('set_up_card_', '');
+          if (!(await daFamilia('cartao_vinculado', vinculadoId, pessoa.familiaId))) return new Response("OK", { status: 200 });
+          await supabase.from('sessao_bot').upsert({ chat_id: chatId, conta_id: null, cartao_ativo_id: vinculadoId, cartao_principal_id: null, atualizado_em: new Date().toISOString(), familia_id: pessoa.familiaId });
           await sendMessage(chatId, "💳 Cartão Adicional selecionado!\n\n📸 Pode mandar as fotos e prints da fatura.");
         }
         else if (action.startsWith('config_card_')) {
           await removeKeyboard(chatId, messageId);
           const cardId = action.replace('config_card_', '');
+          if (pessoa.papel !== 'admin' || !(await daFamilia('cartao_pessoal', cardId, pessoa.familiaId))) return new Response("OK", { status: 200 });
           await sendKeyboard(chatId, "Como este cartão mostra compras parceladas no extrato?", [
               [{ text: "➗ Mostra o valor de 1 Parcela", callback_data: `set_read_${cardId}_PARCELA` }],
               [{ text: "💰 Mostra o valor Total da compra", callback_data: `set_read_${cardId}_TOTAL` }]
@@ -634,7 +696,8 @@ serve(async (req) => {
           const parts = action.split('_');
           const tipo = parts.pop();
           const cardId = parts.slice(2).join('_');
-          await supabase.from('cartao_pessoal').update({ tipo_leitura_parcela: tipo }).eq('id', cardId);
+          if (pessoa.papel !== 'admin' || !(await daFamilia('cartao_pessoal', cardId, pessoa.familiaId))) return new Response("OK", { status: 200 });
+          await supabase.from('cartao_pessoal').update({ tipo_leitura_parcela: tipo }).eq('id', cardId).eq('familia_id', pessoa.familiaId);
           await sendMessage(chatId, `✅ Configuração salva! O padrão agora é: ${tipo}`);
         }
         else if (action === 'start_ai') {
@@ -643,7 +706,7 @@ serve(async (req) => {
           EdgeRuntime.waitUntil(fetch(URL_PUBLICA, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_KEY}`, 'X-Telegram-Bot-Api-Secret-Token': WEBHOOK_SECRET }, body: JSON.stringify({ internal_task: 'run_ai', chatId: chatId }) }).catch(console.error));
         }
         else if (action === 'get_edit_template') {
-          const { data: stagingData } = await supabase.from('open_finance_staging').select('*').order('data').order('id');
+          const { data: stagingData } = await supabase.from('open_finance_staging').select('*').eq('chat_id', chatId).order('data').order('id');
           if (stagingData && stagingData.length > 0) {
             let copyBlock = "";
             for (let i = 0; i < stagingData.length; i++) {
@@ -654,11 +717,11 @@ serve(async (req) => {
         }
         else if (action === 'confirm_ai') {
           await removeKeyboard(chatId, messageId);
-          const { data: checkData } = await supabase.from('open_finance_staging').select('conta_id, cartao_principal_id, cartao_vinculado_id').limit(1).single();
+          const { data: checkData } = await supabase.from('open_finance_staging').select('conta_id, cartao_principal_id, cartao_vinculado_id').eq('chat_id', chatId).limit(1).single();
 
           if (checkData && checkData.conta_id) {
              await sendMessage(chatId, `💾 Gravando despesa direto na Conta Bancária (Como Pago)...`);
-             await executarTarefaGravacao(chatId, null);
+             await executarTarefaGravacao(pessoa, null);
           } else {
              await sendKeyboard(chatId, "📅 Escolha a fatura de destino (Mês 1):", chunkArray([
                { text: "Jul/2026", callback_data: "save_to_Jul_2026" }, { text: "Ago/2026", callback_data: "save_to_Ago_2026" },
@@ -671,11 +734,11 @@ serve(async (req) => {
           await removeKeyboard(chatId, messageId);
           const mes = action.replace('save_to_', '').replace('_', '/');
           await sendMessage(chatId, `💾 Gravando no Cartão (a partir de ${mes})...`);
-          await executarTarefaGravacao(chatId, mes);
+          await executarTarefaGravacao(pessoa, mes);
         }
         else if (action === 'cancel_ai') {
           await removeKeyboard(chatId, messageId);
-          await supabase.from('open_finance_staging').delete().not('id', 'is', null);
+          await supabase.from('open_finance_staging').delete().eq('chat_id', chatId);
           await sendMessage(chatId, "🗑️ Lote cancelado e triagem limpa!");
           await sendKeyboard(chatId, "De onde saiu o dinheiro?", [
             [{ text: "🏦 Débito / Pix (Contas)", callback_data: "choose_type_conta" }],

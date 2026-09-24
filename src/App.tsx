@@ -39,6 +39,7 @@ import Metas from "./pages/financas/Metas";
 import { FamiliaProvider, useFamilia } from "./contexts/FamiliaContext";
 import AcessoNaoLiberado from "./pages/AcessoNaoLiberado";
 import Familia from "./pages/configuracoes/Familia";
+import Telegram from "./pages/configuracoes/Telegram";
 
 const queryClient = new QueryClient();
 
@@ -86,6 +87,7 @@ const AppLogado = () => {
         <Route path="/financas/metas" element={<Metas />} />
 
         <Route path="/configuracoes/familia" element={<SomenteAdmin><Familia /></SomenteAdmin>} />
+        <Route path="/configuracoes/telegram" element={<Telegram />} />
 
         <Route path="*" element={<NotFound />} />
       </Routes>
