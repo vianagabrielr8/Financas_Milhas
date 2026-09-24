@@ -12,11 +12,13 @@ import {
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useFamilia } from '@/contexts/FamiliaContext';
+import { ContestarModal } from '@/components/finance/ContestarModal';
 
 type SortKey = 'data' | 'descricao' | 'categoria' | 'valor';
 
 export default function FaturaCartao() {
   const { podeEditar } = useFamilia();
+  const [contestando, setContestando] = useState<any>(null);
   const queryClient = useQueryClient();
   const { id: urlCardId } = useParams();
 
@@ -987,6 +989,7 @@ export default function FaturaCartao() {
 
   return (
     <div className="space-y-6 max-w-[1600px] mx-auto text-zinc-100 p-4 md:p-6 pb-24 relative">
+      <ContestarModal transacao={contestando} onFechar={() => setContestando(null)} />
 
       <input type="file" accept=".csv" ref={fileInputRef} onChange={handleImportarCSV} className="hidden" />
 
@@ -1107,6 +1110,7 @@ export default function FaturaCartao() {
                         </span>
                       </td>
                       <td className="py-4 text-center">
+                      {!podeEditar && <button onClick={() => setContestando(t)} className="text-[11px] font-bold text-amber-400 hover:text-amber-300 px-2 py-1 rounded-md hover:bg-amber-500/10" title="Contestar classificação">Contestar</button>}
                         {podeEditar && <div className="flex justify-center gap-1">
                           <Button variant="ghost" size="icon" onClick={() => abrirModalEdicao(t)} className="h-8 w-8 text-zinc-500 hover:text-white"><Edit2 className="w-4 h-4" /></Button>
                           <Button variant="ghost" size="icon" onClick={() => iniciarExclusao(t)} className="h-8 w-8 text-zinc-500 hover:text-red-400"><Trash2 className="w-4 h-4" /></Button>

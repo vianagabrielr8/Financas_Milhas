@@ -2,7 +2,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { 
   LayoutDashboard, Package, ArrowRightLeft, DollarSign,
-  Wallet, UserCircle, Plane, Users, ShieldCheck, LogOut, ChevronLeft, Menu, Target, CalendarDays, Tags, FolderTree, Landmark, Home, Send 
+  Wallet, UserCircle, Plane, Users, ShieldCheck, LogOut, ChevronLeft, Menu, Target, CalendarDays, Tags, FolderTree, Landmark, Home, Send, MessageSquareWarning 
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useState, useEffect } from 'react';
@@ -81,7 +81,7 @@ export const Sidebar = () => {
   const PATHS_DO_MEMBRO = ['/financas', '/financas/transacoes', '/financas/metas', '/financas/fluxo-caixa', '/financas/cartoes'];
   const itemTelegram = { icon: Send, label: 'Telegram', path: '/configuracoes/telegram' };
   const menuConfig = isAdmin
-    ? [...menuCompleto, { group: "CONFIGURAÇÕES", items: [{ icon: Home, label: 'Família', path: '/configuracoes/familia' }, itemTelegram] }]
+    ? [...menuCompleto, { group: "CONFIGURAÇÕES", items: [{ icon: Home, label: 'Família', path: '/configuracoes/familia' }, { icon: MessageSquareWarning, label: 'Contestações', path: '/configuracoes/contestacoes' }, itemTelegram] }]
     : [...menuCompleto
         .map(g => ({ ...g, items: g.items.filter(i => PATHS_DO_MEMBRO.includes(i.path)) }))
         .filter(g => g.items.length > 0),
