@@ -6,7 +6,7 @@
 --      começa marcado; os outros (Dívidas, Terceiros, Milhas, Reembolsos,
 --      empresas) ficam FORA da meta. Dá para mudar na tela Metas.
 --   2. Tabela meta_categoria: meta de cada CATEGORIA por mês. A meta da
---      casa é a SOMA delas (out/26 R$ 17.835, nov R$ 17.365, dez R$ 17.215,
+--      casa é a SOMA delas (out/26 R$ 18.435, nov R$ 17.365, dez R$ 17.215,
 --      jan/27 R$ 15.560, fev e mar/27 R$ 15.500). A verba da Ingrid é a meta da categoria
 --      Ingrid (R$ 2.800). Categoria SEM meta não conta no placar da casa
 --      (ex.: Investimentos); "Sem categoria" conta.
@@ -104,7 +104,7 @@ CREATE POLICY desejo_apagar ON public.desejo FOR DELETE TO authenticated
          AND ((SELECT public.sou_admin()) OR (criado_por = (SELECT auth.uid()) AND situacao = 'DESEJADO')));
 
 -- Metas iniciais (Família Viana), por categoria, ajustadas pelo dono em
--- 24/09/2026. Somam 17.835 (out) / 17.365 (nov) / 17.215 (dez) / 15.560 (jan)
+-- 24/09/2026. Somam 18.435 (out, com folga em Lazer e Alimentação) / 17.365 (nov) / 17.215 (dez) / 15.560 (jan)
 -- / 15.500 (fev e mar). Serviços sem meta (limpeza do AP fica em Ap).
 -- Nome comparado sem acento e sem maiúscula.
 INSERT INTO public.meta_categoria (familia_id, mes, categoria_id, valor)
@@ -115,9 +115,9 @@ FROM (VALUES
   ('ingrid',      '2026-10-01', 2800), ('ingrid',      '2026-11-01', 2800), ('ingrid',      '2026-12-01', 2800), ('ingrid',      '2027-01-01', 2800), ('ingrid',      '2027-02-01', 2800), ('ingrid',      '2027-03-01', 2800),
   ('bebe',        '2026-10-01', 1800), ('bebe',        '2026-11-01', 1800), ('bebe',        '2026-12-01', 1800), ('bebe',        '2027-01-01', 1700), ('bebe',        '2027-02-01', 1700), ('bebe',        '2027-03-01', 1700),
   ('carros',      '2026-10-01', 1500), ('carros',      '2026-11-01', 1400), ('carros',      '2026-12-01', 1400), ('carros',      '2027-01-01', 1300), ('carros',      '2027-02-01', 1300), ('carros',      '2027-03-01', 1300),
-  ('alimentacao', '2026-10-01', 1800), ('alimentacao', '2026-11-01', 1800), ('alimentacao', '2026-12-01', 1800), ('alimentacao', '2027-01-01', 1800), ('alimentacao', '2027-02-01', 1800), ('alimentacao', '2027-03-01', 1800),
+  ('alimentacao', '2026-10-01', 2100), ('alimentacao', '2026-11-01', 1800), ('alimentacao', '2026-12-01', 1800), ('alimentacao', '2027-01-01', 1800), ('alimentacao', '2027-02-01', 1800), ('alimentacao', '2027-03-01', 1800),
   ('i.r',         '2026-10-01', 1355), ('i.r',         '2026-11-01', 1355), ('i.r',         '2026-12-01', 1355), ('i.r',         '2027-01-01',  300), ('i.r',         '2027-02-01',  300), ('i.r',         '2027-03-01',  300),
-  ('lazer',       '2026-10-01', 1000), ('lazer',       '2026-11-01',  900), ('lazer',       '2026-12-01',  800), ('lazer',       '2027-01-01',  700), ('lazer',       '2027-02-01',  700), ('lazer',       '2027-03-01',  700),
+  ('lazer',       '2026-10-01', 1300), ('lazer',       '2026-11-01',  900), ('lazer',       '2026-12-01',  800), ('lazer',       '2027-01-01',  700), ('lazer',       '2027-02-01',  700), ('lazer',       '2027-03-01',  700),
   ('eventos',     '2026-10-01',  880), ('eventos',     '2026-11-01',  760), ('eventos',     '2026-12-01',  760), ('eventos',     '2027-01-01',  560), ('eventos',     '2027-02-01',  500), ('eventos',     '2027-03-01',  500),
   ('farmacia',    '2026-10-01',  600), ('farmacia',    '2026-11-01',  550), ('farmacia',    '2026-12-01',  500), ('farmacia',    '2027-01-01',  500), ('farmacia',    '2027-02-01',  500), ('farmacia',    '2027-03-01',  500)
 ) AS v(nome, mes, valor)
@@ -128,7 +128,7 @@ JOIN public.categoria_pessoal c
 
 COMMIT;
 
--- Conferência: meta da casa por mês (esperado 17835 / 17365 / 17215 /
+-- Conferência: meta da casa por mês (esperado 18435 / 17365 / 17215 /
 -- 15560 / 15500 / 15500) e só o "Familiar" contando na meta. Se algum
 -- mês vier menor, alguma categoria não foi achada pelo nome: me avise.
 SELECT mes, sum(valor) AS meta_da_casa, count(*) AS categorias
