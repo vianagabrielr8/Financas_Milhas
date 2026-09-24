@@ -85,8 +85,7 @@ function addMonthsToFatura(fatura: string, add: number) {
 // ------------------------------------------------------------------
 async function sendMainMenu(chatId: number) {
   const botoes = [
-    [{ text: "📸 Lançar Despesas por Print", callback_data: "start_upload" }],
-    [{ text: "⚙️ Padrões de Leitura de Cartão", callback_data: "settings_cards" }]
+    [{ text: "📸 Lançar Despesas por Print", callback_data: "start_upload" }]
   ];
   await sendKeyboard(chatId, "👋 Olá, Detetive de Caixa! O que vamos fazer hoje?", botoes);
 }
@@ -575,17 +574,9 @@ serve(async (req) => {
             return new Response("OK", { status: 200 });
         }
 
-        // 2. CONFIGURAR PADRÕES DE CARTÃO
+        // 2. PADRÕES DE LEITURA DO CARTÃO: agora ficam no cadastro do cartão, no app.
         if (textoLower === '/config' || textoLower === 'config') {
-          if (pessoa.papel !== 'admin') {
-            await sendMessage(chatId, "⚙️ Só o admin da família pode mudar a configuração dos cartões.");
-            return new Response("OK", { status: 200 });
-          }
-          const { data: cartoesPrincipais } = await supabase.from('cartao_pessoal').select('id, nome').eq('familia_id', pessoa.familiaId).order('nome');
-          if (cartoesPrincipais && cartoesPrincipais.length > 0) {
-              const botoes = cartoesPrincipais.map(c => ({ text: `⚙️ ${c.nome}`, callback_data: `config_card_${c.id}` }));
-              await sendKeyboard(chatId, "Selecione o cartão para configurar a leitura de parcelas:", chunkArray(botoes, 1));
-          }
+          await sendMessage(chatId, "⚙️ A leitura de parcelas agora se configura no app: Cartões → editar o cartão → \"No print/extrato, compra parcelada aparece com\".");
           return new Response("OK", { status: 200 });
         }
 
