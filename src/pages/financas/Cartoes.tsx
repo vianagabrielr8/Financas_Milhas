@@ -4,7 +4,8 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { CreditCard, Trash2, Edit2, Plus, X } from 'lucide-react';
+import { CreditCard, Trash2, Edit2, Plus, X, Check } from 'lucide-react';
+import { toast } from 'sonner';
 import { useFamilia } from '@/contexts/FamiliaContext';
 
 export default function Cartoes() {
@@ -29,6 +30,55 @@ export default function Cartoes() {
     }
   });
 
+  // Cartões adicionais (tabela cartao_vinculado): nome impresso + cartão titular.
+  const { data: adicionais = [], refetch: refetchAdicionais } = useQuery({
+    queryKey: ['cartoes_vinculados_todos'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('cartao_vinculado' as any).select('id, cartao_pessoal_id, nome_impresso').order('nome_impresso');
+      if (error) throw error;
+      return (data || []) as any[];
+    }
+  });
+  const adicionaisDo = (cartaoId: string) => adicionais.filter((a: any) => a.cartao_pessoal_id === cartaoId);
+  const [novoAdicional, setNovoAdicional] = useState('');
+  const [nomesEditados, setNomesEditados] = useState<Record<string, string>>({});
+
+  // Adicionais salvam na hora (não dependem do botão "Salvar cartão").
+  const adicionarAdicional = async () => {
+    const nomeNovo = novoAdicional.trim();
+    if (!cartaoEditandoId || !nomeNovo) return;
+    const { error } = await supabase.from('cartao_vinculado' as any).insert([{ cartao_pessoal_id: cartaoEditandoId, nome_impresso: nomeNovo }]);
+    if (error) { toast.error('Não consegui adicionar: ' + error.message); return; }
+    setNovoAdicional('');
+    toast.success(`Adicional "${nomeNovo}" criado.`);
+    refetchAdicionais();
+  };
+
+  const renomearAdicional = async (id: string) => {
+    const nomeNovo = (nomesEditados[id] ?? '').trim();
+    if (!nomeNovo) return;
+    const { error } = await supabase.from('cartao_vinculado' as any).update({ nome_impresso: nomeNovo }).eq('id', id);
+    if (error) { toast.error('Não consegui renomear: ' + error.message); return; }
+    setNomesEditados(n => { const c = { ...n }; delete c[id]; return c; });
+    toast.success('Nome atualizado.');
+    refetchAdicionais();
+  };
+
+  // Só apaga se não houver lançamento ligado ao adicional (para não deixar lançamento sem dono).
+  const apagarAdicional = async (a: any) => {
+    const { count, error: erroConta } = await supabase.from('transacao_pessoal').select('id', { count: 'exact', head: true }).eq('cartao_vinculado_id', a.id);
+    if (erroConta) { toast.error('Não consegui conferir os lançamentos: ' + erroConta.message); return; }
+    if ((count || 0) > 0) {
+      toast.error(`"${a.nome_impresso}" tem ${count} lançamento(s). Não dá para apagar; se quiser, só renomeie.`);
+      return;
+    }
+    if (!window.confirm(`Apagar o adicional "${a.nome_impresso}"?`)) return;
+    const { error } = await supabase.from('cartao_vinculado' as any).delete().eq('id', a.id);
+    if (error) { toast.error('Não consegui apagar: ' + error.message); return; }
+    toast.success('Adicional apagado.');
+    refetchAdicionais();
+  };
+
   const abrirModalNovo = () => {
     setCartaoEditandoId(null);
     setNome('');
@@ -47,6 +97,8 @@ export default function Cartoes() {
     setDiaFechamento(cartao.dia_fechamento?.toString() || '');
     setDiaVencimento(cartao.dia_vencimento?.toString() || '');
     setLeituraParcela(cartao.tipo_leitura_parcela === 'TOTAL' ? 'TOTAL' : 'PARCELA');
+    setNovoAdicional('');
+    setNomesEditados({});
     setModalAberto(true);
   };
 
@@ -124,7 +176,16 @@ export default function Cartoes() {
                   </div>}
                 </div>
                 
-                <CardTitle className="text-xl mb-6">{cartao.nome}</CardTitle>
+                <CardTitle className={adicionaisDo(cartao.id).length ? 'text-xl mb-2' : 'text-xl mb-6'}>{cartao.nome}</CardTitle>
+                {adicionaisDo(cartao.id).length > 0 && (
+                  <div className="flex flex-wrap gap-1 mb-5">
+                    {adicionaisDo(cartao.id).map((a: any) => (
+                      <span key={a.id} className="text-[10px] bg-white/5 border border-white/10 text-zinc-300 px-2 py-0.5 rounded-md flex items-center gap-1">
+                        <CreditCard className="w-3 h-3" /> {a.nome_impresso}
+                      </span>
+                    ))}
+                  </div>
+                )}
                 
                 <div className="mt-auto space-y-3">
                   <div className="flex justify-between text-xs border-b border-white/5 pb-2">
@@ -198,6 +259,40 @@ export default function Cartoes() {
                 </select>
                 <p className="text-[11px] text-zinc-500 mt-1">O bot usa isso para dividir certo quando você manda o print e pede para parcelar.</p>
               </div>
+
+              {/* CARTÕES ADICIONAIS: só aparece ao editar um cartão que já existe */}
+              {cartaoEditandoId ? (
+                <div className="border-t border-white/10 pt-4">
+                  <p className="text-zinc-400 text-xs font-bold uppercase mb-1">Cartões adicionais</p>
+                  <p className="text-[11px] text-zinc-500 mb-3">Aparecem no filtro da fatura e no bot ("Quem efetuou a compra?"). Salvam na hora.</p>
+                  <div className="space-y-2">
+                    {adicionaisDo(cartaoEditandoId).map((a: any) => {
+                      const valor = nomesEditados[a.id] ?? a.nome_impresso;
+                      const mudou = nomesEditados[a.id] !== undefined && nomesEditados[a.id].trim() !== a.nome_impresso;
+                      return (
+                        <div key={a.id} className="flex items-center gap-2">
+                          <input value={valor} onChange={(e) => setNomesEditados(n => ({ ...n, [a.id]: e.target.value }))}
+                            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); renomearAdicional(a.id); } }}
+                            className="flex-1 min-w-0 bg-[#1e1e24] text-white border border-white/10 rounded-lg px-3 py-2 text-sm focus:border-[#10b981] focus:outline-none" />
+                          {mudou && <button type="button" onClick={() => renomearAdicional(a.id)} title="Salvar nome" className="p-2 text-[#10b981] hover:bg-[#10b981]/10 rounded-lg"><Check className="w-4 h-4" /></button>}
+                          <button type="button" onClick={() => apagarAdicional(a)} title="Apagar adicional" className="p-2 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg"><Trash2 className="w-4 h-4" /></button>
+                        </div>
+                      );
+                    })}
+                    {adicionaisDo(cartaoEditandoId).length === 0 && <p className="text-xs text-zinc-500">Nenhum adicional neste cartão.</p>}
+                    <div className="flex items-center gap-2 pt-1">
+                      <input value={novoAdicional} onChange={(e) => setNovoAdicional(e.target.value)} placeholder="Nome do adicional (ex.: Ingrid Latam)"
+                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); adicionarAdicional(); } }}
+                        className="flex-1 min-w-0 bg-[#1e1e24] text-white border border-white/10 rounded-lg px-3 py-2 text-sm focus:border-[#10b981] focus:outline-none" />
+                      <button type="button" onClick={adicionarAdicional} disabled={!novoAdicional.trim()} className="px-3 py-2 rounded-lg text-sm font-bold bg-[#10b981]/15 text-[#10b981] hover:bg-[#10b981]/25 disabled:opacity-40 flex items-center gap-1 shrink-0">
+                        <Plus className="w-4 h-4" /> Adicionar
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-[11px] text-zinc-500 border-t border-white/10 pt-4">Depois de salvar, abra o cartão em ✏️ para cadastrar os cartões adicionais.</p>
+              )}
 
               <div className="mt-6 flex justify-end gap-3 pt-4">
                 <button type="button" onClick={() => setModalAberto(false)} className="px-6 py-2.5 text-sm text-zinc-400 font-bold hover:text-white transition-colors">CANCELAR</button>
