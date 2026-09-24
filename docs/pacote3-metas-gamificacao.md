@@ -196,7 +196,7 @@ Cada faixa terá **vários modelos**, sorteados sem repetir o anterior.
 |---|---|---|
 | Quinzena | Ingrid dentro de R$ 1.400 | Item pequeno (R$ 50–100) |
 | Mês | Ingrid dentro de R$ 2.800 **e** casa dentro da meta do mês | Item médio (R$ 300–500) |
-| Trimestre | Ingrid em pelo menos 2 dos 3 meses **e** casa dentro da soma das 3 metas | Prêmio grande (ex.: viagem de R$ 3–5 mil, pode ser parcelada) |
+| Trimestre | Ingrid dentro da verba **nos 3 meses** **e** casa dentro da soma das 3 metas | Prêmio grande (ex.: viagem de R$ 3–5 mil, pode ser parcelada) |
 
 - **Parcelas de prêmio** entram na linha **"Prêmios"** (um centro de custo próprio), que **conta** na meta da casa.
 - **1 coringa por trimestre** (uma quinzena ruim que não conta), e **estourar uma quinzena não zera o trimestre.**
