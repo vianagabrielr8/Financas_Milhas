@@ -4,9 +4,11 @@ import { supabase } from '@/integrations/supabase/client';
 import { Search, Plus, X, Calendar, ChevronDown, CornerDownRight, Filter, TrendingUp, TrendingDown, Wallet, Edit2, Trash2, FileText } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useFamilia } from '@/contexts/FamiliaContext';
+import { ContestarModal, podeContestar } from '@/components/finance/ContestarModal';
 
 export default function Transacoes() {
   const { podeEditar } = useFamilia();
+  const [contestando, setContestando] = useState<any>(null);
   const [modalAberto, setModalAberto] = useState(false);
   const [drawerFiltroAberto, setDrawerFiltroAberto] = useState(false);
 
@@ -303,6 +305,7 @@ export default function Transacoes() {
 
   return (
     <div className="flex flex-col w-full min-h-screen pb-10 p-4 md:p-6 text-gray-200 relative overflow-hidden">
+      <ContestarModal transacao={contestando} onFechar={() => setContestando(null)} />
       
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
         <div>
@@ -455,6 +458,7 @@ export default function Transacoes() {
                       <span className={`px-2.5 py-1 rounded-md text-[10px] font-bold tracking-wider uppercase border ${t.situacao === 'PAGO' || t.situacao === 'RECEBIDO' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20'}`}>{t.situacao}</span>
                     </td>
                     <td className="p-4 text-center">
+                      {!podeEditar && podeContestar(renderNomeCategoria(t.categoria_id)) && <button onClick={() => setContestando(t)} className="text-[11px] font-bold text-amber-400 hover:text-amber-300 px-2 py-1 rounded-md hover:bg-amber-500/10" title="Contestar classificação">Contestar</button>}
                       {podeEditar && <div className="flex justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                         <button onClick={() => iniciarEdicao(t)} className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-800 rounded-md transition-colors" title="Editar">
                           <Edit2 className="w-4 h-4" />

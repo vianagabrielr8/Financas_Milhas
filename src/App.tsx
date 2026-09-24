@@ -40,6 +40,7 @@ import { FamiliaProvider, useFamilia } from "./contexts/FamiliaContext";
 import AcessoNaoLiberado from "./pages/AcessoNaoLiberado";
 import Familia from "./pages/configuracoes/Familia";
 import Telegram from "./pages/configuracoes/Telegram";
+import Contestacoes from "./pages/configuracoes/Contestacoes";
 
 const queryClient = new QueryClient();
 
@@ -88,6 +89,7 @@ const AppLogado = () => {
 
         <Route path="/configuracoes/familia" element={<SomenteAdmin><Familia /></SomenteAdmin>} />
         <Route path="/configuracoes/telegram" element={<Telegram />} />
+        <Route path="/configuracoes/contestacoes" element={<SomenteAdmin><Contestacoes /></SomenteAdmin>} />
 
         <Route path="*" element={<NotFound />} />
       </Routes>
