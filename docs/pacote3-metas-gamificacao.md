@@ -156,3 +156,17 @@ Cada faixa terá **vários modelos**, sorteados sem repetir o anterior.
 4. **Meta de economia do trimestre:** a recomendação está acima (R$ 3,5 mil e depois R$ 8 mil). Falta o dono confirmar.
 5. ~~Entradas~~: o dono lança a receita dele (variável, porque é empreendedor) e a contribuição da Ingrid.
 6. **Terceiros no cartão** (pai e mãe, Lucas etc.): eles devolvem o dinheiro? Se sim, o app deve controlar como "a receber".
+
+## Ajustes do dono (24/09/2026), que valem por cima da recomendação acima
+
+- **Fixo e Variável:** "Fixo" = compra **parcelada**; "Variável" = compra **à vista** no crédito.
+- **Verba da Ingrid:** cerca de **R$ 2.800/mês**. Em set/2026 ela gastou R$ 3.050. Os números devem vir **do banco atual** (Supabase), não só do app antigo.
+- **Prêmios deixam de ser % da economia.** Passam a ser **prêmios fixos, combinados antes**, por nível:
+  - quinzena: pequeno;
+  - mês: médio;
+  - trimestre: grande, por exemplo **uma viagem de R$ 3 a 5 mil**.
+- **O prêmio pode ser parcelado.** A parcela entra no orçamento dos meses seguintes, como uma linha "Prêmios" dentro da meta da casa. Assim a rampa até R$ 17 mil continua valendo.
+- **Terceiros devolvem o dinheiro.**
+  - A compra deles no cartão fica com o centro de custo "Terceiros – nome".
+  - Quando eles pagam, o dono lança uma `RECEITA` no mesmo centro de custo.
+  - Nada disso conta na meta da casa, e o app mostra quanto cada um ainda deve.
