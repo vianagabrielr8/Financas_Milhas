@@ -40,6 +40,58 @@ Base: CSV de `transacao_pessoal`, com 1518 linhas.
 - **Não há nenhuma receita registrada.** Sem entradas (salário do dono e contribuição da Ingrid), não dá para medir a economia de verdade. **Registrar as entradas é o primeiro passo.**
 - **Falta o histórico do outro app** que o dono usava. Ele ajuda a estimar os gastos fixos e a média real.
 
+## Histórico do app antigo (jan–abr/2026, 1.284 lançamentos)
+
+Média mensal ≈ **R$ 37 mil**, mas nem tudo é consumo da casa:
+
+| Grupo | Média/mês |
+|---|---|
+| **Consumo da casa** (mercado, bebê, AP, carros, Ingrid, Gabriel etc.) | **R$ 19,7 mil** |
+| Terceiros no cartão (tags `cartão-paiemae`, `cartão-lucas`, `terceiros-*`) | R$ 9,2 mil |
+| Milhas (negócio: Livelo, Esfera, compra de pontos) | R$ 4,6 mil |
+| Investimentos | R$ 2,4 mil |
+| Empréstimos | R$ 1,5 mil |
+
+- A **meta de R$ 17 mil vale para o consumo da casa**. Hoje ele é de R$ 19,7 mil, então falta cortar cerca de **R$ 2,7 mil/mês (14%)**. É uma meta alcançável.
+- **Terceiros, milhas e investimentos ficam fora da meta.** No app, eles precisam ter uma marca própria (centro de custo ou tag) para não contar como gasto da casa. Terceiros deveriam virar "a receber".
+- **Categoria Ingrid:** média de **R$ 3,7 mil/mês** (Fixo ≈ R$ 2,7 mil e Variável ≈ R$ 1 mil). A contribuição dela é de R$ 3 mil.
+  - Há compras (Shein, C&A, Arezzo) marcadas como "Fixo", o que atrapalha a leitura.
+  - Há um item do Gabriel (RELOGIO_GABRIEL) dentro de Ingrid.
+
+## Recomendação de metas (primeira versão)
+
+**Consumo da casa: rampa até R$ 17 mil.**
+
+| Mês | Meta de consumo |
+|---|---|
+| 1º | R$ 19 mil |
+| 2º | R$ 18,5 mil |
+| 3º | R$ 18 mil |
+| 4º em diante | R$ 17 mil |
+
+**Economia do trimestre**, medida contra a base de R$ 19,7 mil:
+- **Trimestre 1:** meta de **R$ 3,5 mil**. É um começo realista, que dá vitória logo.
+- **Trimestre 2 em diante:** meta de **R$ 8 mil**, que é o consumo em R$ 17 mil pelos três meses.
+
+**Verba da Ingrid:**
+- **Trimestre 1:** **R$ 3,3 mil/mês** (Fixo R$ 2,7 mil + Variável R$ 600).
+- **Depois:** **R$ 3 mil/mês**, igual à contribuição dela. A mensagem é: *"sua categoria cabe na sua contribuição"*.
+
+**Prêmios: cuidado para não pagar duas vezes pela mesma economia.** Com 20% no mês **mais** 30% no trimestre, até 50% da economia vira prêmio. A recomendação é um teto de cerca de 30% no total:
+
+| Nível | Prêmio |
+|---|---|
+| Quinzena | R$ 50 fixos (no máximo R$ 300 por trimestre) |
+| Mês | 10% da economia do mês |
+| Trimestre | 20% da economia do trimestre, só se bater a meta |
+
+**Exemplo:** no trimestre 2, economizando R$ 8 mil:
+- R$ 800 vêm dos prêmios mensais (10% de cada mês);
+- R$ 1.600 vêm do prêmio do trimestre (20%);
+- até R$ 300 vêm das quinzenas.
+
+Ela ganha até cerca de R$ 2,7 mil em desejos, e **a casa fica com cerca de R$ 5,3 mil.**
+
 ## Como o jogo funciona
 
 1. **O prêmio sai da economia.** Economia do período = meta do período − gasto real. O prêmio é uma parte dela. A casa sempre fica com a maior parte.
@@ -98,8 +150,9 @@ Cada faixa terá **vários modelos**, sorteados sem repetir o anterior.
 
 ## Perguntas em aberto
 
-1. **Histórico do outro app:** o arquivo não chegou. Reenviar (CSV ou planilha).
+1. ~~Histórico do outro app~~: recebido e analisado (acima).
 2. **Verba mensal da categoria Ingrid:** partir da média dela nos últimos meses, um pouco abaixo?
 3. **Valor fixo do prêmio da quinzena** (sugestão: R$ 50)?
-4. **Meta de economia do trimestre** (o dono citou R$ 5 mil)?
-5. **As entradas:** o dono lança a própria receita também, ou só a contribuição da Ingrid?
+4. **Meta de economia do trimestre:** a recomendação está acima (R$ 3,5 mil e depois R$ 8 mil). Falta o dono confirmar.
+5. ~~Entradas~~: o dono lança a receita dele (variável, porque é empreendedor) e a contribuição da Ingrid.
+6. **Terceiros no cartão** (pai e mãe, Lucas etc.): eles devolvem o dinheiro? Se sim, o app deve controlar como "a receber".
