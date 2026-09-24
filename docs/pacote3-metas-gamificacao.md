@@ -211,3 +211,13 @@ Cada faixa terá **vários modelos**, sorteados sem repetir o anterior.
 | 3 | Bot: botão **"📊 Como estou?"** e aviso a cada lançamento da categoria Ingrid, com mensagens sorteadas |
 | 4 | Aviso quando o dono muda algo, mais o fechamento automático de quinzena, mês e trimestre, com o "🏆 Você ganhou!" e o registro do prêmio a entregar |
 | 5 | Receitas e "a receber" dos terceiros (pacote futuro) |
+
+## CORREÇÃO DO DONO (24/09/2026): os prêmios dependem da CASA, não só da Ingrid
+
+A meta do jogo é o **orçamento completo da casa**. A categoria Ingrid (R$ 2.800/mês) vira um **indicador de apoio**: aparece no painel e nas mensagens, mas **não decide os prêmios**.
+
+| Nível | Condição (proposta, a confirmar) |
+|---|---|
+| Quinzena | Gasto **Variável** da casa (à vista) dentro da verba da quinzena, porque o parcelado já está comprometido |
+| Mês | Gasto total da casa dentro da meta do mês |
+| Trimestre | **Soma dos 3 meses da casa** dentro da soma das 3 metas (T1 = R$ 55.500); um mês bom compensa um ruim; **coringa** de tolerância a definir |
