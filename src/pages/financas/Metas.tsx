@@ -16,8 +16,9 @@ import { useFamilia } from '@/contexts/FamiliaContext';
 //   categorias que têm meta no mês + "Sem categoria". Categoria sem meta
 //   (ex.: Investimentos) fica fora do placar. Cartão conta no mês da fatura;
 //   conta bancária, no mês da data.
-// - Categoria INGRID (verba = meta dela) é contada pela data da compra.
-//   A quinzena (1–15 / 16–fim) usa metade da verba do mês.
+// - Categoria INGRID (verba = meta dela): no MÊS, conta igual às barras
+//   (cartão pelo mês da fatura). Na QUINZENA (1–15 / 16–fim), conta as
+//   compras feitas no período (pela data), com metade da verba do mês.
 // - PAGAMENTO_FATURA e RECEITA nunca contam como gasto.
 // ------------------------------------------------------------------
 
@@ -157,7 +158,8 @@ export default function Metas() {
   const nomeCat = (id: string) => id === '' ? 'Sem categoria' : (categorias.find((c: any) => c.id === id)?.nome || '?');
   // categorias que o admin pode ter meta: as dos centros que contam na meta
   const categoriasDaCasa = useMemo(() => categorias.filter((c: any) => idsNaMeta.has(c.centro_custo_id)), [categorias, idsNaMeta]);
-  const ingridMes = useMemo(() => (gastos?.ingrid || []).reduce((s: number, t: any) => s + valorGasto(t), 0), [gastos]);
+  // Mês da Ingrid: mesma conta das barras (cartão pelo mês da fatura), para os números baterem.
+  const ingridMes = idIngrid ? (gastoPorCat.get(idIngrid) || 0) : 0;
   const ehMesAtual = mesSel === chaveMes(hoje);
   const primeiraQuinzena = hoje.getDate() <= 15;
   const ingridQuinzena = useMemo(() => (gastos?.ingrid || [])
@@ -276,16 +278,34 @@ export default function Metas() {
 
           <div className="bg-[#1e1e24] border border-white/5 rounded-2xl p-6 space-y-3">
             <h2 className="font-bold">Por categoria</h2>
-            {[...metasDoMes.map((m: any) => m.categoria_id), ...(gastoPorCat.has('') ? [''] : [])].map((catId: string) => {
+            <p className="text-[11px] text-zinc-500 -mt-1">
+              <span className="text-emerald-400">● até 80%</span> &nbsp; <span className="text-amber-400">● 80% a 100%</span> &nbsp; <span className="text-red-400">● acima da meta</span>
+            </p>
+            {/* Do maior gasto para o menor; "Sem categoria" sempre por último */}
+            {[...metasDoMes.map((m: any) => m.categoria_id)]
+              .sort((a: string, b: string) => (gastoPorCat.get(b) || 0) - (gastoPorCat.get(a) || 0))
+              .concat(gastoPorCat.has('') ? [''] : [])
+              .map((catId: string) => {
               const meta = metaPorCat.get(catId) ?? 0;
               const gasto = gastoPorCat.get(catId) || 0;
               const livre = meta - gasto;
+              const pct = meta > 0 ? (gasto / meta) * 100 : 0;
+              const corTexto = catId === '' ? 'text-zinc-400' : pct <= 80 ? 'text-emerald-400' : pct <= 100 ? 'text-amber-400' : 'text-red-400';
               return (
                 <div key={catId || 'sem'} className="space-y-1">
-                  <div className="flex justify-between text-sm">
+                  <div className="flex justify-between items-baseline gap-3 text-sm">
                     <span className="font-semibold">{nomeCat(catId)}</span>
-                    <span className={cn('text-xs', livre >= 0 ? 'text-zinc-400' : 'text-red-400 font-bold')}>
-                      {brl(gasto)} de {catId === '' ? 'sem meta' : brl(meta)}{catId !== '' && (livre >= 0 ? ` • ${brl(livre)} livres` : ` • ${brl(-livre)} acima`)}
+                    <span className="text-xs text-zinc-400 text-right">
+                      {catId === '' ? (
+                        <>{brl(gasto)} • <span className="text-amber-400">sem meta: classifique esses lançamentos</span></>
+                      ) : (
+                        <>
+                          {brl(gasto)} de {brl(meta)} •{' '}
+                          <span className={cn('font-bold', corTexto)}>
+                            {Math.round(pct)}% • {livre >= 0 ? `${brl(livre)} livres` : `${brl(-livre)} acima`}
+                          </span>
+                        </>
+                      )}
                     </span>
                   </div>
                   {catId !== '' && <Barra gasto={gasto} meta={meta} />}
