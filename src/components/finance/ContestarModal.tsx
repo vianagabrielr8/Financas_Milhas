@@ -5,6 +5,12 @@ import { X, MessageSquareWarning } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 
+// O membro só pode contestar lançamentos da categoria dele (hoje: "Ingrid").
+// Comparação sem diferenciar maiúsculas/acentos.
+export const CATEGORIA_CONTESTAVEL = 'ingrid';
+const normalizar = (t: string) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+export const podeContestar = (nomeCategoria: string) => normalizar(nomeCategoria || '') === CATEGORIA_CONTESTAVEL;
+
 interface Props {
   transacao: { id: string; descricao: string } | null;
   onFechar: () => void;
