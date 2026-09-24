@@ -221,3 +221,16 @@ A meta do jogo é o **orçamento completo da casa**. A categoria Ingrid (R$ 2.80
 | Quinzena | Gasto **Variável** da casa (à vista) dentro da verba da quinzena, porque o parcelado já está comprometido |
 | Mês | Gasto total da casa dentro da meta do mês |
 | Trimestre | **Soma dos 3 meses da casa** dentro da soma das 3 metas (T1 = R$ 55.500); um mês bom compensa um ruim; **coringa** de tolerância a definir |
+
+## REGRAS FINAIS DOS PRÊMIOS (24/09/2026): valem por cima de tudo acima
+
+- **Meta da casa:** out R$ 19.000, nov R$ 18.500, dez R$ 18.000, depois R$ 17.000.
+- **Sem coringa.**
+
+| Nível | Condição | Prêmio |
+|---|---|---|
+| 🥉 Quinzena | **Categoria Ingrid** dentro de **R$ 1.400** na quinzena | Item pequeno (R$ 50–100) |
+| 🥈 Mês | **Casa** dentro da meta do mês | Item médio (R$ 300–500) |
+| 🥇 Trimestre | **Soma dos 3 meses da casa** dentro da soma das 3 metas (T1 = R$ 55.500); um mês compensa o outro | Prêmio grande (ex.: viagem R$ 3–5 mil) |
+
+- **A categoria Ingrid (R$ 2.800/mês)** decide só o prêmio da quinzena. Nos outros níveis, é um indicador de apoio.
