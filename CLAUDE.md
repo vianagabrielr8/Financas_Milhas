@@ -100,7 +100,11 @@ O plano aprovado está em `docs/pacote2-familias-rls.md`. Resumo:
   - `membro`: no app só consulta e pode **contestar a classificação** de um
     lançamento; lança despesas pelo bot.
 - **O bot do Telegram** (Edge Function `telegram-webhook`) só aceita contas do
-  Telegram vinculadas a um usuário e grava sempre o `familia_id` do vínculo.
+  Telegram vinculadas a um usuário (`telegram_vinculo`, criado com `/vincular`
+  e o código da tela Telegram do app) e grava sempre o `familia_id` do vínculo
+  e o `user_id` de quem lançou. Toda consulta do bot usa a chave de servidor,
+  que ignora o RLS: por isso **toda consulta do bot precisa filtrar por
+  `familia_id`** (e a triagem `open_finance_staging` por `chat_id`).
 - **Siga a ordem das etapas do plano.** Nunca ligue o RLS numa tabela antes de
   as regras de acesso dela existirem.
 
