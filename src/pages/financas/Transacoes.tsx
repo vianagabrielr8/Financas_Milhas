@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { Search, Plus, X, Calendar, ChevronDown, CornerDownRight, Filter, TrendingUp, TrendingDown, Wallet, Edit2, Trash2, FileText } from 'lucide-react';
+import { Search, Plus, X, Calendar, ChevronDown, CornerDownRight, Filter, TrendingUp, TrendingDown, Wallet, Edit2, Trash2, FileText, Download } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useFamilia } from '@/contexts/FamiliaContext';
 import { ContestarModal, podeContestar } from '@/components/finance/ContestarModal';
@@ -121,6 +121,32 @@ export default function Transacoes() {
       return sub ? `${cat.nome} • ${sub.nome}` : cat.nome;
     }
     return cat.nome;
+  };
+
+  // Exporta para CSV (abre no Excel) exatamente o que está na tela:
+  // mês escolhido + busca + filtros aplicados.
+  const exportarCSV = () => {
+    const cel = (v: any) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const cab = ['Data', 'Descrição', 'Categoria', 'Centro de custo', 'Conta/Cartão', 'Fatura', 'Tipo', 'Valor', 'Situação', 'Observação'];
+    const linhas = transacoesFiltradas.map((t: any) => [
+      new Date(t.data).toLocaleDateString('pt-BR', { timeZone: 'UTC' }),
+      t.descricao,
+      renderNomeCategoria(t.categoria_id, t.subcategoria_id),
+      t.centro_custo_projeto?.nome || '',
+      t.cartao_pessoal?.nome || t.conta_financeira_pessoal?.nome || '',
+      t.mes_fatura || '',
+      t.tipo,
+      Math.abs(Number(t.valor) || 0).toFixed(2).replace('.', ','),
+      t.situacao,
+      t.observacao || '',
+    ].map(cel).join(';'));
+    const csv = '\uFEFF' + [cab.map(cel).join(';'), ...linhas].join('\r\n');
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `transacoes_${anoSelecionado}-${String(mesSelecionado).padStart(2, '0')}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   const transacoesFiltradas = useMemo(() => {
@@ -326,6 +352,10 @@ export default function Transacoes() {
 
           <button onClick={abrirFiltros} className={cn("flex items-center justify-center h-[42px] px-4 rounded-lg border transition-colors text-sm font-medium", temFiltroAtivo ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20" : "bg-[#1a1a20] border-gray-800 text-gray-400 hover:text-white hover:border-gray-600")}>
             <Filter className="w-4 h-4 mr-2" /> Filtros {temFiltroAtivo && <span className="ml-2 w-2 h-2 rounded-full bg-emerald-500"></span>}
+          </button>
+
+          <button onClick={exportarCSV} disabled={transacoesFiltradas.length === 0} title="Exporta o que está na tela (mês, busca e filtros)" className="flex items-center justify-center h-[42px] px-4 rounded-lg border bg-[#1a1a20] border-gray-800 text-gray-400 hover:text-white hover:border-gray-600 transition-colors text-sm font-medium disabled:opacity-40">
+            <Download className="w-4 h-4 mr-2" /> Exportar
           </button>
 
           {podeEditar && (

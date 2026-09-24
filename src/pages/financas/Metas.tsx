@@ -10,9 +10,13 @@ import { useFamilia } from '@/contexts/FamiliaContext';
 
 // ------------------------------------------------------------------
 // Regras do jogo (Pacote 3):
-// - Gasto da CASA do mês = despesas - estornos dos centros de custo marcados
-//   "conta na meta". Compra no cartão conta no mês da fatura; na conta, no mês da data.
-// - Categoria INGRID = despesas - estornos da categoria "Ingrid", pela data.
+// - Cada CATEGORIA tem meta por mês (tabela meta_categoria). A meta da CASA
+//   é a soma delas.
+// - Gasto da CASA = despesas - estornos dos centros "conta na meta", só das
+//   categorias que têm meta no mês + "Sem categoria". Categoria sem meta
+//   (ex.: Investimentos) fica fora do placar. Cartão conta no mês da fatura;
+//   conta bancária, no mês da data.
+// - Categoria INGRID (verba = meta dela) é contada pela data da compra.
 //   A quinzena (1–15 / 16–fim) usa metade da verba do mês.
 // - PAGAMENTO_FATURA e RECEITA nunca contam como gasto.
 // ------------------------------------------------------------------
@@ -68,8 +72,8 @@ export default function Metas() {
   const { isAdmin } = useFamilia();
   const hoje = new Date();
   const [mesSel, setMesSel] = useState(chaveMes(hoje));
-  const [edicao, setEdicao] = useState<Record<string, { meta_casa: string; verba_ingrid: string }>>({});
-  const [novoMes, setNovoMes] = useState('');
+  const [edicao, setEdicao] = useState<Record<string, string>>({});
+  const [salvando, setSalvando] = useState(false);
   const [desejoTitulo, setDesejoTitulo] = useState('');
   const [desejoValor, setDesejoValor] = useState('');
   const [desejoNivel, setDesejoNivel] = useState('MES');
@@ -84,9 +88,9 @@ export default function Metas() {
   });
 
   const { data: metas = [], refetch: refetchMetas } = useQuery({
-    queryKey: ['metas_mes'],
+    queryKey: ['meta_categoria'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('meta_mes').select('*').order('mes');
+      const { data, error } = await supabase.from('meta_categoria').select('id, mes, categoria_id, valor').order('mes');
       if (error) throw error;
       return data || [];
     },
@@ -95,7 +99,7 @@ export default function Metas() {
   const { data: categorias = [] } = useQuery({
     queryKey: ['metas_categorias'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('categoria_pessoal').select('id, nome');
+      const { data, error } = await supabase.from('categoria_pessoal').select('id, nome, centro_custo_id').order('nome');
       if (error) throw error;
       return data || [];
     },
@@ -133,7 +137,26 @@ export default function Metas() {
   });
 
   const idsNaMeta = useMemo(() => new Set(centros.filter((c: any) => c.conta_na_meta).map((c: any) => c.id)), [centros]);
-  const gastoCasa = useMemo(() => (gastos?.casa || []).filter((t: any) => idsNaMeta.has(t.centro_custo_id)).reduce((s: number, t: any) => s + valorGasto(t), 0), [gastos, idsNaMeta]);
+  const metasDoMes = useMemo(() => metas.filter((m: any) => m.mes === mesSel), [metas, mesSel]);
+  const metaPorCat = useMemo(() => new Map(metasDoMes.map((m: any) => [m.categoria_id, Number(m.valor)])), [metasDoMes]);
+  const metaCasa = metasDoMes.reduce((s: number, m: any) => s + Number(m.valor), 0);
+  // gasto por categoria (só centros que contam na meta); '' = sem categoria
+  const gastoPorCat = useMemo(() => {
+    const mapa = new Map<string, number>();
+    for (const t of gastos?.casa || []) {
+      if (!idsNaMeta.has(t.centro_custo_id)) continue;
+      const k = t.categoria_id || '';
+      mapa.set(k, (mapa.get(k) || 0) + valorGasto(t));
+    }
+    return mapa;
+  }, [gastos, idsNaMeta]);
+  const gastoCasa = useMemo(() => Array.from(gastoPorCat.entries())
+    .filter(([k]) => k === '' || metaPorCat.has(k)).reduce((s, [, v]) => s + v, 0), [gastoPorCat, metaPorCat]);
+  const foraDoPlacar = useMemo(() => Array.from(gastoPorCat.entries())
+    .filter(([k, v]) => k !== '' && !metaPorCat.has(k) && Math.abs(v) > 0.009), [gastoPorCat, metaPorCat]);
+  const nomeCat = (id: string) => id === '' ? 'Sem categoria' : (categorias.find((c: any) => c.id === id)?.nome || '?');
+  // categorias que o admin pode ter meta: as dos centros que contam na meta
+  const categoriasDaCasa = useMemo(() => categorias.filter((c: any) => idsNaMeta.has(c.centro_custo_id)), [categorias, idsNaMeta]);
   const ingridMes = useMemo(() => (gastos?.ingrid || []).reduce((s: number, t: any) => s + valorGasto(t), 0), [gastos]);
   const ehMesAtual = mesSel === chaveMes(hoje);
   const primeiraQuinzena = hoje.getDate() <= 15;
@@ -141,34 +164,49 @@ export default function Metas() {
     .filter((t: any) => { const dia = Number(String(t.data).slice(8, 10)); return primeiraQuinzena ? dia <= 15 : dia >= 16; })
     .reduce((s: number, t: any) => s + valorGasto(t), 0), [gastos, primeiraQuinzena]);
 
-  const metaSel = metas.find((m: any) => m.mes === mesSel);
-  const opcoesMes = useMemo(() => Array.from(new Set([chaveMes(hoje), ...metas.map((m: any) => m.mes)])).sort(), [metas]);
+  const verbaIngrid = idIngrid ? metaPorCat.get(idIngrid) : undefined;
+  const opcoesMes = useMemo(() => {
+    const prox = Array.from({ length: 6 }, (_, i) => chaveMes(new Date(hoje.getFullYear(), hoje.getMonth() + i, 1)));
+    return Array.from(new Set([...prox, ...metas.map((m: any) => m.mes)])).sort();
+  }, [metas]);
   const nomeMes = (k: string) => { const [a, m] = k.split('-').map(Number); return `${NOMES_MES[m - 1]} de ${a}`; };
 
   // Trimestre (jan–mar, abr–jun, jul–set, out–dez) do mês escolhido
   const tri = Math.floor((mesNum - 1) / 3);
   const mesesTri = [0, 1, 2].map(i => `${ano}-${String(tri * 3 + i + 1).padStart(2, '0')}-01`);
-  const metaTri = mesesTri.reduce((s, k) => s + Number(metas.find((m: any) => m.mes === k)?.meta_casa || 0), 0);
+  const metaTri = metas.filter((m: any) => mesesTri.includes(m.mes)).reduce((s: number, m: any) => s + Number(m.valor), 0);
 
   // ---------- ações ----------
-  const salvarMeta = async (m: any) => {
-    const e = edicao[m.id]; if (!e) return;
-    const { error } = await supabase.from('meta_mes').update({
-      meta_casa: Number(e.meta_casa.replace(',', '.')),
-      verba_ingrid: e.verba_ingrid === '' ? null : Number(e.verba_ingrid.replace(',', '.')),
-    }).eq('id', m.id);
-    if (error) return toast.error('Erro ao salvar: ' + error.message);
-    toast.success('Meta atualizada.');
-    setEdicao(({ [m.id]: _, ...resto }) => resto);
-    refetchMetas();
+  // Salva as metas do mês escolhido: valor vazio = sem meta (apaga).
+  const salvarMetas = async () => {
+    setSalvando(true);
+    try {
+      for (const [catId, texto] of Object.entries(edicao)) {
+        const existente = metasDoMes.find((m: any) => m.categoria_id === catId);
+        const valor = texto.trim() === '' ? null : Number(texto.includes(',') ? texto.replace(/\./g, '').replace(',', '.') : texto);
+        if (valor !== null && (isNaN(valor) || valor < 0)) { toast.error(`Valor inválido em ${nomeCat(catId)}`); continue; }
+        const { error } = valor === null
+          ? (existente ? await supabase.from('meta_categoria').delete().eq('id', existente.id) : { error: null })
+          : existente
+            ? await supabase.from('meta_categoria').update({ valor }).eq('id', existente.id)
+            : await supabase.from('meta_categoria').insert([{ mes: mesSel, categoria_id: catId, valor }]);
+        if (error) toast.error(`${nomeCat(catId)}: ${error.message}`);
+      }
+      toast.success('Metas salvas.');
+      setEdicao({});
+      refetchMetas();
+    } finally { setSalvando(false); }
   };
 
-  const adicionarMes = async () => {
-    if (!novoMes) return;
-    const ultima = metas[metas.length - 1];
-    const { error } = await supabase.from('meta_mes').insert([{ mes: `${novoMes}-01`, meta_casa: ultima?.meta_casa || 17000, verba_ingrid: ultima?.verba_ingrid ?? 2800 }]);
-    if (error) return toast.error(error.code === '23505' ? 'Esse mês já tem meta.' : 'Erro: ' + error.message);
-    setNovoMes(''); refetchMetas();
+  const copiarMesAnterior = async () => {
+    const anterior = chaveMes(new Date(ano, mesNum - 2, 1));
+    const doAnterior = metas.filter((m: any) => m.mes === anterior);
+    if (doAnterior.length === 0) return toast.error('O mês anterior não tem metas.');
+    if (metasDoMes.length > 0 && !confirm('Este mês já tem metas. Substituir pelas do mês anterior?')) return;
+    if (metasDoMes.length > 0) await supabase.from('meta_categoria').delete().eq('mes', mesSel);
+    const { error } = await supabase.from('meta_categoria').insert(doAnterior.map((m: any) => ({ mes: mesSel, categoria_id: m.categoria_id, valor: m.valor })));
+    if (error) return toast.error('Erro: ' + error.message);
+    toast.success('Metas copiadas.'); setEdicao({}); refetchMetas();
   };
 
   const alternarCentro = async (c: any) => {
@@ -219,21 +257,48 @@ export default function Metas() {
         </div>
       </div>
 
-      {!metaSel ? (
+      {metasDoMes.length === 0 ? (
         <div className="bg-[#1e1e24] border border-white/5 rounded-2xl p-6 text-sm text-zinc-400">
-          Não há meta cadastrada para {nomeMes(mesSel)}.{isAdmin && ' Adicione o mês na tabela abaixo.'}
+          Não há metas cadastradas para {nomeMes(mesSel)}.{isAdmin && ' Defina abaixo ou copie do mês anterior.'}
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <CartaoMeta titulo={`Casa em ${nomeMes(mesSel)}`} icone={<Home className="w-4 h-4" />} gasto={gastoCasa} meta={Number(metaSel.meta_casa)} />
-          {metaSel.verba_ingrid != null && (
-            <CartaoMeta titulo="Categoria Ingrid no mês" icone={<User className="w-4 h-4" />} gasto={ingridMes} meta={Number(metaSel.verba_ingrid)} />
-          )}
-          {metaSel.verba_ingrid != null && ehMesAtual && (
-            <CartaoMeta titulo={`Ingrid: ${primeiraQuinzena ? '1ª' : '2ª'} quinzena`} icone={<User className="w-4 h-4" />} gasto={ingridQuinzena}
-              meta={Number(metaSel.verba_ingrid) / 2} rodape={primeiraQuinzena ? `até dia 15` : `até dia ${ultimoDia}`} />
-          )}
-        </div>
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <CartaoMeta titulo={`Casa em ${nomeMes(mesSel)}`} icone={<Home className="w-4 h-4" />} gasto={gastoCasa} meta={metaCasa} />
+            {verbaIngrid != null && (
+              <CartaoMeta titulo="Categoria Ingrid no mês" icone={<User className="w-4 h-4" />} gasto={ingridMes} meta={verbaIngrid} />
+            )}
+            {verbaIngrid != null && ehMesAtual && (
+              <CartaoMeta titulo={`Ingrid: ${primeiraQuinzena ? '1ª' : '2ª'} quinzena`} icone={<User className="w-4 h-4" />} gasto={ingridQuinzena}
+                meta={verbaIngrid / 2} rodape={primeiraQuinzena ? 'até dia 15' : `até dia ${ultimoDia}`} />
+            )}
+          </div>
+
+          <div className="bg-[#1e1e24] border border-white/5 rounded-2xl p-6 space-y-3">
+            <h2 className="font-bold">Por categoria</h2>
+            {[...metasDoMes.map((m: any) => m.categoria_id), ...(gastoPorCat.has('') ? [''] : [])].map((catId: string) => {
+              const meta = metaPorCat.get(catId) ?? 0;
+              const gasto = gastoPorCat.get(catId) || 0;
+              const livre = meta - gasto;
+              return (
+                <div key={catId || 'sem'} className="space-y-1">
+                  <div className="flex justify-between text-sm">
+                    <span className="font-semibold">{nomeCat(catId)}</span>
+                    <span className={cn('text-xs', livre >= 0 ? 'text-zinc-400' : 'text-red-400 font-bold')}>
+                      {brl(gasto)} de {catId === '' ? 'sem meta' : brl(meta)}{catId !== '' && (livre >= 0 ? ` • ${brl(livre)} livres` : ` • ${brl(-livre)} acima`)}
+                    </span>
+                  </div>
+                  {catId !== '' && <Barra gasto={gasto} meta={meta} />}
+                </div>
+              );
+            })}
+            {foraDoPlacar.length > 0 && (
+              <p className="text-[11px] text-zinc-500 pt-2">
+                Fora do placar (sem meta neste mês): {foraDoPlacar.map(([k, v]) => `${nomeCat(k)} ${brl(v)}`).join(' • ')}
+              </p>
+            )}
+          </div>
+        </>
       )}
 
       {metaTri > 0 && (
@@ -292,25 +357,24 @@ export default function Metas() {
       {isAdmin && (
         <>
           <div className="bg-[#1e1e24] border border-white/5 rounded-2xl p-6 space-y-3">
-            <h2 className="font-bold">Metas por mês</h2>
-            <div className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2 text-xs text-zinc-500 font-bold uppercase">
-              <span>Mês</span><span>Meta da casa</span><span>Verba Ingrid</span><span />
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="font-bold">Metas de {nomeMes(mesSel)} por categoria</h2>
+              <Button variant="outline" onClick={copiarMesAnterior} className="h-8 text-xs border-white/10 bg-transparent text-zinc-300">Copiar do mês anterior</Button>
             </div>
-            {metas.map((m: any) => {
-              const e = edicao[m.id];
-              return (
-                <div key={m.id} className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2 items-center">
-                  <span className="text-sm">{nomeMes(m.mes)}</span>
-                  <Input value={e ? e.meta_casa : String(m.meta_casa)} onChange={ev => setEdicao(s => ({ ...s, [m.id]: { meta_casa: ev.target.value, verba_ingrid: e ? e.verba_ingrid : String(m.verba_ingrid ?? '') } }))} className="bg-[#141417] border-white/10 h-9" />
-                  <Input value={e ? e.verba_ingrid : String(m.verba_ingrid ?? '')} onChange={ev => setEdicao(s => ({ ...s, [m.id]: { meta_casa: e ? e.meta_casa : String(m.meta_casa), verba_ingrid: ev.target.value } }))} className="bg-[#141417] border-white/10 h-9" />
-                  <Button size="icon" disabled={!e} onClick={() => salvarMeta(m)} className="h-9 w-9 bg-[#10b981] hover:bg-[#059669] text-black"><Save className="w-4 h-4" /></Button>
-                </div>
-              );
-            })}
-            <div className="flex gap-2 pt-2">
-              <Input type="month" value={novoMes} onChange={e => setNovoMes(e.target.value)} className="bg-[#141417] border-white/10 h-9 w-48 [color-scheme:dark]" />
-              <Button variant="outline" onClick={adicionarMes} className="h-9 border-white/10 bg-transparent text-zinc-300">Adicionar mês</Button>
+            <p className="text-xs text-zinc-500">Deixe em branco para a categoria ficar sem meta (fora do placar). Soma atual: <b className="text-zinc-300">{brl(metaCasa)}</b></p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              {categoriasDaCasa.map((c: any) => {
+                const atual = metaPorCat.get(c.id);
+                return (
+                  <label key={c.id} className="flex items-center gap-3 bg-[#141417] border border-white/5 rounded-lg px-3 py-1.5">
+                    <span className="text-sm flex-1">{c.nome}</span>
+                    <Input value={edicao[c.id] ?? (atual != null ? String(atual) : '')} placeholder="sem meta"
+                      onChange={ev => setEdicao(s => ({ ...s, [c.id]: ev.target.value }))} className="bg-black/30 border-white/10 h-8 w-32 text-right" />
+                  </label>
+                );
+              })}
             </div>
+            <Button onClick={salvarMetas} disabled={salvando || Object.keys(edicao).length === 0} className="bg-[#10b981] hover:bg-[#059669] text-black font-bold flex items-center gap-2"><Save className="w-4 h-4" /> Salvar metas</Button>
           </div>
 
           <div className="bg-[#1e1e24] border border-white/5 rounded-2xl p-6 space-y-3">
