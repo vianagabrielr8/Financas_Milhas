@@ -16,6 +16,9 @@ export default function Cartoes() {
   const [limite, setLimite] = useState('');
   const [diaFechamento, setDiaFechamento] = useState('');
   const [diaVencimento, setDiaVencimento] = useState('');
+  // Como o extrato/print deste cartão mostra compra parcelada (usado pelo bot):
+  // PARCELA = mostra o valor de 1 parcela; TOTAL = mostra o valor total da compra.
+  const [leituraParcela, setLeituraParcela] = useState<'PARCELA' | 'TOTAL'>('PARCELA');
 
   const { data: cartoes = [], isLoading, refetch } = useQuery({
     queryKey: ['cartoes_pessoais'],
@@ -32,6 +35,7 @@ export default function Cartoes() {
     setLimite('');
     setDiaFechamento('');
     setDiaVencimento('');
+    setLeituraParcela('PARCELA');
     setModalAberto(true);
   };
 
@@ -42,6 +46,7 @@ export default function Cartoes() {
     setLimite(cartao.limite?.toString() || '');
     setDiaFechamento(cartao.dia_fechamento?.toString() || '');
     setDiaVencimento(cartao.dia_vencimento?.toString() || '');
+    setLeituraParcela(cartao.tipo_leitura_parcela === 'TOTAL' ? 'TOTAL' : 'PARCELA');
     setModalAberto(true);
   };
 
@@ -52,7 +57,8 @@ export default function Cartoes() {
       nome,
       limite: Number(limite),
       dia_fechamento: Number(diaFechamento),
-      dia_vencimento: Number(diaVencimento)
+      dia_vencimento: Number(diaVencimento),
+      tipo_leitura_parcela: leituraParcela
     };
 
     let erroOcorrido;
@@ -182,6 +188,15 @@ export default function Cartoes() {
                   <label className="text-zinc-400 text-xs font-bold uppercase block mb-1.5">Dia Vencimento</label>
                   <input type="number" min="1" max="31" required value={diaVencimento} onChange={(e) => setDiaVencimento(e.target.value)} className="w-full bg-[#1e1e24] text-white border border-white/10 rounded-xl p-3 focus:border-[#10b981] focus:outline-none transition-all" />
                 </div>
+              </div>
+
+              <div>
+                <label className="text-zinc-400 text-xs font-bold uppercase block mb-1.5">No print/extrato, compra parcelada aparece com</label>
+                <select value={leituraParcela} onChange={(e) => setLeituraParcela(e.target.value as 'PARCELA' | 'TOTAL')} className="w-full bg-[#1e1e24] text-white border border-white/10 rounded-xl p-3 focus:border-[#10b981] focus:outline-none transition-all">
+                  <option value="PARCELA">O valor de 1 parcela</option>
+                  <option value="TOTAL">O valor total da compra</option>
+                </select>
+                <p className="text-[11px] text-zinc-500 mt-1">O bot usa isso para dividir certo quando você manda o print e pede para parcelar.</p>
               </div>
 
               <div className="mt-6 flex justify-end gap-3 pt-4">
