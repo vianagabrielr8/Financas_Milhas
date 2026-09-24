@@ -60,6 +60,8 @@ Todas as tabelas têm:
 | `milhas_conta` | titular (nome, CPF), programa, número do cadastro no programa (opcional), ativo |
 | `milhas_movimento` | conta, tipo (os 7 acima), quantidade (sempre positiva; o sinal vem do tipo), custo em R$, data, validade, observação, ligação com a transferência ou a venda de origem |
 | `milhas_venda` | conta, data, milhas usadas, valor do milheiro ou valor total, taxa de embarque (em R$ ou em milhas), cliente, localizador, situação (`A_RECEBER` ou `RECEBIDO`), data prevista de recebimento, custo e lucro calculados na hora da venda |
+| `milhas_contato` | clientes e fornecedores: nome, tipo (cliente, fornecedor ou os dois), telefone, documento e observação |
+| `milhas_parcela` | **contas a pagar e a receber**: tipo (`PAGAR` ou `RECEBER`), venda ou compra de origem, cliente ou fornecedor, parcela n/total, valor, vencimento, situação (`ABERTA` ou `PAGA`) e data em que foi paga |
 | `milhas_venda_passageiro` | nome e CPF de cada passageiro da venda ou do uso. É daqui que sai o controle de **limite de CPF** |
 | view `milhas_saldo` | saldo, custo investido e custo médio por conta. Respeita as regras de família (`security_invoker`) |
 
@@ -76,8 +78,9 @@ Todas as tabelas têm:
 | **Estoque** | um cartão por conta: saldo, custo médio e próximo vencimento. Tocando no cartão, abre o histórico de movimentos |
 | **Lançar** | um formulário só, com abas Compra / Bônus / Transferência / Uso / Expirou / Ajuste. A transferência mostra na hora quantas milhas vão entrar e o novo custo médio |
 | **Vendas** | lista com lucro de cada venda e o que falta receber. Nova venda com passageiros (nome e CPF), taxa, e valor do milheiro ↔ valor total calculados um pelo outro |
+| **Contas a receber / a pagar** | parcelas por vencimento, separadas em atrasadas, deste mês e futuras, com o botão "marcar como paga". Cada venda parcelada gera as parcelas a receber. Uma compra de milhas parcelada com fornecedor (Pix ou boleto) gera as parcelas a pagar |
 | **Limites de CPF** | por conta e programa: usados / disponíveis, barra de progresso e quando cada CPF libera |
-| **Cadastros** | Programas e Contas (CPFs) |
+| **Cadastros** | **Programas**, **Contas (CPFs)** e **Clientes/Fornecedores**, cada um com as opções de criar, editar e apagar. Não dá para apagar o que já tem movimento; nesse caso, dá para desativar |
 
 - Tudo pensado **primeiro para o celular**: listas em cartões, o menu em gaveta e botões grandes, igual ao que foi feito em Finanças.
 - Saem as telas e o código antigos que usavam as tabelas em inglês (`src/hooks/useSupabaseData.ts`, `pages/milhas/*`).
@@ -99,7 +102,21 @@ Todas as tabelas têm:
 | 4.4 | Bot: "✈️ Milhas" por print | Não (você publica o bot) |
 | 4.5 (opcional) | Remover as tabelas antigas vazias | Sim (você decide) |
 
-## Para você confirmar
+## Compra de milhas: como pagar sem duplicar com Finanças
+
+Ao lançar uma **Compra**, você escolhe como pagou:
+- **Cartão de crédito:** a parcela já aparece na fatura em Finanças, no centro de custo "Gestão de Milhas". Em milhas **não** gera conta a pagar, para não contar duas vezes.
+- **Pix ou boleto à vista:** só registra o custo.
+- **Parcelado com fornecedor:** gera as parcelas em **Contas a pagar** de milhas.
+
+## Respostas do dono (24/09/2026)
+
+1. **Sim, vende milhas** → tela de Vendas completa, com lucro por venda.
+2. **Custo médio** por média ponderada: **ok**.
+3. **Parcelas controladas uma a uma** → **Contas a receber** (vendas) e **Contas a pagar** (compras parceladas com fornecedor).
+4. **Programas com tela própria** para criar, editar e apagar. Os mais comuns já vêm cadastrados, e dá para editar ou apagar.
+
+## Para você confirmar (respondido acima)
 
 1. Você **vende milhas / emite passagens para terceiros**? (Se não, a tela Vendas fica mais simples, só com "Uso".)
 2. **Custo médio** como no exemplo acima (média ponderada). Ok?
