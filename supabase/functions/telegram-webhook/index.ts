@@ -86,7 +86,7 @@ function addMonthsToFatura(fatura: string, add: number) {
 async function sendMainMenu(chatId: number, papel?: string) {
   // Ordem e textos pedidos pelo dono. "Milhas por Print" só para o admin.
   const botoes = [
-    [{ text: "🧾 Despesas Pessoais por Print", callback_data: "start_upload" }],
+    [{ text: "💳 Despesas Pessoais por Print", callback_data: "start_upload" }],
     ...(papel === 'admin' ? [[{ text: "✈️ Milhas por Print", callback_data: "milhas_start" }]] : []),
     [{ text: "📊 Como Estou?", callback_data: "como_estou" }]
   ];
