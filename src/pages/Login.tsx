@@ -1,19 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { useNavigate } from 'react-router-dom';
 import { Plane, CheckCircle2 } from 'lucide-react';
 
 const Login = () => {
-  const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    supabase.auth.onAuthStateChange((event, session) => {
-      if (session) {
-        navigate('/');
-      }
-    });
-  }, [navigate]);
+  // Depois do login, o App.tsx troca esta tela pelo app (e "/" vai para /financas).
 
   const handleGoogleLogin = async () => {
     setLoading(true);

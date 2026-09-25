@@ -26,9 +26,6 @@ import FinancasDashboard from "./pages/financas/FinancasDashboard";
 import Contas from "./pages/financas/Contas";
 import Transacoes from "./pages/financas/Transacoes";
 import FluxoCaixa from "./pages/financas/FluxoCaixa";
-import ContasPagar from "./pages/financas/ContasPagar";
-import ContasReceber from "./pages/financas/ContasReceber";
-import TransferenciasFinancas from "./pages/financas/Transferencias"; 
 import Cartoes from "./pages/financas/Cartoes";
 import FaturaCartao from "./pages/financas/FaturaCartao";
 import CentrosCusto from './pages/financas/CentrosCusto';
@@ -64,7 +61,10 @@ const AppLogado = () => {
   return (
     <MainLayout>
       <Routes>
-        <Route path="/" element={<SomenteAdmin><Index /></SomenteAdmin>} />
+        {/* Depois do login, cai sempre no painel de Finanças. O painel de Milhas fica em /milhas. */}
+        <Route path="/" element={<Navigate to="/financas" replace />} />
+        <Route path="/login" element={<Navigate to="/financas" replace />} />
+        <Route path="/milhas" element={<SomenteAdmin><Index /></SomenteAdmin>} />
 
         <Route path="/milhas/estoque" element={<SomenteAdmin><Estoque /></SomenteAdmin>} />
         <Route path="/milhas/estoque/:id" element={<SomenteAdmin><ProgramDetails /></SomenteAdmin>} />
@@ -78,9 +78,6 @@ const AppLogado = () => {
         <Route path="/financas/contas" element={<SomenteAdmin><Contas /></SomenteAdmin>} />
         <Route path="/financas/transacoes" element={<Transacoes />} />
         <Route path="/financas/fluxo-caixa" element={<FluxoCaixa />} />
-        <Route path="/financas/transferencias" element={<SomenteAdmin><TransferenciasFinancas /></SomenteAdmin>} />
-        <Route path="/financas/contas-pagar" element={<SomenteAdmin><ContasPagar /></SomenteAdmin>} />
-        <Route path="/financas/contas-receber" element={<SomenteAdmin><ContasReceber /></SomenteAdmin>} />
         <Route path="/financas/cartoes" element={<Cartoes />} />
         <Route path="/financas/cartoes/:id" element={<FaturaCartao />} />
         <Route path="/financas/centros-custo" element={<SomenteAdmin><CentrosCusto /></SomenteAdmin>} />

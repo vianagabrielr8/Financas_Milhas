@@ -248,7 +248,7 @@ export default function Metas() {
     <div className="space-y-6 max-w-[1200px] mx-auto text-zinc-100">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-[#141417] p-4 rounded-xl border border-white/5">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2"><Target className="w-6 h-6 text-emerald-500" /> Metas da Casa</h1>
+          <h1 className="text-2xl font-bold tracking-tight hidden md:flex items-center gap-2"><Target className="w-6 h-6 text-emerald-500" /> Metas da Casa</h1>
           <p className="text-zinc-400 text-xs mt-0.5">Quanto ainda está livre no mês, no trimestre e na quinzena.</p>
         </div>
         <div className="flex items-center gap-2 bg-black/40 px-3 py-1.5 rounded-lg border border-white/10">
@@ -296,9 +296,9 @@ export default function Metas() {
               const corTexto = catId === '' ? 'text-zinc-400' : pct <= 80 ? 'text-emerald-400' : pct <= 100 ? 'text-amber-400' : 'text-red-400';
               return (
                 <div key={catId || 'sem'} className="space-y-1">
-                  <div className="flex justify-between items-baseline gap-3 text-sm">
+                  <div className="flex flex-col sm:flex-row sm:justify-between sm:items-baseline gap-0.5 sm:gap-3 text-sm">
                     <span className="font-semibold">{nomeCat(catId)}</span>
-                    <span className="text-xs text-zinc-400 text-right">
+                    <span className="text-xs text-zinc-400 sm:text-right">
                       {catId === '' ? (
                         <>{brl(gasto)} • <span className="text-amber-400">sem meta: classifique esses lançamentos</span></>
                       ) : (
