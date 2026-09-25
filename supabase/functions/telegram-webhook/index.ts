@@ -83,11 +83,12 @@ function addMonthsToFatura(fatura: string, add: number) {
 // ------------------------------------------------------------------
 // MENU PRINCIPAL INTERATIVO
 // ------------------------------------------------------------------
-async function sendMainMenu(chatId: number) {
+async function sendMainMenu(chatId: number, papel?: string) {
   const botoes = [
     [{ text: "📸 Lançar Despesas por Print", callback_data: "start_upload" }],
     [{ text: "📊 Como estou?", callback_data: "como_estou" }]
   ];
+  if (papel === 'admin') botoes.push([{ text: "✈️ Milhas por print", callback_data: "milhas_start" }]);
   await sendKeyboard(chatId, "👋 Olá, Detetive de Caixa! O que vamos fazer hoje?", botoes);
 }
 
@@ -390,6 +391,226 @@ async function responderComoEstou(pessoa: Pessoa) {
   await sendMessage(pessoa.chatId, textoComoEstou(p, pessoa.papel === 'membro', Math.floor(Math.random() * 1000)));
 }
 // === PLACAR FIM ===
+
+// ------------------------------------------------------------------
+// MILHAS POR PRINT (Pacote 4.4): "✈️ Milhas" -> escolhe a conta ->
+// manda o print do extrato -> revisa -> "✅ Gravar". Só admin (igual ao app).
+// Tabelas: milhas_sessao_bot (conta escolhida) e milhas_staging (revisão).
+// Tudo filtrado por familia_id e por chat_id.
+// ------------------------------------------------------------------
+// === MILHAS INICIO ===
+const MILHAS_ENTRADA = ['COMPRA', 'BONUS', 'TRANSF_ENTRADA', 'AJUSTE_MAIS'];
+const NOME_TIPO_MILHAS: Record<string, string> = {
+  COMPRA: 'Compra', BONUS: 'Bônus', TRANSF_ENTRADA: 'Transferência (entrou)', AJUSTE_MAIS: 'Ajuste (+)',
+  TRANSF_SAIDA: 'Transferência (saiu)', USO: 'Uso/resgate', EXPIROU: 'Expirou', AJUSTE_MENOS: 'Ajuste (−)',
+};
+const milhasBR = (n: number) => Math.round(n).toLocaleString('pt-BR');
+const dataCurta = (d: string) => d ? d.slice(0, 10).split('-').reverse().join('/') : '';
+
+// Palavra digitada -> tipo, respeitando se o lançamento entra ou sai.
+function tipoPorPalavra(palavra: string, entra: boolean): string | null {
+  const w = normalizarNome(palavra);
+  if (w.startsWith('compra')) return 'COMPRA';
+  if (w.startsWith('bonus') || w.startsWith('acumulo') || w.startsWith('ganho')) return 'BONUS';
+  if (w.startsWith('transf')) return entra ? 'TRANSF_ENTRADA' : 'TRANSF_SAIDA';
+  if (w.startsWith('ajuste')) return entra ? 'AJUSTE_MAIS' : 'AJUSTE_MENOS';
+  if (w.startsWith('uso') || w.startsWith('resgate') || w.startsWith('emiss')) return 'USO';
+  if (w.startsWith('expir') || w.startsWith('venc')) return 'EXPIROU';
+  return null;
+}
+function tipoDoGemini(tipo: string, pontos: number): string {
+  const t = String(tipo || '').toUpperCase();
+  const entra = pontos > 0;
+  if (t === 'COMPRA' || t === 'BONUS' || t === 'TRANSF_ENTRADA') return entra ? t : (t === 'COMPRA' ? 'AJUSTE_MENOS' : 'TRANSF_SAIDA');
+  if (t === 'TRANSF_SAIDA' || t === 'USO' || t === 'EXPIROU') return entra ? 'AJUSTE_MAIS' : t;
+  return entra ? 'AJUSTE_MAIS' : 'AJUSTE_MENOS';
+}
+function lerValor(txt: string) {
+  const t = txt.trim();
+  if (t.includes(',')) return Number(t.replace(/\./g, '').replace(',', '.')) || 0;
+  if (/^\d+\.\d{1,2}$/.test(t)) return Number(t) || 0;
+  return Number(t.replace(/\./g, '')) || 0;
+}
+function lerData(txt: string): string | null {
+  const m = txt.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  if (!m) return null;
+  const ano = m[3].length === 2 ? '20' + m[3] : m[3];
+  return `${ano}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+}
+
+async function nomeContaMilhas(familiaId: string, contaId: string) {
+  const { data: c } = await supabase.from('milhas_conta').select('titular, programa_id').eq('id', contaId).eq('familia_id', familiaId).maybeSingle();
+  if (!c) return '?';
+  const { data: p } = await supabase.from('milhas_programa').select('nome').eq('id', c.programa_id).eq('familia_id', familiaId).maybeSingle();
+  return `${c.titular} – ${p?.nome || '?'}`;
+}
+
+async function menuMilhas(p: Pessoa) {
+  const [{ data: contas }, { data: progs }] = await Promise.all([
+    supabase.from('milhas_conta').select('id, titular, programa_id').eq('familia_id', p.familiaId).eq('ativo', true).order('titular'),
+    supabase.from('milhas_programa').select('id, nome').eq('familia_id', p.familiaId),
+  ]);
+  if (!contas || contas.length === 0) {
+    await sendMessage(p.chatId, "✈️ Nenhuma conta de milhas cadastrada. Cadastre no app: Milhas → Cadastros → Contas (CPFs).");
+    return;
+  }
+  const nome = (id: string) => progs?.find((x: any) => x.id === id)?.nome || '?';
+  await sendKeyboard(p.chatId, "✈️ De qual conta é o extrato?", chunkArray(contas.map((c: any) => ({ text: `${c.titular} – ${nome(c.programa_id)}`, callback_data: `mconta_${c.id}` })), 1));
+}
+
+async function escolherContaMilhas(p: Pessoa, contaId: string) {
+  if (!(await daFamilia('milhas_conta', contaId, p.familiaId))) return;
+  // Não mistura contas na mesma revisão.
+  const { data: pendente } = await supabase.from('milhas_staging').select('conta_id').eq('chat_id', p.chatId).eq('familia_id', p.familiaId).limit(1);
+  if (pendente && pendente.length > 0 && pendente[0].conta_id !== contaId) {
+    await sendMessage(p.chatId, `⚠️ Ainda há uma revisão aberta de <b>${await nomeContaMilhas(p.familiaId, pendente[0].conta_id)}</b>. Grave ou cancele antes de trocar de conta.`);
+    await exibirResumoMilhas(p);
+    return;
+  }
+  await supabase.from('milhas_sessao_bot').upsert({ chat_id: p.chatId, familia_id: p.familiaId, conta_id: contaId, atualizado_em: new Date().toISOString() });
+  await sendMessage(p.chatId, `✈️ Conta <b>${await nomeContaMilhas(p.familiaId, contaId)}</b> selecionada.\n\n📸 Mande o print do extrato do programa (pode mandar mais de um).`);
+}
+
+async function processarPrintMilhas(p: Pessoa, fileId: string, contaId: string) {
+  const chatId = p.chatId;
+  try {
+    const resFile = await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/getFile?file_id=${fileId}`);
+    const fileData = await resFile.json();
+    if (!fileData.ok) throw new Error("Erro ao acessar imagem.");
+    const resImg = await fetch(`https://api.telegram.org/file/bot${TELEGRAM_TOKEN}/${fileData.result.file_path}`);
+    const base64 = btoa(String.fromCharCode(...new Uint8Array(await resImg.arrayBuffer())));
+
+    const hoje = new Date().toLocaleDateString('pt-BR');
+    const prompt = `Este é o print de um EXTRATO de programa de fidelidade (milhas ou pontos: LATAM Pass, Smiles, TudoAzul, Livelo, Esfera etc.).
+Extraia CADA lançamento. Ignore saldos, totais e propagandas.
+Responda em JSON puro: [{"data":"YYYY-MM-DD","descricao":"texto curto","pontos":1234,"tipo":"...","validade":"YYYY-MM-DD ou null"}]
+- "pontos": positivo quando ENTRA na conta, negativo quando SAI.
+- "tipo": COMPRA (compra de pontos/milhas), BONUS (acúmulo por cartão, compras, parceiros, promoções, bônus), TRANSF_ENTRADA (recebido de outro programa), TRANSF_SAIDA (enviado para outro programa), USO (resgate, emissão de passagem, troca por produto), EXPIROU (pontos vencidos), AJUSTE (qualquer outro).
+- "validade": data de vencimento dos pontos, se aparecer; senão null.
+Hoje é ${hoje}.`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${GEMINI_API_KEY}`;
+    const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: prompt }, { inline_data: { mime_type: "image/jpeg", data: base64 } }] }] }) });
+    if (!response.ok) throw new Error('Google API recusou.');
+    const gem = await response.json();
+    const lidos = JSON.parse(gem.candidates[0].content.parts[0].text.trim().replace(/```json/g, '').replace(/```/g, '').trim());
+    const validos = (Array.isArray(lidos) ? lidos : []).filter((l: any) => /^\d{4}-\d{2}-\d{2}$/.test(l.data) && Number(l.pontos));
+    if (validos.length === 0) { await sendMessage(chatId, "🤔 Não encontrei lançamentos nesse print. Tente um print mais nítido do extrato."); return; }
+
+    // Barra repetidos: já gravados na conta ou já na revisão deste chat (mesma data, quantidade e direção).
+    const [gravados, revisao] = await Promise.all([
+      supabase.from('milhas_movimento').select('data, quantidade, tipo').eq('familia_id', p.familiaId).eq('conta_id', contaId).gte('data', validos.map((v: any) => v.data).sort()[0]),
+      supabase.from('milhas_staging').select('data, quantidade, tipo').eq('chat_id', chatId).eq('conta_id', contaId),
+    ]);
+    const chave = (d: string, q: number, entra: boolean) => `${d}|${q}|${entra ? '+' : '-'}`;
+    const existentes = new Set([...(gravados.data || []), ...(revisao.data || [])].map((m: any) => chave(String(m.data).slice(0, 10), Number(m.quantidade), MILHAS_ENTRADA.includes(m.tipo))));
+    const novos: any[] = [];
+    let repetidos = 0;
+    for (const l of validos) {
+      const pts = Math.round(Number(l.pontos));
+      const k = chave(l.data, Math.abs(pts), pts > 0);
+      if (existentes.has(k)) { repetidos++; continue; }
+      existentes.add(k);
+      novos.push({
+        familia_id: p.familiaId, chat_id: chatId, conta_id: contaId, data: l.data, descricao: String(l.descricao || '').slice(0, 120),
+        tipo: tipoDoGemini(l.tipo, pts), quantidade: Math.abs(pts),
+        validade: /^\d{4}-\d{2}-\d{2}$/.test(l.validade || '') && pts > 0 ? l.validade : null,
+      });
+    }
+    if (novos.length > 0) {
+      const { error } = await supabase.from('milhas_staging').insert(novos);
+      if (error) throw error;
+    }
+    await sendMessage(chatId, `✅ Li <b>${validos.length}</b> lançamento(s)${repetidos ? ` (🛡️ ${repetidos} já estavam no app e foram ignorados)` : ''}.`);
+    await exibirResumoMilhas(p);
+  } catch (err) { console.error(err); await sendMessage(chatId, "❌ Falha ao ler o print de milhas."); }
+}
+
+async function exibirResumoMilhas(p: Pessoa) {
+  const { data: itens } = await supabase.from('milhas_staging').select('*').eq('chat_id', p.chatId).eq('familia_id', p.familiaId).order('data').order('id');
+  if (!itens || itens.length === 0) { await sendMessage(p.chatId, "Nada para revisar."); return; }
+  const conta = await nomeContaMilhas(p.familiaId, itens[0].conta_id);
+  let t = `✈️ <b>Revisão – ${conta}</b>\n\n`;
+  itens.forEach((m: any, i: number) => {
+    const entra = MILHAS_ENTRADA.includes(m.tipo);
+    t += `[${i + 1}] ${dataCurta(m.data)} <b>${entra ? '+' : '−'}${milhasBR(m.quantidade)}</b> ${NOME_TIPO_MILHAS[m.tipo]}`;
+    if (Number(m.custo) > 0) t += ` · R$ ${Number(m.custo).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+    if (m.validade) t += ` · vence ${dataCurta(m.validade)}`;
+    if (m.descricao) t += `\n     <i>${m.descricao}</i>`;
+    t += '\n';
+  });
+  t += `\n💡 <b>Para corrigir, escreva:</b>\n<code>apagar 2</code>\n<code>2 bonus</code> (compra, bonus, transf, uso, expirou, ajuste)\n<code>1 custo 350,00</code> (quanto pagou numa compra)\n<code>1 vence 31/12/2027</code>`;
+  await sendKeyboard(p.chatId, t, [
+    [{ text: "✅ Gravar no estoque", callback_data: "mgravar" }],
+    [{ text: "🗑️ Cancelar", callback_data: "mcancelar" }],
+  ]);
+}
+
+// Correções digitadas na revisão. Várias linhas de uma vez são aceitas.
+async function editarRevisaoMilhas(p: Pessoa, texto: string) {
+  const { data: itens } = await supabase.from('milhas_staging').select('*').eq('chat_id', p.chatId).eq('familia_id', p.familiaId).order('data').order('id');
+  if (!itens || itens.length === 0) return;
+  const erros: string[] = [];
+  let feitos = 0;
+  for (const linha of texto.split(/\n|;/).map(l => l.trim()).filter(Boolean)) {
+    let m = linha.match(/^(?:apagar|excluir|remover)\s+(\d+)$/i);
+    if (m) {
+      const item = itens[Number(m[1]) - 1];
+      if (!item) { erros.push(`não existe o item ${m[1]}`); continue; }
+      await supabase.from('milhas_staging').delete().eq('id', item.id).eq('chat_id', p.chatId);
+      feitos++; continue;
+    }
+    m = linha.match(/^(\d+)\s+(.+)$/);
+    const item = m ? itens[Number(m[1]) - 1] : null;
+    if (!m || !item) { erros.push(`não entendi "${linha}"`); continue; }
+    const resto = m[2].trim();
+    const entra = MILHAS_ENTRADA.includes(item.tipo);
+    let mudanca: any = null;
+    const mc = resto.match(/^custo\s+(?:r\$\s*)?([\d.,]+)$/i);
+    const mv = resto.match(/^vence\s+(\S+)$/i);
+    if (mc) mudanca = entra ? { custo: lerValor(mc[1]) } : null;
+    else if (mv) mudanca = entra && lerData(mv[1]) ? { validade: lerData(mv[1]) } : null;
+    else { const tipo = tipoPorPalavra(resto, entra); if (tipo) mudanca = { tipo, ...(MILHAS_ENTRADA.includes(tipo) ? {} : { custo: 0, validade: null }) }; }
+    if (!mudanca) { erros.push(`não entendi "${linha}"${(mc || mv) && !entra ? ' (custo e vencimento só em entradas)' : ''}`); continue; }
+    await supabase.from('milhas_staging').update(mudanca).eq('id', item.id).eq('chat_id', p.chatId);
+    feitos++;
+  }
+  if (erros.length) await sendMessage(p.chatId, `⚠️ ${erros.join('; ')}.`);
+  if (feitos) await exibirResumoMilhas(p);
+}
+
+// Grava no estoque. Saídas levam o custo médio do momento (mesma regra do app).
+async function gravarMilhas(p: Pessoa) {
+  const { data: itens } = await supabase.from('milhas_staging').select('*').eq('chat_id', p.chatId).eq('familia_id', p.familiaId).order('data').order('id');
+  if (!itens || itens.length === 0) { await sendMessage(p.chatId, "Nada para gravar."); return; }
+  const contaId = itens[0].conta_id;
+  // saldo e custo atuais da conta (em páginas de 1000)
+  let saldo = 0, custo = 0;
+  for (let i = 0; ; i += 1000) {
+    const { data: movs } = await supabase.from('milhas_movimento').select('tipo, quantidade, custo').eq('familia_id', p.familiaId).eq('conta_id', contaId).order('id').range(i, i + 999);
+    for (const m of movs || []) {
+      const s = MILHAS_ENTRADA.includes(m.tipo) ? 1 : -1;
+      saldo += s * Number(m.quantidade); custo += s * Number(m.custo);
+    }
+    if (!movs || movs.length < 1000) break;
+  }
+  const linhas = itens.map((m: any) => {
+    const entra = MILHAS_ENTRADA.includes(m.tipo);
+    const q = Number(m.quantidade);
+    const c = entra ? Number(m.custo) || 0 : (saldo > 0 ? Math.round((custo / saldo) * q * 100) / 100 : 0);
+    saldo += entra ? q : -q; custo += entra ? c : -c;
+    return {
+      familia_id: p.familiaId, conta_id: m.conta_id, tipo: m.tipo, quantidade: q, custo: Math.max(c, 0), data: m.data,
+      validade: entra ? m.validade : null, forma_pagamento: m.tipo === 'COMPRA' ? 'A_VISTA' : null,
+      observacao: m.descricao ? `Print: ${m.descricao}` : 'Lançado pelo print', criado_por: p.userId,
+    };
+  });
+  const { error } = await supabase.from('milhas_movimento').insert(linhas);
+  if (error) { console.error(error); await sendMessage(p.chatId, "❌ Não consegui gravar. Nada foi alterado; tente de novo."); return; }
+  await supabase.from('milhas_staging').delete().eq('chat_id', p.chatId).eq('familia_id', p.familiaId);
+  const aviso = linhas.some((l: any) => l.tipo === 'USO') ? '\nℹ️ Usos pelo print entram sem passageiros: para o limite de CPF, lance as emissões pelo app.' : '';
+  await sendMessage(p.chatId, `🎉 <b>${linhas.length}</b> lançamento(s) gravado(s) em <b>${await nomeContaMilhas(p.familiaId, contaId)}</b>.\nSaldo agora: <b>${milhasBR(saldo)}</b> milhas.${aviso}`);
+}
+// === MILHAS FIM ===
 
 // ------------------------------------------------------------------
 // MOTOR 1: OCR
@@ -864,6 +1085,12 @@ serve(async (req) => {
         const photos = payload.message.photo;
         const fileId = photos[photos.length - 1].file_id;
 
+        const { data: sessaoMilhas } = await supabase.from('milhas_sessao_bot').select('conta_id').eq('chat_id', chatId).eq('familia_id', pessoa.familiaId).maybeSingle();
+        if (sessaoMilhas && pessoa.papel === 'admin') {
+          await sendMessage(chatId, "✈️ Lendo o extrato de milhas...");
+          EdgeRuntime.waitUntil(processarPrintMilhas(pessoa, fileId, sessaoMilhas.conta_id));
+          return new Response("OK", { status: 200 });
+        }
         await sendMessage(chatId, "👀 Lendo a imagem com a lupa...");
         EdgeRuntime.waitUntil(processarImagem(pessoa, fileId));
         return new Response("OK", { status: 200 });
@@ -896,11 +1123,20 @@ serve(async (req) => {
         // 4. MENU DIRETO
         const isMenuCommand = ['/start', 'menu', 'oi', 'olá', 'ola'].includes(textoLower);
         if (isMenuCommand) {
-            await sendMainMenu(chatId);
+            await sendMainMenu(chatId, pessoa.papel);
             return new Response("OK", { status: 200 });
         }
 
-        // 5. EDIÇÃO DE TEXTO NO LOTE
+        // 5. CORREÇÕES NA REVISÃO DE MILHAS
+        if (!texto.startsWith('/') && pessoa.papel === 'admin') {
+          const { count: qtdMilhas } = await supabase.from('milhas_staging').select('*', { count: 'exact', head: true }).eq('chat_id', chatId).eq('familia_id', pessoa.familiaId);
+          if (qtdMilhas && qtdMilhas > 0) {
+            await editarRevisaoMilhas(pessoa, texto);
+            return new Response("OK", { status: 200 });
+          }
+        }
+
+        // 6. EDIÇÃO DE TEXTO NO LOTE
         const { count } = await supabase.from('open_finance_staging').select('*', { count: 'exact', head: true }).eq('chat_id', chatId);
 
         if (count && count > 0 && !texto.startsWith('/')) {
@@ -909,7 +1145,7 @@ serve(async (req) => {
              return new Response("OK", { status: 200 });
         } else {
              // Fallback para texto solto
-             await sendMainMenu(chatId);
+             await sendMainMenu(chatId, pessoa.papel);
         }
       }
 
@@ -921,8 +1157,21 @@ serve(async (req) => {
         if (action === 'como_estou') {
           await responderComoEstou(pessoa);
         }
+        else if (['milhas_start', 'mgravar', 'mcancelar'].includes(action) || action.startsWith('mconta_')) {
+          if (pessoa.papel !== 'admin') return new Response("OK", { status: 200 });
+          await removeKeyboard(chatId, messageId);
+          if (action === 'milhas_start') await menuMilhas(pessoa);
+          else if (action.startsWith('mconta_')) await escolherContaMilhas(pessoa, action.replace('mconta_', ''));
+          else if (action === 'mgravar') await gravarMilhas(pessoa);
+          else {
+            await supabase.from('milhas_staging').delete().eq('chat_id', chatId).eq('familia_id', pessoa.familiaId);
+            await supabase.from('milhas_sessao_bot').delete().eq('chat_id', chatId);
+            await sendMessage(chatId, "🗑️ Revisão de milhas cancelada.");
+          }
+        }
         else if (action === 'start_upload') {
           await removeKeyboard(chatId, messageId);
+          await supabase.from('milhas_sessao_bot').delete().eq('chat_id', chatId);
           await sendKeyboard(chatId, "De onde saiu o dinheiro?", [
             [{ text: "🏦 Débito / Pix (Contas)", callback_data: "choose_type_conta" }],
             [{ text: "💳 Cartão de Crédito", callback_data: "choose_type_cartao" }]
