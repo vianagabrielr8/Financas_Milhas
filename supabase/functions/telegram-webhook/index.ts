@@ -767,6 +767,7 @@ async function executarTarefaIA(p: Pessoa) {
     const prompt = `Você é um assistente financeiro. Aqui está a árvore OBRIGATÓRIA. Cada Centro de Custo possui categorias exclusivas:
 ${arvoreCategorias}
 REGRA DE OURO: NUNCA atribua uma Categoria a um Centro de Custo diferente do mapeado. Se não houver categoria clara, pode deixar null.
+PAGAMENTO DE FATURA COM OUTRO CARTÃO: linha que é o pagamento da fatura de outro cartão (ex.: "PAG FATURA", "PAGAMENTO CARTAO", "PAGUE COM CARTAO", "QUITACAO FATURA") vai para a categoria/centro que tiver "Giro" no nome. Os juros ou a tarifa desse pagamento vão para a categoria de empréstimos/juros.
 Transações:\n${listaCompras}\n
 Responda APENAS em JSON: [{"id": "id-da-tx", "categoria": "Cat • Sub", "centro_custo": "Nome CC"}]`;
 
@@ -963,6 +964,8 @@ async function executarTarefaGravacao(p: Pessoa, mesFaturaEscolhida: string | nu
 
     let sucessoCount = 0;
     const idCatIngrid = catData?.find(c => normalizarNome(c.nome) === 'ingrid')?.id;
+    // Linhas em "Giro Cartão" gravadas num cartão = provável pagamento da fatura de OUTRO cartão.
+    const pagamentosDeFatura: { id: string; descricao: string; valor: number; cartaoId: string }[] = [];
     const novosIngrid: { descricao: string; valor: number }[] = [];
 
     for (const tx of stagingData) {
@@ -1041,12 +1044,80 @@ async function executarTarefaGravacao(p: Pessoa, mesFaturaEscolhida: string | nu
         sucessoCount += rowsInsert.length;
         // parcelado: avisa a compra uma vez, com o valor da 1ª parcela
         if (idCatIngrid && matchCat?.id === idCatIngrid) novosIngrid.push({ descricao: descLimpa, valor: rowsInsert[0].valor });
+        const ehGiro = normalizarNome(matchCat?.nome || '').includes('giro') || normalizarNome(matchCC?.nome || '').includes('giro');
+        if (ehGiro && cartaoPrincipalId) pagamentosDeFatura.push({ id: insertedData[0].id, descricao: descLimpa, valor: rowsInsert.reduce((a, r) => a + Number(r.valor), 0), cartaoId: cartaoPrincipalId });
       }
     }
     if (sucessoCount > 0) await sendMessage(chatId, `🎉 <b>${sucessoCount}</b> linhas foram projetadas no sistema!`);
     // Aviso para a Ingrid (se entrou algo na categoria dela). Erro aqui não atrapalha a gravação.
     try { await avisarCategoriaIngrid(p.familiaId, novosIngrid); } catch (e) { console.error('aviso Ingrid', e); }
+    // Pergunta qual fatura cada pagamento quitou (só admin, como no app).
+    if (p.papel === 'admin') for (const pg of pagamentosDeFatura.slice(0, 5)) await perguntarFaturaPaga(p, pg);
   } catch (err: any) { console.error(err); }
+}
+
+// ------------------------------------------------------------------
+// PAGAMENTO DE FATURA COM OUTRO CARTÃO
+// A linha fica no cartão que pagou (categoria Giro Cartão). Aqui só marcamos
+// a fatura do cartão PAGO como paga, sem mexer em conta bancária.
+// Botões: gpc_<n do cartão>_<id da linha> -> gpm_<n>_<Mmm/AAAA>_<id> | gpn_<id>
+// ------------------------------------------------------------------
+async function cartoesDaFamilia(familiaId: string) {
+  const { data } = await supabase.from('cartao_pessoal').select('id, nome').eq('familia_id', familiaId).order('nome').order('id');
+  return data || [];
+}
+const valorBR = (v: number) => 'R$ ' + Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+async function perguntarFaturaPaga(p: Pessoa, pg: { id: string; descricao: string; valor: number; cartaoId: string }) {
+  const cartoes = await cartoesDaFamilia(p.familiaId);
+  const botoes = cartoes.map((c: any, i: number) => ({ c, i })).filter(({ c }) => c.id !== pg.cartaoId)
+    .map(({ c, i }) => ({ text: `💳 ${c.nome}`, callback_data: `gpc_${i}_${pg.id}` }));
+  if (botoes.length === 0) return;
+  await sendKeyboard(p.chatId, `🔄 <b>${pg.descricao}</b> (${valorBR(pg.valor)}) foi o pagamento da fatura de outro cartão?
+Qual cartão foi pago?`,
+    [...chunkArray(botoes, 2), [{ text: "Não era pagamento de fatura", callback_data: `gpn_${pg.id}` }]]);
+}
+
+async function escolherFaturaPaga(p: Pessoa, idx: number, txId: string) {
+  if (!(await daFamilia('transacao_pessoal', txId, p.familiaId))) return;
+  const cartao = (await cartoesDaFamilia(p.familiaId))[idx];
+  if (!cartao) return;
+  const { data: abertas } = await supabase.from('transacao_pessoal').select('mes_fatura')
+    .eq('familia_id', p.familiaId).eq('cartao_id', cartao.id).neq('situacao', 'PAGO').not('mes_fatura', 'is', null).range(0, 999);
+  const meses = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  const ordem = (r: string) => { const [m, a] = r.split('/'); return Number(a) * 12 + meses.indexOf(m); };
+  const rotulos = Array.from(new Set((abertas || []).map((t: any) => t.mes_fatura).filter((r: string) => /^[A-Z][a-z]{2}\/\d{4}$/.test(r))))
+    .sort((a, b) => ordem(a) - ordem(b)).slice(0, 6);
+  if (rotulos.length === 0) { await sendMessage(p.chatId, `✅ O cartão <b>${cartao.nome}</b> não tem fatura em aberto no app.`); return; }
+  await sendKeyboard(p.chatId, `💳 <b>${cartao.nome}</b>: qual fatura foi paga?`,
+    [...chunkArray(rotulos.map(r => ({ text: r, callback_data: `gpm_${idx}_${r}_${txId}` })), 3), [{ text: "Cancelar", callback_data: `gpn_${txId}` }]]);
+}
+
+async function marcarFaturaPaga(p: Pessoa, idx: number, rotulo: string, txId: string) {
+  const { data: linha } = await supabase.from('transacao_pessoal').select('id, valor, descricao, observacao, cartao_id').eq('id', txId).eq('familia_id', p.familiaId).maybeSingle();
+  const cartao = (await cartoesDaFamilia(p.familiaId))[idx];
+  if (!linha || !cartao) return;
+  const { data: itens } = await supabase.from('transacao_pessoal').select('valor, tipo')
+    .eq('familia_id', p.familiaId).eq('cartao_id', cartao.id).eq('mes_fatura', rotulo).range(0, 999);
+  const total = (itens || []).reduce((a: number, t: any) => a + (t.tipo === 'ESTORNO' ? -1 : 1) * Number(t.valor), 0);
+  const { error } = await supabase.from('transacao_pessoal').update({ situacao: 'PAGO' })
+    .eq('familia_id', p.familiaId).eq('cartao_id', cartao.id).eq('mes_fatura', rotulo);
+  if (error) { await sendMessage(p.chatId, "❌ Não consegui marcar a fatura como paga."); return; }
+  const nota = `Pagou a fatura ${cartao.nome} ${rotulo}`;
+  await supabase.from('transacao_pessoal').update({ observacao: linha.observacao ? `${linha.observacao} · ${nota}` : nota }).eq('id', linha.id).eq('familia_id', p.familiaId);
+  // Compara com o valor TOTAL do pagamento (todas as parcelas da linha)
+  const base = String(linha.descricao || '').replace(/\s*\[Parc \d+\/\d+\]$/, '');
+  const { data: parcelas } = await supabase.from('transacao_pessoal').select('valor, descricao')
+    .eq('familia_id', p.familiaId).eq('cartao_id', linha.cartao_id).like('descricao', `${base}%`).range(0, 199);
+  const pago = (parcelas || []).filter((t: any) => t.descricao === base || String(t.descricao).startsWith(`${base} [Parc `)).reduce((a: number, t: any) => a + Number(t.valor), 0) || Number(linha.valor);
+  const dif = Math.round((pago - total) * 100) / 100;
+  let msg = `✅ Fatura <b>${cartao.nome} ${rotulo}</b> marcada como <b>paga</b> (nenhuma conta bancária foi mexida).
+
+Fatura no app: ${valorBR(total)}
+Pagamento lançado: ${valorBR(pago)}`;
+  if (Math.abs(dif) >= 0.01) msg += `
+⚠️ Diferença de ${valorBR(Math.abs(dif))}: ${dif > 0 ? 'o pagamento foi maior (juros lançados junto? eles devem ir em Empréstimos/Juros)' : 'falta lançar algo na fatura ou o pagamento foi parcial'}.`;
+  await sendMessage(p.chatId, msg);
 }
 
 // ------------------------------------------------------------------
@@ -1157,6 +1228,14 @@ serve(async (req) => {
 
         if (action === 'como_estou') {
           await responderComoEstou(pessoa);
+        }
+        else if (/^gp[cmn]_/.test(action)) {
+          await removeKeyboard(chatId, messageId);
+          if (pessoa.papel !== 'admin') return new Response("OK", { status: 200 });
+          const partes = action.split('_');
+          if (partes[0] === 'gpc') await escolherFaturaPaga(pessoa, Number(partes[1]), partes[2]);
+          else if (partes[0] === 'gpm') await marcarFaturaPaga(pessoa, Number(partes[1]), partes[2], partes[3]);
+          else await sendMessage(chatId, "👍 Ok, fica só como lançamento normal.");
         }
         else if (['milhas_start', 'mgravar', 'mcancelar'].includes(action) || action.startsWith('mconta_')) {
           if (pessoa.papel !== 'admin') return new Response("OK", { status: 200 });
