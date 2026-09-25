@@ -84,11 +84,12 @@ function addMonthsToFatura(fatura: string, add: number) {
 // MENU PRINCIPAL INTERATIVO
 // ------------------------------------------------------------------
 async function sendMainMenu(chatId: number, papel?: string) {
+  // Ordem e textos pedidos pelo dono. "Milhas por Print" só para o admin.
   const botoes = [
-    [{ text: "📸 Lançar Despesas por Print", callback_data: "start_upload" }],
-    [{ text: "📊 Como estou?", callback_data: "como_estou" }]
+    [{ text: "Despesas Pessoais por Print", callback_data: "start_upload" }],
+    ...(papel === 'admin' ? [[{ text: "Milhas por Print", callback_data: "milhas_start" }]] : []),
+    [{ text: "Como Estou?", callback_data: "como_estou" }]
   ];
-  if (papel === 'admin') botoes.push([{ text: "✈️ Milhas por print", callback_data: "milhas_start" }]);
   await sendKeyboard(chatId, "👋 Olá, Detetive de Caixa! O que vamos fazer hoje?", botoes);
 }
 
