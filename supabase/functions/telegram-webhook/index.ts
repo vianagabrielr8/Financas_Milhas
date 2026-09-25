@@ -87,17 +87,70 @@ function acharPorNome<T extends { nome: string }>(lista: T[] | null | undefined,
   if (!k || !lista || lista.length === 0) return null;
   const exato = lista.find(x => chaveNome(x.nome) === k);
   if (exato) return exato;
+  // "giro" acha "Reembolsos / Giro Cartão"; "reembolso giro" também. Se vários servirem, fica o de nome mais parecido.
+  if (k.length >= 3) {
+    const contem = lista.filter(x => { const kx = chaveNome(x.nome); return kx.includes(k) || (kx.length >= 3 && k.includes(kx)); });
+    if (contem.length > 0) return contem.sort((a, b) => Math.abs(chaveNome(a.nome).length - k.length) - Math.abs(chaveNome(b.nome).length - k.length))[0];
+    const palavras = normalizarNome(texto || '').split(/[^a-z0-9]+/).filter(w => w.length >= 3);
+    const porPalavras = lista.filter(x => palavras.length > 0 && palavras.every(w => chaveNome(x.nome).includes(w.replace(/s$/, ''))));
+    if (porPalavras.length > 0) return porPalavras.sort((a, b) => a.nome.length - b.nome.length)[0];
+  }
   let melhor: T | null = null, menor = Infinity;
   for (const x of lista) { const d = distancia(k, chaveNome(x.nome)); if (d < menor) { menor = d; melhor = x; } }
-  return menor <= Math.max(1, Math.floor(k.length * 0.15)) ? melhor : null; // até ~15% de letras diferentes
+  return menor <= Math.max(1, Math.floor(k.length * 0.3)) ? melhor : null; // erro de digitação (até ~30% das letras)
+}
+
+// ------------------------------------------------------------------
+// OPÇÕES NUMERADAS PARA A IA: em vez de escrever o nome, a IA escolhe um
+// código (K = categoria, C = só o centro de custo). Assim o nome gravado é
+// sempre o oficial, mesmo que você escreva do seu jeito ("a 2 é giro").
+// ------------------------------------------------------------------
+async function montarOpcoes(p: Pessoa) {
+  const [{ data: cats }, { data: subs }, { data: ccs }] = await Promise.all([
+    supabase.from('categoria_pessoal').select('id, nome, centro_custo_id').eq('familia_id', p.familiaId).order('nome'),
+    supabase.from('subcategoria_pessoal').select('id, nome, categoria_id').eq('familia_id', p.familiaId).order('nome'),
+    supabase.from('centro_custo_projeto').select('id, nome').eq('familia_id', p.familiaId).order('nome'),
+  ]);
+  const cod = new Map<string, { cc: string; cat: string | null }>();
+  let texto = '';
+  let nk = 1, nc = 1;
+  for (const cc of ccs || []) {
+    const c = `C${nc++}`;
+    cod.set(c, { cc: cc.nome, cat: null });
+    texto += `\n[${c}] Centro de custo "${cc.nome}" (sem categoria)\n`;
+    for (const cat of (cats || []).filter((x: any) => x.centro_custo_id === cc.id)) {
+      const k = `K${nk++}`; cod.set(k, { cc: cc.nome, cat: cat.nome });
+      texto += `  [${k}] ${cat.nome}\n`;
+      for (const sub of (subs || []).filter((x: any) => x.categoria_id === cat.id)) {
+        const ks = `K${nk++}`; cod.set(ks, { cc: cc.nome, cat: `${cat.nome} • ${sub.nome}` });
+        texto += `  [${ks}] ${cat.nome} • ${sub.nome}\n`;
+      }
+    }
+  }
+  return { texto, cod };
+}
+
+// Converte a resposta da IA (código, ou nome como plano B) em nomes oficiais.
+function escolhaDaIA(r: any, opcoes: { cod: Map<string, { cc: string; cat: string | null }> }, atual: { ia: string | null; cc: string | null }) {
+  const codigo = String(r?.opcao ?? r?.codigo ?? '').trim().toUpperCase();
+  const pelo = opcoes.cod.get(codigo);
+  if (pelo) return { sugestao_ia: pelo.cat ?? 'Sem Categoria', sugestao_cc: pelo.cc };
+  const cc = opcoes.cod.get(String(r?.cc ?? '').trim().toUpperCase());
+  if (cc) return { sugestao_ia: 'Sem Categoria', sugestao_cc: cc.cc };
+  // Plano B: a IA mandou nomes -> resolve por aproximação no resumo/gravação
+  const cat = r?.nova_categoria ?? r?.categoria;
+  const ccNome = r?.novo_cc ?? r?.centro_custo;
+  return {
+    sugestao_ia: cat && cat !== 'null' ? cat : (atual.ia ?? 'Sem Categoria'),
+    sugestao_cc: ccNome && ccNome !== 'null' ? ccNome : (atual.cc ?? 'Pendente'),
+  };
 }
 const VAZIOS = ['', 'semcategoria', 'null', 'pendente', 'nenhuma', 'nenhum'];
 // "Categoria" ou "Categoria • Subcategoria" -> ids e nome oficial.
 function resolverCategoria(texto: string | null | undefined, cats: any[] | null, subs: any[] | null) {
   if (VAZIOS.includes(chaveNome(texto || ''))) return { cat: null as any, sub: null as any, vazio: true };
-  const inteira = acharPorNome(cats, texto);
-  if (inteira) return { cat: inteira, sub: null, vazio: false };
   const [pCat, pSub] = String(texto).split(/\s*[•·]\s*/);
+  if (!pSub) { const inteira = acharPorNome(cats, texto); return { cat: inteira, sub: null, vazio: false }; }
   const cat = acharPorNome(cats, pCat);
   const sub = cat && pSub ? acharPorNome((subs || []).filter((x: any) => x.categoria_id === cat.id), pSub) : null;
   return { cat, sub, vazio: false };
@@ -752,26 +805,6 @@ Regras OBRIGATÓRIAS:
 // ------------------------------------------------------------------
 // GERADORES DE CONTEXTO E ÁRVORE
 // ------------------------------------------------------------------
-async function montarArvoreCategorias(p: Pessoa) {
-    const { data: catData } = await supabase.from('categoria_pessoal').select('id, nome, centro_custo_id').eq('familia_id', p.familiaId);
-    const { data: subData } = await supabase.from('subcategoria_pessoal').select('id, nome, categoria_id').eq('familia_id', p.familiaId);
-    const { data: ccData } = await supabase.from('centro_custo_projeto').select('id, nome').eq('familia_id', p.familiaId);
-
-    let arvore = "";
-    if (ccData && catData) {
-      for(const cc of ccData) {
-        const catsDoCC = catData.filter(c => c.centro_custo_id === cc.id);
-        let tags = [];
-        for(const cat of catsDoCC) {
-          tags.push(cat.nome);
-          const subs = subData?.filter(s => s.categoria_id === cat.id) || [];
-          for(const sub of subs) tags.push(`${cat.nome} • ${sub.nome}`);
-        }
-        if(tags.length > 0) arvore += `[Centro de Custo: ${cc.nome}] -> Categorias permitidas: ${tags.join(', ')}\n`;
-      }
-    }
-    return arvore;
-}
 
 async function obterRegraCartaoSessao(p: Pessoa) {
     const { data: sessao } = await supabase.from('sessao_bot').select('cartao_principal_id').eq('chat_id', p.chatId).single();
@@ -790,19 +823,19 @@ async function obterRegraCartaoSessao(p: Pessoa) {
 async function executarTarefaIA(p: Pessoa) {
   const chatId = p.chatId;
   try {
-    const arvoreCategorias = await montarArvoreCategorias(p);
+    const opcoes = await montarOpcoes(p);
     const { data: stagingData } = await supabase.from('open_finance_staging').select('*').eq('chat_id', chatId).order('data').order('id');
     if (!stagingData || stagingData.length === 0) return;
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${GEMINI_API_KEY}`;
     const listaCompras = stagingData.map(tx => `ID: ${tx.id} | Descrição: ${tx.descricao}`).join('\n');
 
-    const prompt = `Você é um assistente financeiro. Aqui está a árvore OBRIGATÓRIA. Cada Centro de Custo possui categorias exclusivas:
-${arvoreCategorias}
-REGRA DE OURO: NUNCA atribua uma Categoria a um Centro de Custo diferente do mapeado. Se não houver categoria clara, pode deixar null.
+    const prompt = `Você é um assistente financeiro. Estas são as ÚNICAS opções válidas, cada uma com um código:
+${opcoes.texto}
+Para cada transação escolha UM código: "K.." (categoria, já inclui o centro de custo) ou "C.." (só o centro de custo, quando não houver categoria clara). Se nada servir, use null. Nunca invente nomes.
 PAGAMENTO DE FATURA COM OUTRO CARTÃO: linha que é o pagamento da fatura de outro cartão (ex.: "PAG FATURA", "PAGAMENTO CARTAO", "PAGUE COM CARTAO", "QUITACAO FATURA") vai para a categoria/centro que tiver "Giro" no nome. Os juros ou a tarifa desse pagamento vão para a categoria de empréstimos/juros.
 Transações:\n${listaCompras}\n
-Responda APENAS em JSON: [{"id": "id-da-tx", "categoria": "Cat • Sub", "centro_custo": "Nome CC"}]`;
+Responda APENAS em JSON: [{"id": "id-da-tx", "opcao": "K12"}]`;
 
     const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }) });
     if (response.ok) {
@@ -811,10 +844,7 @@ Responda APENAS em JSON: [{"id": "id-da-tx", "categoria": "Cat • Sub", "centro
 
         for (const tx of stagingData) {
           const match = resultadosIA.find((r: any) => r.id === tx.id);
-          await supabase.from('open_finance_staging').update({
-            sugestao_ia: match && match.categoria !== "null" ? match.categoria : "Sem Categoria",
-            sugestao_cc: match && match.centro_custo !== "null" ? match.centro_custo : "Pendente"
-          }).eq('id', tx.id);
+          await supabase.from('open_finance_staging').update(escolhaDaIA(match, opcoes, { ia: 'Sem Categoria', cc: 'Pendente' })).eq('id', tx.id);
         }
     }
     await exibirResumo(p);
@@ -827,7 +857,7 @@ Responda APENAS em JSON: [{"id": "id-da-tx", "categoria": "Cat • Sub", "centro
 async function processarEdicaoTexto(p: Pessoa, textoUsuario: string) {
     const chatId = p.chatId;
     try {
-        const arvoreCategorias = await montarArvoreCategorias(p);
+        const opcoes = await montarOpcoes(p);
         const regraCartao = await obterRegraCartaoSessao(p);
         const { data: stagingData } = await supabase.from('open_finance_staging').select('*').eq('chat_id', chatId).order('data').order('id');
         if (!stagingData || stagingData.length === 0) return;
@@ -839,8 +869,8 @@ async function processarEdicaoTexto(p: Pessoa, textoUsuario: string) {
 
         const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${GEMINI_API_KEY}`;
         const prompt = `Você é um robô de banco de dados financeiro. Converta o texto do usuário em JSON.
-Árvore Válida:
-${arvoreCategorias}
+Opções válidas de categoria / centro de custo (cada uma com um código):
+${opcoes.texto}
 
 Estado atual da triagem:
 ${contextoTriagem}
@@ -852,7 +882,7 @@ DIRETRIZES:
 2. Mapeie rigorosamente para o "ID_INTERNO".
 3. Se pedir para "cancelar" ou "apagar", a ação é "EXCLUIR".
 4. Se pedir para PARCELAR (ex: parcela em 5x), a ação é "ATUALIZAR" (ou "DIVIDIR" se houve rateio junto), e você deve incluir a chave "parcelas_totais" com o número de parcelas.
-5. "Sem categoria" = "nova_categoria": "Sem Categoria".
+5. CATEGORIA E CENTRO DE CUSTO: o usuário escreve do jeito dele, abreviado ou sem acento (ex.: "é giro", "mercado", "cc familiar", "juros"). Ache a opção mais parecida na lista e devolva o CÓDIGO: "opcao": "K.." para categoria (já inclui o centro de custo) ou "cc": "C.." quando ele só falar do centro de custo. Nunca escreva nomes. "Sem categoria" = "opcao": null e "cc" com o centro atual.
 6. MATEMÁTICA DA "valor_atualizado":
    - Se for cartão com REGRA: ${regraCartao}, e pedir pra parcelar, e a regra for VALOR_TOTAL, divida o valor original pelo número de parcelas.
    - Se pedir DIVISÃO percentual, aplique a porcentagem com base no valor ajustado.
@@ -861,9 +891,10 @@ FORMATO EXATO DE SAÍDA:
 {
   "operacoes": [
     { "id_original": "id", "acao": "EXCLUIR" },
-    { "id_original": "id", "acao": "ATUALIZAR", "nova_categoria": "...", "novo_cc": "...", "parcelas_totais": 5, "valor_atualizado": 10.50 },
+    { "id_original": "id", "acao": "ATUALIZAR", "opcao": "K12", "parcelas_totais": 5, "valor_atualizado": 10.50 },
+    { "id_original": "id", "acao": "ATUALIZAR", "cc": "C3" },
     { "id_original": "id", "acao": "DIVIDIR", "fracoes": [
-        { "valor_atualizado": 4.50, "nova_categoria": "...", "novo_cc": "...", "parcelas_totais": 2 }
+        { "valor_atualizado": 4.50, "opcao": "K7", "parcelas_totais": 2 }
     ] }
   ]
 }`;
@@ -898,8 +929,7 @@ FORMATO EXATO DE SAÍDA:
                         const { error } = await supabase.from('open_finance_staging').update({
                             descricao: finalDesc,
                             valor: txOrig.valor < 0 ? -val : val,
-                            sugestao_ia: op.nova_categoria || txOrig.sugestao_ia,
-                            sugestao_cc: op.novo_cc || txOrig.sugestao_cc
+                            ...escolhaDaIA(op, opcoes, { ia: txOrig.sugestao_ia, cc: txOrig.sugestao_cc })
                         }).eq('id', txOrig.id);
                         if (!error) alterado = true; else falhas++;
                     }
@@ -921,8 +951,7 @@ FORMATO EXATO DE SAÍDA:
 
                             payload.descricao = finalDesc;
                             payload.valor = txOrig.valor < 0 ? -val : val;
-                            payload.sugestao_ia = f.nova_categoria || txOrig.sugestao_ia;
-                            payload.sugestao_cc = f.novo_cc || txOrig.sugestao_cc;
+                            Object.assign(payload, escolhaDaIA(f, opcoes, { ia: txOrig.sugestao_ia, cc: txOrig.sugestao_cc }));
                             payload.pluggy_transaction_id = `${txOrig.pluggy_transaction_id}_s${part}_${Date.now()}`;
                             novasLinhas.push(payload);
                         }
@@ -961,7 +990,7 @@ async function obterTextoResumo(p: Pessoa) {
   if (!stagingData || stagingData.length === 0) return null;
 
   const [{ data: cats }, { data: subs }, { data: ccs }] = await Promise.all([
-    supabase.from('categoria_pessoal').select('id, nome').eq('familia_id', p.familiaId),
+    supabase.from('categoria_pessoal').select('id, nome, centro_custo_id').eq('familia_id', p.familiaId),
     supabase.from('subcategoria_pessoal').select('id, nome, categoria_id').eq('familia_id', p.familiaId),
     supabase.from('centro_custo_projeto').select('id, nome').eq('familia_id', p.familiaId),
   ]);
@@ -972,7 +1001,8 @@ async function obterTextoResumo(p: Pessoa) {
     const tx = stagingData[i];
     // Troca o texto pelo nome oficial do app (e grava a troca na triagem).
     const rc = resolverCategoria(tx.sugestao_ia, cats, subs);
-    const cc = acharPorNome(ccs, tx.sugestao_cc);
+    // Sem centro de custo reconhecido? Usa o da categoria (cada categoria pertence a um centro).
+    const cc = acharPorNome(ccs, tx.sugestao_cc) || (rc.cat ? (ccs || []).find((x: any) => x.id === rc.cat.centro_custo_id) || null : null);
     const catOficial = rc.cat ? rc.cat.nome + (rc.sub ? ` • ${rc.sub.nome}` : '') : (rc.vazio ? 'Sem Categoria' : null);
     const mudar: any = {};
     if (catOficial && catOficial !== tx.sugestao_ia) mudar.sugestao_ia = tx.sugestao_ia = catOficial;
@@ -1010,7 +1040,7 @@ async function executarTarefaGravacao(p: Pessoa, mesFaturaEscolhida: string | nu
     const { data: stagingData } = await supabase.from('open_finance_staging').select('*').eq('chat_id', chatId).not('sugestao_ia', 'is', null);
     if (!stagingData || stagingData.length === 0) return;
 
-    const { data: catData } = await supabase.from('categoria_pessoal').select('id, nome').eq('familia_id', p.familiaId);
+    const { data: catData } = await supabase.from('categoria_pessoal').select('id, nome, centro_custo_id').eq('familia_id', p.familiaId);
     const { data: subData } = await supabase.from('subcategoria_pessoal').select('id, nome, categoria_id').eq('familia_id', p.familiaId);
     const { data: ccData } = await supabase.from('centro_custo_projeto').select('id, nome').eq('familia_id', p.familiaId);
     const { data: cartoesVinculados } = await supabase.from('cartao_vinculado').select('id, cartao_pessoal_id').eq('familia_id', p.familiaId);
@@ -1029,7 +1059,7 @@ async function executarTarefaGravacao(p: Pessoa, mesFaturaEscolhida: string | nu
       matchCat = rc.cat;
       matchSubId = rc.sub ? rc.sub.id : null;
 
-      const matchCC = acharPorNome(ccData, tx.sugestao_cc);
+      const matchCC = acharPorNome(ccData, tx.sugestao_cc) || (matchCat ? ccData?.find((x: any) => x.id === matchCat.centro_custo_id) || null : null);
 
       let cartaoPrincipalId = tx.cartao_principal_id || null;
       if (tx.cartao_vinculado_id) {
