@@ -5,18 +5,12 @@ import { Plus, Trash2, ArrowDown } from 'lucide-react';
 import { hojeLocal } from '@/lib/utils';
 import {
   db, buscarProgramas, buscarContas, buscarContatos, buscarMovimentos, situacaoDaConta, custoDaSaida,
-  milhasFmt, brl, milheiro, erroAmigavel, somaMeses, Conta, Programa,
+  milhasFmt, brl, milheiro, erroAmigavel, somaMeses, lerNumero, Conta, Programa,
 } from '@/lib/milhas';
 import { Campo, Pilulas, BotaoRoxo, Cartao, inputCls } from '@/components/milhas/ui';
 
 type Aba = 'COMPRA' | 'BONUS' | 'TRANSF' | 'USO' | 'EXPIROU' | 'AJUSTE';
-// Aceita "10.000", "350,50" e "350.50".
-const num = (v: string) => {
-  const t = String(v).trim();
-  if (t.includes(',')) return Number(t.replace(/\./g, '').replace(',', '.')) || 0;
-  if (/^\d+\.\d{1,2}$/.test(t)) return Number(t) || 0;
-  return Number(t.replace(/\./g, '')) || 0;
-};
+const num = lerNumero;
 
 export default function Lancar() {
   const qc = useQueryClient();

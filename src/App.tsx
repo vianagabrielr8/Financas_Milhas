@@ -17,6 +17,9 @@ import LancarMilhas from "./pages/milhas/Lancar";
 import EstoqueMilhas from "./pages/milhas/Estoque";
 import ContaHistorico from "./pages/milhas/ContaHistorico";
 import CadastrosMilhas from "./pages/milhas/Cadastros";
+import VendasMilhas from "./pages/milhas/Vendas";
+import ContasReceberPagar from "./pages/milhas/ContasReceberPagar";
+import LimitesCpf from "./pages/milhas/LimitesCpf";
 
 // IMPORTS FINANÇAS
 import FinancasDashboard from "./pages/financas/FinancasDashboard";
@@ -66,6 +69,9 @@ const AppLogado = () => {
         <Route path="/milhas/estoque" element={<SomenteAdmin><EstoqueMilhas /></SomenteAdmin>} />
         <Route path="/milhas/estoque/:id" element={<SomenteAdmin><ContaHistorico /></SomenteAdmin>} />
         <Route path="/milhas/cadastros" element={<SomenteAdmin><CadastrosMilhas /></SomenteAdmin>} />
+        <Route path="/milhas/vendas" element={<SomenteAdmin><VendasMilhas /></SomenteAdmin>} />
+        <Route path="/milhas/receber-pagar" element={<SomenteAdmin><ContasReceberPagar /></SomenteAdmin>} />
+        <Route path="/milhas/limites-cpf" element={<SomenteAdmin><LimitesCpf /></SomenteAdmin>} />
 
         <Route path="/financas" element={<FinancasDashboard />} />
         <Route path="/financas/contas" element={<SomenteAdmin><Contas /></SomenteAdmin>} />

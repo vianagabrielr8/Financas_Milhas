@@ -2,7 +2,7 @@ import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { 
   LayoutDashboard, Package, PlusCircle, DollarSign,
-  Wallet, UserCircle, LogOut, ChevronLeft, Menu, Target, CalendarDays, Tags, FolderTree, Landmark, Home, Send, MessageSquareWarning 
+  Wallet, UserCircle, ShieldCheck, LogOut, ChevronLeft, Menu, Target, CalendarDays, Tags, FolderTree, Landmark, Home, Send, MessageSquareWarning 
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useState, useEffect } from 'react';
@@ -71,6 +71,9 @@ export const Sidebar = ({ gaveta = false }: { gaveta?: boolean }) => {
       { icon: LayoutDashboard, label: 'Painel', path: '/milhas' },
       { icon: PlusCircle, label: 'Lançar', path: '/milhas/lancar' },
       { icon: Package, label: 'Estoque', path: '/milhas/estoque' },
+      { icon: DollarSign, label: 'Vendas', path: '/milhas/vendas' },
+      { icon: CalendarDays, label: 'A receber / a pagar', path: '/milhas/receber-pagar' },
+      { icon: ShieldCheck, label: 'Limites de CPF', path: '/milhas/limites-cpf' },
     ]},
     { group: "CADASTROS", items: [
       { icon: UserCircle, label: 'Programas, contas e clientes', path: '/milhas/cadastros' },
