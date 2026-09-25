@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { PlusCircle, Package, CalendarClock, DollarSign, ShieldCheck } from 'lucide-react';
-import { buscarProgramas, buscarContas, buscarMovimentos, buscarVendas, buscarParcelas, buscarPassageiros, situacaoDaConta, calcularLimites, lucroDaVenda, milhasFmt, brl, dataBR, somaDias } from '@/lib/milhas';
+import { buscarProgramas, buscarContas, buscarMovimentos, buscarVendas, buscarParcelas, buscarPassageiros, buscarBeneficiarios, buscarPassageirosCad, situacaoDaConta, calcularLimites, lucroDaVenda, milhasFmt, brl, dataBR, somaDias } from '@/lib/milhas';
 import { hojeLocal } from '@/lib/utils';
 import { Cartao, Indicador, Vazio } from '@/components/milhas/ui';
 
@@ -13,6 +13,8 @@ export default function Painel() {
   const vendas = useQuery({ queryKey: ['milhas_vendas'], queryFn: buscarVendas });
   const parcelas = useQuery({ queryKey: ['milhas_parcelas'], queryFn: buscarParcelas });
   const pax = useQuery({ queryKey: ['milhas_passageiros'], queryFn: buscarPassageiros });
+  const benef = useQuery({ queryKey: ['milhas_beneficiarios'], queryFn: buscarBeneficiarios });
+  const cadPax = useQuery({ queryKey: ['milhas_passageiros_cad'], queryFn: buscarPassageirosCad });
   const hoje = hojeLocal(), limite90 = somaDias(hoje, 90), mes = hoje.slice(0, 7);
 
   const vendasMes = (vendas.data || []).filter(v => v.data.startsWith(mes));
@@ -20,8 +22,8 @@ export default function Painel() {
   const aReceber = abertas.filter(p => p.tipo === 'RECEBER'), aPagar = abertas.filter(p => p.tipo === 'PAGAR');
   const soma = (l: any[]) => l.reduce((a, p) => a + Number(p.valor), 0);
   const atrasado = abertas.filter(p => p.tipo === 'RECEBER' && p.vencimento < hoje);
-  const limitesApertados = useMemo(() => calcularLimites(programas.data || [], (contas.data || []).filter(c => c.ativo), movs.data || [], pax.data || [], hoje)
-    .filter(l => l.usados / l.limite >= 0.8), [programas.data, contas.data, movs.data, pax.data, hoje]);
+  const limitesApertados = useMemo(() => calcularLimites(programas.data || [], (contas.data || []).filter(c => c.ativo), movs.data || [], pax.data || [], hoje, benef.data || [], cadPax.data || [])
+    .filter(l => l.usados / l.limite >= 0.8), [programas.data, contas.data, movs.data, pax.data, hoje, benef.data, cadPax.data]);
 
   const dados = useMemo(() => {
     const porConta = new Map<string, any[]>();

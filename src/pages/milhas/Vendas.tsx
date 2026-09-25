@@ -5,10 +5,12 @@ import { Plus, Trash2, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { cn, hojeLocal } from '@/lib/utils';
 import {
   db, buscarProgramas, buscarContas, buscarContatos, buscarMovimentos, buscarVendas, buscarParcelas, buscarPassageiros,
-  situacaoDaConta, custoDaSaida, calcularLimites, lucroDaVenda, lerNumero, soDigitos, milhasFmt, brl, dataBR, erroAmigavel, somaMeses,
+  buscarTitulares, buscarPassageirosCad, buscarBeneficiarios, obterConta, docFmt,
+  situacaoDaConta, custoDaSaida, calcularLimites, lucroDaVenda, lerNumero, milhasFmt, brl, dataBR, erroAmigavel, somaMeses,
   Venda,
 } from '@/lib/milhas';
 import { Campo, Pilulas, BotaoRoxo, Cartao, Indicador, Janela, Vazio, inputCls } from '@/components/milhas/ui';
+import { SeletorCarteira, Carteira, contaDe, EditorPassageiros, paxVazio, paxParaGravar, gravarPassageiros, PaxLinha } from '@/components/milhas/escolhas';
 
 export default function Vendas() {
   const qc = useQueryClient();
@@ -19,6 +21,9 @@ export default function Vendas() {
   const vendas = useQuery({ queryKey: ['milhas_vendas'], queryFn: buscarVendas });
   const parcelas = useQuery({ queryKey: ['milhas_parcelas'], queryFn: buscarParcelas });
   const pax = useQuery({ queryKey: ['milhas_passageiros'], queryFn: buscarPassageiros });
+  const titulares = useQuery({ queryKey: ['milhas_titulares'], queryFn: buscarTitulares });
+  const cadastroPax = useQuery({ queryKey: ['milhas_passageiros_cad'], queryFn: buscarPassageirosCad });
+  const beneficiarios = useQuery({ queryKey: ['milhas_beneficiarios'], queryFn: buscarBeneficiarios });
 
   const hoje = hojeLocal();
   const [mes, setMes] = useState(hoje.slice(0, 7));
@@ -35,7 +40,7 @@ export default function Vendas() {
   const lucroMes = doMes.reduce((a, v) => a + lucroDaVenda(v), 0);
   const aReceber = (parcelas.data || []).filter(p => p.tipo === 'RECEBER' && p.situacao === 'ABERTA').reduce((a, p) => a + Number(p.valor), 0);
 
-  const recarregar = () => ['milhas_vendas', 'milhas_parcelas', 'milhas_movimentos', 'milhas_passageiros', 'milhas_contatos'].forEach(k => qc.invalidateQueries({ queryKey: [k] }));
+  const recarregar = () => ['milhas_vendas', 'milhas_parcelas', 'milhas_movimentos', 'milhas_passageiros', 'milhas_passageiros_cad', 'milhas_contatos', 'milhas_contas'].forEach(k => qc.invalidateQueries({ queryKey: [k] }));
 
   return (
     <div className="space-y-4 max-w-4xl mx-auto text-zinc-100">
@@ -74,7 +79,8 @@ export default function Vendas() {
       )}
 
       <NovaVenda aberta={nova} onFechar={() => setNova(false)} onSalvo={() => { setNova(false); recarregar(); }}
-        contas={(contas.data || []).filter(c => c.ativo)} programas={programas.data || []} contatos={(contatos.data || []).filter(c => c.ativo && c.tipo !== 'FORNECEDOR')}
+        contas={contas.data || []} programas={(programas.data || []).filter(p => p.ativo)} titulares={(titulares.data || []).filter(t => t.ativo)}
+        cadastroPax={cadastroPax.data || []} beneficiarios={beneficiarios.data || []} contatos={(contatos.data || []).filter(c => c.ativo && c.tipo !== 'FORNECEDOR')}
         movs={movs.data || []} pax={pax.data || []} nomeConta={nomeConta} />
 
       <Janela titulo="Venda" aberta={!!aberta} onFechar={() => setAberta(null)}>
@@ -87,41 +93,51 @@ export default function Vendas() {
 }
 
 /* ------------------------------ Nova venda ------------------------------ */
-function NovaVenda({ aberta, onFechar, onSalvo, contas, programas, contatos, movs, pax, nomeConta }: any) {
+function NovaVenda({ aberta, onFechar, onSalvo, contas, programas, titulares, cadastroPax, beneficiarios, contatos, movs, pax }: any) {
   const hoje = hojeLocal();
-  const inicial = { conta: '', contato: '', novoCliente: '', data: hoje, milhas: '', modo: 'MILHEIRO', milheiro: '', total: '', taxaEm: 'NENHUMA', taxa: '', taxaMilhas: '', localizador: '', obs: '', parcelas: '1', venc1: hoje, jaRecebido: false };
+  const [cart, setCart] = useState<Carteira>({ titular: '', programa: '' });
+  const contaSel = contaDe(contas, cart);
+  const nomeCart = `${titulares.find((t: any) => t.id === cart.titular)?.nome || '?'} – ${programas.find((p: any) => p.id === cart.programa)?.nome || '?'}`;
+  const inicial = { contato: '', novoCliente: '', data: hoje, milhas: '', modo: 'MILHEIRO', milheiro: '', total: '', taxaEm: 'NENHUMA', taxa: '', taxaMilhas: '', localizador: '', obs: '', parcelas: '1', venc1: hoje, jaRecebido: false };
   const [f, setF] = useState<any>(inicial);
-  const [passageiros, setPassageiros] = useState([{ nome: '', cpf: '' }]);
+  const [passageiros, setPassageiros] = useState<PaxLinha[]>([paxVazio()]);
   const [salvando, setSalvando] = useState(false);
 
   const milhas = lerNumero(f.milhas);
   const total = f.modo === 'TOTAL' ? lerNumero(f.total) : Math.round(lerNumero(f.milheiro) * milhas / 10) / 100;
   const taxaDinheiro = f.taxaEm === 'DINHEIRO' ? lerNumero(f.taxa) : 0;
   const taxaMilhas = f.taxaEm === 'MILHAS' ? lerNumero(f.taxaMilhas) : 0;
-  const sit = useMemo(() => situacaoDaConta(movs.filter((m: any) => m.conta_id === f.conta)), [movs, f.conta]);
+  const sit = useMemo(() => situacaoDaConta(contaSel ? movs.filter((m: any) => m.conta_id === contaSel.id) : []), [movs, contaSel]);
   const custo = custoDaSaida(sit, milhas + taxaMilhas);
   const lucro = total - custo - taxaDinheiro;
 
   // Aviso de limite de CPF (quantos CPFs novos esta venda consome)
+  // Aviso de limite do programa (quantas vagas esta venda consome)
   const avisoLimite = useMemo(() => {
-    const lim = calcularLimites(programas, contas, movs, pax, hoje).find(l => l.conta.id === f.conta);
+    if (!contaSel) return null;
+    const lim = calcularLimites(programas, [contaSel], movs, pax, hoje, beneficiarios, cadastroPax)[0];
     if (!lim) return null;
-    const ja = new Set(lim.cpfs.map(c => c.cpf));
-    const titular = soDigitos(lim.conta.cpf || '');
-    const novos = new Set(passageiros.map(p => soDigitos(p.cpf)).filter(c => c && !ja.has(c) && c !== titular));
-    const depois = lim.usados + novos.size;
-    return { usados: lim.usados, depois, limite: lim.limite, estoura: depois > lim.limite };
-  }, [programas, contas, movs, pax, f.conta, passageiros, hoje]);
+    const lista = paxParaGravar(passageiros, cadastroPax);
+    const titular = (contaSel.cpf || '').replace(/\D/g, '');
+    const deTerceiros = lista.filter(p => p.cpf !== titular);
+    const ja = new Set(lim.itens.map(i => i.doc));
+    const novos = lim.unidade === 'passagens' ? deTerceiros.length
+      : lim.unidade === 'pessoas' ? new Set(deTerceiros.map(p => docFmt(p.documento_tipo, p.cpf)).filter(d => !ja.has(d))).size : 0;
+    const foraDaLista = lim.unidade === 'beneficiários' ? deTerceiros.filter(p => !ja.has(docFmt(p.documento_tipo, p.cpf))).map(p => p.nome) : [];
+    const depois = lim.usados + novos;
+    return { usados: lim.usados, depois, limite: lim.limite, unidade: lim.unidade, estoura: depois > lim.limite, foraDaLista };
+  }, [programas, contaSel, movs, pax, passageiros, hoje, beneficiarios, cadastroPax]);
 
   const salvar = async (e: React.FormEvent) => {
     e.preventDefault();
-    const lista = passageiros.map(p => ({ nome: p.nome.trim(), cpf: soDigitos(p.cpf) })).filter(p => p.nome && p.cpf);
+    const lista = paxParaGravar(passageiros, cadastroPax);
     if (milhas <= 0 || total <= 0) return toast.error('Informe as milhas e o valor da venda.');
     if (milhas + taxaMilhas > sit.saldo) return toast.error(`A conta só tem ${milhasFmt(sit.saldo)} milhas.`);
-    if (lista.length === 0) return toast.error('Informe pelo menos um passageiro (nome e CPF).');
+    if (lista.length === 0) return toast.error('Informe pelo menos um passageiro.');
     const n = Math.max(1, Number(f.parcelas) || 1);
     setSalvando(true);
     try {
+      const contaId = await obterConta(cart.titular, cart.programa, contas);
       let contatoId = f.contato || null;
       if (f.contato === 'NOVO') {
         const { data: c, error } = await db.from('milhas_contato').insert([{ nome: f.novoCliente.trim(), tipo: 'CLIENTE' }]).select('id').single();
@@ -129,22 +145,22 @@ function NovaVenda({ aberta, onFechar, onSalvo, contas, programas, contatos, mov
         contatoId = c.id;
       }
       const { data: venda, error: e1 } = await db.from('milhas_venda').insert([{
-        conta_id: f.conta, contato_id: contatoId, data: f.data, milhas, valor_total: total, taxa_dinheiro: taxaDinheiro, taxa_milhas: taxaMilhas,
+        conta_id: contaId, contato_id: contatoId, data: f.data, milhas, valor_total: total, taxa_dinheiro: taxaDinheiro, taxa_milhas: taxaMilhas,
         custo_milhas: custo, localizador: f.localizador.trim() || null, observacao: f.obs.trim() || null,
       }]).select('id').single();
       if (e1) throw e1;
       // Daqui em diante, se algo falhar, apaga a venda (apaga junto o movimento, os passageiros e as parcelas).
       try {
         const { data: mov, error: e2 } = await db.from('milhas_movimento').insert([{
-          conta_id: f.conta, tipo: 'VENDA', quantidade: milhas + taxaMilhas, custo, data: f.data, venda_id: venda.id, contato_id: contatoId,
+          conta_id: contaId, tipo: 'VENDA', quantidade: milhas + taxaMilhas, custo, data: f.data, venda_id: venda.id, contato_id: contatoId,
           observacao: f.localizador.trim() ? `Venda ${f.localizador.trim()}` : 'Venda',
         }]).select('id').single();
         if (e2) throw e2;
-        const { error: e3 } = await db.from('milhas_venda_passageiro').insert(lista.map(p => ({ ...p, movimento_id: mov.id })));
+        const { error: e3 } = await gravarPassageiros(mov.id, lista);
         if (e3) throw e3;
         const base = Math.floor((total / n) * 100) / 100;
         const { error: e4 } = await db.from('milhas_parcela').insert(Array.from({ length: n }, (_, i) => ({
-          tipo: 'RECEBER', venda_id: venda.id, contato_id: contatoId, descricao: `Venda ${milhasFmt(milhas)} milhas – ${nomeConta(f.conta)}`,
+          tipo: 'RECEBER', venda_id: venda.id, contato_id: contatoId, descricao: `Venda ${milhasFmt(milhas)} milhas – ${nomeCart}`,
           numero: i + 1, total: n, valor: i === n - 1 ? Math.round((total - base * (n - 1)) * 100) / 100 : base,
           vencimento: somaMeses(f.venc1, i), situacao: f.jaRecebido && n === 1 ? 'PAGA' : 'ABERTA', pago_em: f.jaRecebido && n === 1 ? f.data : null,
         })));
@@ -154,7 +170,7 @@ function NovaVenda({ aberta, onFechar, onSalvo, contas, programas, contatos, mov
         throw err;
       }
       toast.success(`Venda gravada. Lucro ${brl(lucro)}.`);
-      setF(inicial); setPassageiros([{ nome: '', cpf: '' }]);
+      setF(inicial); setPassageiros([paxVazio()]);
       onSalvo();
     } catch (err) {
       toast.error('Não gravei: ' + erroAmigavel(err));
@@ -164,12 +180,8 @@ function NovaVenda({ aberta, onFechar, onSalvo, contas, programas, contatos, mov
   return (
     <Janela titulo="Nova venda" aberta={aberta} onFechar={onFechar}>
       <form onSubmit={salvar} className="space-y-4">
-        <Campo rotulo="Conta que emite" dica={f.conta ? `Saldo ${milhasFmt(sit.saldo)} · milheiro ${brl(sit.milheiro)}` : undefined}>
-          <select required className={inputCls} value={f.conta} onChange={e => setF({ ...f, conta: e.target.value })}>
-            <option value="" disabled>Escolha</option>
-            {contas.map((c: any) => <option key={c.id} value={c.id}>{nomeConta(c.id)}</option>)}
-          </select>
-        </Campo>
+        <SeletorCarteira valor={cart} onChange={setCart} titulares={titulares} programas={programas} contas={contas}
+          sit={(id: string) => situacaoDaConta(movs.filter((m: any) => m.conta_id === id))} rotulo="Titular e programa que emitem" soComSaldo />
         <Campo rotulo="Cliente">
           <select className={inputCls} value={f.contato} onChange={e => setF({ ...f, contato: e.target.value })}>
             <option value="">Sem cliente</option>
@@ -202,17 +214,12 @@ function NovaVenda({ aberta, onFechar, onSalvo, contas, programas, contatos, mov
         {f.taxaEm === 'MILHAS' && <Campo rotulo="Taxa (milhas)"><input inputMode="numeric" className={inputCls} value={f.taxaMilhas} onChange={e => setF({ ...f, taxaMilhas: e.target.value })} /></Campo>}
 
         <div className="space-y-2">
-          <span className="text-zinc-400 text-[11px] font-bold uppercase block">Passageiros</span>
-          {passageiros.map((x, i) => (
-            <div key={i} className="flex gap-2">
-              <input className={inputCls} placeholder="Nome" value={x.nome} onChange={e => setPassageiros(passageiros.map((y, j) => j === i ? { ...y, nome: e.target.value } : y))} />
-              <input className={inputCls + ' max-w-[9.5rem]'} inputMode="numeric" placeholder="CPF" value={x.cpf} onChange={e => setPassageiros(passageiros.map((y, j) => j === i ? { ...y, cpf: e.target.value } : y))} />
-              {passageiros.length > 1 && <button type="button" onClick={() => setPassageiros(passageiros.filter((_, j) => j !== i))} className="p-2 text-zinc-500 hover:text-red-400 shrink-0"><Trash2 className="w-4 h-4" /></button>}
-            </div>
-          ))}
-          <button type="button" onClick={() => setPassageiros([...passageiros, { nome: '', cpf: '' }])} className="text-xs font-bold text-violet-300 flex items-center gap-1 py-1"><Plus className="w-3.5 h-3.5" /> Passageiro</button>
-          {avisoLimite && <p className={cn('text-[11px] flex items-center gap-1', avisoLimite.estoura ? 'text-red-400 font-bold' : 'text-zinc-500')}>
-            {avisoLimite.estoura && <AlertTriangle className="w-3.5 h-3.5" />} CPFs desta conta: {avisoLimite.depois} de {avisoLimite.limite}{avisoLimite.estoura ? ' — passa do limite do programa!' : ''}
+          <EditorPassageiros linhas={passageiros} onChange={setPassageiros} cadastro={cadastroPax} />
+          {avisoLimite && <p className={cn('text-[11px] flex items-center gap-1', avisoLimite.estoura || avisoLimite.foraDaLista.length ? 'text-red-400 font-bold' : 'text-zinc-500')}>
+            {(avisoLimite.estoura || avisoLimite.foraDaLista.length > 0) && <AlertTriangle className="w-3.5 h-3.5 shrink-0" />}
+            {avisoLimite.unidade === 'beneficiários'
+              ? (avisoLimite.foraDaLista.length ? `Fora da lista de beneficiários: ${avisoLimite.foraDaLista.join(', ')}. Inclua em Limites antes de emitir.` : `Lista de beneficiários: ${avisoLimite.usados} de ${avisoLimite.limite}`)
+              : `${avisoLimite.unidade === 'passagens' ? 'Passagens p/ terceiros (12 meses)' : 'Pessoas no ano'}: ${avisoLimite.depois} de ${avisoLimite.limite}${avisoLimite.estoura ? ' — passa do limite do programa!' : ''}`}
           </p>}
         </div>
 
@@ -226,7 +233,7 @@ function NovaVenda({ aberta, onFechar, onSalvo, contas, programas, contatos, mov
           <Campo rotulo="Observação"><input className={inputCls} value={f.obs} onChange={e => setF({ ...f, obs: e.target.value })} /></Campo>
         </div>
 
-        {f.conta && milhas > 0 && (
+        {contaSel && milhas > 0 && (
           <div className="bg-violet-500/10 border border-violet-500/20 rounded-xl p-3 space-y-1 text-xs">
             <div className="flex justify-between"><span className="text-zinc-400">Cliente paga</span><b>{brl(total)}</b></div>
             <div className="flex justify-between"><span className="text-zinc-400">Custo das milhas ({milhasFmt(milhas + taxaMilhas)})</span><b>− {brl(custo)}</b></div>
@@ -267,7 +274,7 @@ function DetalheVenda({ venda, parcelas, passageiros, nomeConta, nomeContato, on
       <p className="text-xs text-zinc-400">{milhasFmt(venda.milhas)} milhas{venda.taxa_milhas > 0 ? ` + ${milhasFmt(venda.taxa_milhas)} de taxa` : ''}{venda.observacao ? ` · ${venda.observacao}` : ''}</p>
       {passageiros.length > 0 && <div>
         <p className="text-[11px] font-bold uppercase text-zinc-400 mb-1">Passageiros</p>
-        {passageiros.map((p: any) => <p key={p.id} className="text-xs text-zinc-300">{p.nome} · CPF {p.cpf}</p>)}
+        {passageiros.map((p: any) => <p key={p.id} className="text-xs text-zinc-300">{p.nome} · {docFmt(p.documento_tipo, p.cpf)}</p>)}
       </div>}
       <div>
         <p className="text-[11px] font-bold uppercase text-zinc-400 mb-1">Recebimento</p>

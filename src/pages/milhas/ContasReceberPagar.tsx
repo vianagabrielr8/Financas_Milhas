@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { CheckCircle2 } from 'lucide-react';
@@ -18,7 +19,8 @@ export default function ContasReceberPagar() {
   const nomeContato = (id: string | null) => (id && contatos.data?.find(c => c.id === id)?.nome) || '';
 
   const grupos = useMemo(() => {
-    const doTipo = (parcelas.data || []).filter(p => p.tipo === aba);
+    // O que foi pago no cartão aparece em Milhas → Cartões (a fatura é paga em Finanças).
+    const doTipo = (parcelas.data || []).filter(p => p.tipo === aba && !p.cartao_id);
     const abertas = doTipo.filter(p => p.situacao === 'ABERTA');
     return {
       atrasadas: abertas.filter(p => p.vencimento < hoje),
@@ -62,6 +64,7 @@ export default function ContasReceberPagar() {
   return (
     <div className="space-y-4 max-w-3xl mx-auto text-zinc-100">
       <Pilulas<Aba> valor={aba} onChange={setAba} opcoes={[['RECEBER', 'A receber'], ['PAGAR', 'A pagar']]} />
+      {aba === 'PAGAR' && <p className="text-[11px] text-zinc-500">Compras e clubes pagos no cartão ficam em <Link to="/milhas/cartoes" className="text-violet-300 underline">Cartões</Link>.</p>}
       <div className="grid grid-cols-3 gap-2">
         <Indicador titulo="Atrasado" valor={brl(soma(grupos.atrasadas))} />
         <Indicador titulo="Este mês" valor={brl(soma(grupos.mes))} destaque />

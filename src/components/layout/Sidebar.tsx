@@ -2,7 +2,7 @@ import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { 
   LayoutDashboard, Package, PlusCircle, DollarSign,
-  Wallet, UserCircle, ShieldCheck, LogOut, ChevronLeft, Menu, Target, CalendarDays, Tags, FolderTree, Landmark, Home, Send, MessageSquareWarning 
+  Wallet, UserCircle, ShieldCheck, Plane, Users, Contact, Repeat, LogOut, ChevronLeft, Menu, Target, CalendarDays, Tags, FolderTree, Landmark, Home, Send, MessageSquareWarning 
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useState, useEffect } from 'react';
@@ -70,10 +70,15 @@ export const Sidebar = ({ gaveta = false }: { gaveta?: boolean }) => {
       { icon: Package, label: 'Estoque', path: '/milhas/estoque' },
       { icon: DollarSign, label: 'Vendas', path: '/milhas/vendas' },
       { icon: CalendarDays, label: 'A receber / a pagar', path: '/milhas/receber-pagar' },
-      { icon: ShieldCheck, label: 'Limites de CPF', path: '/milhas/limites-cpf' },
+      { icon: Wallet, label: 'Cartões', path: '/milhas/cartoes' },
+      { icon: ShieldCheck, label: 'Limites', path: '/milhas/limites-cpf' },
     ]},
     { group: "CADASTROS", items: [
-      { icon: UserCircle, label: 'Programas, contas e clientes', path: '/milhas/cadastros' },
+      { icon: UserCircle, label: 'Titulares', path: '/milhas/titulares' },
+      { icon: Plane, label: 'Programas', path: '/milhas/programas' },
+      { icon: Users, label: 'Passageiros', path: '/milhas/passageiros' },
+      { icon: Contact, label: 'Clientes e fornecedores', path: '/milhas/clientes' },
+      { icon: Repeat, label: 'Clubes', path: '/milhas/clubes' },
     ]},
   ];
 

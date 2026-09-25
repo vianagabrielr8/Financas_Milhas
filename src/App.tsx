@@ -16,7 +16,12 @@ import PainelMilhas from "./pages/milhas/Painel";
 import LancarMilhas from "./pages/milhas/Lancar";
 import EstoqueMilhas from "./pages/milhas/Estoque";
 import ContaHistorico from "./pages/milhas/ContaHistorico";
-import CadastrosMilhas from "./pages/milhas/Cadastros";
+import TitularesMilhas from "./pages/milhas/Titulares";
+import ProgramasMilhas from "./pages/milhas/Programas";
+import PassageirosMilhas from "./pages/milhas/Passageiros";
+import ContatosMilhas from "./pages/milhas/Contatos";
+import ClubesMilhas from "./pages/milhas/Clubes";
+import CartoesMilhas from "./pages/milhas/CartoesMilhas";
 import VendasMilhas from "./pages/milhas/Vendas";
 import ContasReceberPagar from "./pages/milhas/ContasReceberPagar";
 import LimitesCpf from "./pages/milhas/LimitesCpf";
@@ -68,7 +73,13 @@ const AppLogado = () => {
         <Route path="/milhas/lancar" element={<SomenteAdmin><LancarMilhas /></SomenteAdmin>} />
         <Route path="/milhas/estoque" element={<SomenteAdmin><EstoqueMilhas /></SomenteAdmin>} />
         <Route path="/milhas/estoque/:id" element={<SomenteAdmin><ContaHistorico /></SomenteAdmin>} />
-        <Route path="/milhas/cadastros" element={<SomenteAdmin><CadastrosMilhas /></SomenteAdmin>} />
+        <Route path="/milhas/cadastros" element={<Navigate to="/milhas/titulares" replace />} />
+        <Route path="/milhas/titulares" element={<SomenteAdmin><TitularesMilhas /></SomenteAdmin>} />
+        <Route path="/milhas/programas" element={<SomenteAdmin><ProgramasMilhas /></SomenteAdmin>} />
+        <Route path="/milhas/passageiros" element={<SomenteAdmin><PassageirosMilhas /></SomenteAdmin>} />
+        <Route path="/milhas/clientes" element={<SomenteAdmin><ContatosMilhas /></SomenteAdmin>} />
+        <Route path="/milhas/clubes" element={<SomenteAdmin><ClubesMilhas /></SomenteAdmin>} />
+        <Route path="/milhas/cartoes" element={<SomenteAdmin><CartoesMilhas /></SomenteAdmin>} />
         <Route path="/milhas/vendas" element={<SomenteAdmin><VendasMilhas /></SomenteAdmin>} />
         <Route path="/milhas/receber-pagar" element={<SomenteAdmin><ContasReceberPagar /></SomenteAdmin>} />
         <Route path="/milhas/limites-cpf" element={<SomenteAdmin><LimitesCpf /></SomenteAdmin>} />
