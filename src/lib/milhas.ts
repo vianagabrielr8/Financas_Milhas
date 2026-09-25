@@ -61,7 +61,7 @@ export type Contato = { id: string; nome: string; tipo: 'CLIENTE' | 'FORNECEDOR'
 export type Movimento = {
   id: string; conta_id: string; tipo: string; quantidade: number; custo: number; data: string; validade: string | null;
   forma_pagamento: string | null; transferencia_id: string | null; venda_id: string | null; contato_id: string | null; observacao: string | null;
-  clube_id?: string | null;
+  clube_id?: string | null; confirmado_em?: string | null;
 };
 
 export const buscarProgramas = async (): Promise<Programa[]> => {

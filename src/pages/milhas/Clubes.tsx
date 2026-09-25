@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Plus, Trash2, Ban, CalendarPlus } from 'lucide-react';
+import { Plus, Trash2, Ban, CalendarPlus, CheckCircle2, AlertCircle } from 'lucide-react';
 import { hojeLocal } from '@/lib/utils';
 import {
   db, buscarClubes, buscarTitulares, buscarProgramas, buscarContas, buscarCartoesFinancas, buscarMovimentos, buscarParcelas,
@@ -78,7 +78,13 @@ export default function Clubes() {
     const totalPagar = ps.reduce((a, p) => a + Number(p.valor), 0);
     const proximo = creditos.filter(m => m.data > hoje).map(m => m.data).sort()[0];
     const ultimoCredito = creditos.map(m => m.data).sort().at(-1);
-    return { c, recebidos, programados, pago, totalPagar, proximo, ultimoCredito, milheiroFinal: milheiro(totalPagar, programados) };
+    // conferidos pelo extrato (bot) x só programados pelo app, entre os que já deviam ter chegado
+    const vencidos = creditos.filter(m => m.data <= hoje);
+    const confirmados = vencidos.filter(m => m.confirmado_em).length;
+    const semConferir = vencidos.filter(m => !m.confirmado_em).map(m => m.data).sort();
+    // meses gerados = créditos do tipo principal (o bônus pode ter caído noutro dia)
+    const mesesGerados = creditos.filter(m => m.tipo === (c.pontos_mes > 0 ? 'CLUBE' : 'CLUBE_BONUS')).length;
+    return { c, recebidos, programados, pago, totalPagar, proximo, ultimoCredito, confirmados, semConferir, mesesGerados, milheiroFinal: milheiro(totalPagar, programados) };
   }), [clubes.data, movs.data, parcelas.data, hoje]);
 
   const cancelar = async (c: Clube) => {
@@ -107,8 +113,7 @@ export default function Clubes() {
         <p className="text-sm text-zinc-400 flex-1">Assinaturas que creditam milhas todo mês. O app programa os créditos e as parcelas e calcula o milheiro final.</p>
         <BotaoRoxo onClick={() => setNovo(true)} className="h-10 text-sm shrink-0"><Plus className="w-4 h-4" /> Novo</BotaoRoxo>
       </div>
-      {resumo.length === 0 ? <Vazio>Nenhum clube cadastrado.</Vazio> : resumo.map(({ c, recebidos, programados, pago, totalPagar, proximo, milheiroFinal }) => {
-        const mesesGerados = new Set((movs.data || []).filter(m => m.clube_id === c.id).map(m => m.data)).size;
+      {resumo.length === 0 ? <Vazio>Nenhum clube cadastrado.</Vazio> : resumo.map(({ c, recebidos, programados, pago, totalPagar, proximo, confirmados, semConferir, mesesGerados, milheiroFinal }) => {
         return (
           <Cartao key={c.id} className={c.ativo ? '' : 'opacity-60'}>
             <div className="flex items-start gap-2">
@@ -130,6 +135,13 @@ export default function Clubes() {
               <Indicador titulo="Milheiro final" valor={brl(milheiroFinal)} destaque />
               <Indicador titulo="Próximo crédito" valor={proximo ? dataBR(proximo) : '—'} />
             </div>
+            {(confirmados > 0 || semConferir.length > 0) && (
+              <p className="text-[11px] mt-2 flex items-start gap-1.5">
+                {semConferir.length === 0
+                  ? <span className="text-emerald-400 flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5" /> Todos os créditos até hoje conferidos pelo extrato.</span>
+                  : <span className="text-amber-300 flex items-start gap-1"><AlertCircle className="w-3.5 h-3.5 shrink-0" /> {confirmados} crédito(s) conferido(s) pelo extrato; {semConferir.length} ainda sem conferir (desde {dataBR(semConferir[0])}). Mande o print do extrato no bot (✈️ Milhas por Print) para confirmar.</span>}
+              </p>
+            )}
           </Cartao>
         );
       })}

@@ -159,7 +159,7 @@ export default function ListaMovimentos({ contaId }: { contaId?: string }) {
             return (
               <div key={m.id} className={cn('flex items-center gap-2 px-4 py-3', futuro && 'opacity-60')}>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold">{NOME_TIPO[m.tipo] || m.tipo}{futuro && <span className="text-[10px] text-violet-300 font-bold"> · PROGRAMADO</span>}</p>
+                  <p className="text-sm font-semibold">{NOME_TIPO[m.tipo] || m.tipo}{futuro && <span className="text-[10px] text-violet-300 font-bold"> · PROGRAMADO</span>}{m.clube_id && m.confirmado_em && <span className="text-[10px] text-emerald-400 font-bold"> · CONFERIDO NO EXTRATO</span>}</p>
                   <p className="text-[11px] text-zinc-500 truncate">
                     {dataBR(m.data)}{!contaId && ` · ${nomeConta(m.conta_id)}`}{Number(m.custo) > 0 && ` · ${brl(m.custo)} (${brl(milheiro(Number(m.custo), Number(m.quantidade)))}/mil)`}
                     {m.validade && ` · vence ${dataBR(m.validade)}`}{nomeContato(m.contato_id) && ` · ${nomeContato(m.contato_id)}`}{m.observacao && ` · ${m.observacao}`}
