@@ -2,10 +2,11 @@ import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import CardGame from '@/components/metas/CardGame';
+import { SeletorMes, SeletorCentros, Segmentos } from '@/components/financas/FiltrosDashboard';
 import {
-  Landmark, ArrowUpCircle, ArrowDownCircle, Calendar, Layers, BarChart3, AlertTriangle, Wallet,
+  Landmark, ArrowUpCircle, ArrowDownCircle, Calendar, BarChart3, AlertTriangle, Wallet,
   PiggyBank, Percent, CreditCard, Users, Gauge, Lightbulb, ShieldCheck, ChevronDown, ChevronRight,
-  Flame, Info, TrendingUp, CalendarClock, Grid3X3, Eye,
+  Flame, Info, TrendingUp, CalendarClock, Grid3X3,
 } from 'lucide-react';
 
 /* =====================================================================================
@@ -47,7 +48,14 @@ const VERDE = '#10b981';
 const VERMELHO = '#ef4444';
 const AMARELO = '#f59e0b';
 const AZUL = '#3b82f6';
-const TODOS = 'Todos os centros';
+type Comparar = 'anterior' | 'media3' | 'media6' | 'ano';
+// meses usados como base em cada opção de comparação (-1 = mês anterior)
+const BASE_COMPARAR: Record<Comparar, number[]> = { anterior: [-1], media3: [-1, -2, -3], media6: [-1, -2, -3, -4, -5, -6], ano: [-12] };
+const ROTULO_COMPARAR: Record<Comparar, string> = { anterior: 'mês anterior', media3: 'média de 3 meses', media6: 'média de 6 meses', ano: 'mesmo mês do ano passado' };
+const CHAVE_CENTROS = 'dash_centros_escolhidos';
+const lerCentrosSalvos = (): string[] | null => {
+  try { const v = JSON.parse(localStorage.getItem(CHAVE_CENTROS) || 'null'); return Array.isArray(v) ? v : null; } catch { return null; }
+};
 
 /* ------------------------------- utilitários ------------------------------- */
 const semAcento = (s: string) => (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
@@ -231,15 +239,18 @@ export default function FinancasDashboard() {
   const chaveHoje = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}`;
 
   const [mesSel, setMesSel] = useState(chaveHoje);
-  const [filtroCentro, setFiltroCentro] = useState<string>(CONFIG.centroPrincipal);
-  const [visao, setVisao] = useState<'fatura' | 'compra'>('fatura');
-  const [comparar, setComparar] = useState<'media3' | 'anterior'>('media3');
+  // centros escolhidos (vazio = todos); fica salvo neste aparelho
+  const [centrosSel, setCentrosSelEstado] = useState<string[]>(() => lerCentrosSalvos() ?? [CONFIG.centroPrincipal]);
+  const setCentrosSel = (v: string[]) => { setCentrosSelEstado(v); try { localStorage.setItem(CHAVE_CENTROS, JSON.stringify(v)); } catch { /* sem armazenamento: só não lembra */ } };
+  const [comparar, setComparar] = useState<Comparar>('media3');
   const [catAberta, setCatAberta] = useState<string | null>(null);
 
   const mesesJanela = useMemo(
     () => Array.from({ length: CONFIG.mesesJanela }, (_, i) => somarMeses(mesSel, i - (CONFIG.mesesJanela - 1))),
     [mesSel],
   );
+  // busca 13 meses: o 13º (mais antigo) só serve para comparar com o mesmo mês do ano passado
+  const mesesBusca = useMemo(() => [somarMeses(mesSel, -CONFIG.mesesJanela), ...mesesJanela], [mesSel, mesesJanela]);
   const mesesFuturos = useMemo(() => Array.from({ length: CONFIG.mesesFuturos }, (_, i) => somarMeses(mesSel, i + 1)), [mesSel]);
 
   /* ------------------------------- buscas ------------------------------- */
@@ -264,11 +275,11 @@ export default function FinancasDashboard() {
 
   // 12 meses de uma vez: serve para o mês, as comparações, as médias e os gráficos
   const { data: transacoes = [], isLoading, error } = useQuery({
-    queryKey: ['dash_transacoes', mesesJanela[0], mesSel],
+    queryKey: ['dash_transacoes', mesesBusca[0], mesSel],
     queryFn: () => {
-      const ini = `${mesesJanela[0]}-01`;
+      const ini = `${mesesBusca[0]}-01`;
       const fim = `${mesSel}-${String(ultimoDia(mesSel)).padStart(2, '0')}`;
-      const faturas = mesesJanela.map((k) => `"${chaveParaFatura(k)}"`).join(',');
+      const faturas = mesesBusca.map((k) => `"${chaveParaFatura(k)}"`).join(',');
       return buscarPaginado(() =>
         db
           .from('transacao_pessoal')
@@ -294,6 +305,15 @@ export default function FinancasDashboard() {
       ),
   });
 
+  const nomesCentros = useMemo(() => centrosCusto.map((c: any) => String(c.nome)), [centrosCusto]);
+  const centrosValidos = useMemo(() => {
+    if (nomesCentros.length === 0) return centrosSel;
+    const v = centrosSel.filter((n) => nomesCentros.includes(n));
+    return v.length === centrosSel.length ? centrosSel : v.length ? v : [];
+  }, [centrosSel, nomesCentros]);
+  const todos = centrosValidos.length === 0;
+  const rotuloCentros = todos ? 'Todos os centros' : centrosValidos.length === 1 ? `Centro ${centrosValidos[0]}` : `Centros ${centrosValidos.join(', ')}`;
+
   const mapaNomes = useMemo(() => {
     const m = new Map<string, string>();
     [...categorias, ...subcategorias].forEach((c: any) => {
@@ -318,9 +338,10 @@ export default function FinancasDashboard() {
   const A = useMemo(() => {
     const nomeDe = (id: any) => (id != null && id !== '' ? mapaNomes.get(String(id)) ?? 'A Classificar' : 'A Classificar');
 
-    // em qual mês a transação cai, conforme a visão escolhida
+    // em qual mês a transação cai: compra no cartão conta no mês da FATURA
+    // (igual às telas Transações e Metas); o resto, no mês da data
     const chaveDaTx = (t: any): string | null => {
-      if (visao === 'fatura' && t.cartao_id) {
+      if (t.cartao_id) {
         const k = faturaParaChave(t.mes_fatura);
         if (k) return k;
       }
@@ -332,7 +353,7 @@ export default function FinancasDashboard() {
     // num centro só eles não fazem sentido (ex.: os juros ficam no centro Dívidas).
     const porMes: Record<string, Mes> = {};
     const geral: Record<string, Mes> = {};
-    mesesJanela.forEach((k) => { porMes[k] = novoMes(); geral[k] = novoMes(); });
+    mesesBusca.forEach((k) => { porMes[k] = novoMes(); geral[k] = novoMes(); });
     const acumular = (m: Mes, t: { cartao_id?: string | null; [campo: string]: unknown }, cat: string, entrada: boolean, estorno: boolean, val: number, foraConsumo: boolean) => {
       if (entrada) {
         if (!foraConsumo) m.receita += val;
@@ -393,8 +414,9 @@ export default function FinancasDashboard() {
       if (k === mesSel && centro === 'Sem Centro') q.semCentro++;
       acumular(geral[k], t, cat, entrada, estorno, val, ehTerceiros || ehReemb);
 
-      if (filtroCentro !== TODOS && centro !== filtroCentro) continue;
-      const foraConsumo = filtroCentro === TODOS && (ehTerceiros || ehReemb);
+      if (!todos && !centrosValidos.includes(centro)) continue;
+      // com "todos", Terceiros e Reembolsos ficam fora do gasto; se foram marcados de propósito, contam
+      const foraConsumo = todos && (ehTerceiros || ehReemb);
 
       // qualidade dos dados (mês selecionado)
       if (k === mesSel && !entrada) {
@@ -418,26 +440,24 @@ export default function FinancasDashboard() {
     const fam = geral[mesSel];
     // receitas ainda não são lançadas (pacote futuro): sem nenhuma em 12 meses, os cards de receita somem
     const temReceita = mesesJanela.some((k) => geral[k].receita > 0);
-    const famAnterior = temDados(geral[somarMeses(mesSel, -1)]) ? geral[somarMeses(mesSel, -1)] : null;
-    const fam3 = [1, 2, 3].map((i) => geral[somarMeses(mesSel, -i)]).filter(temDados);
-    const refFam = (f: (m: Mes) => number) =>
-      comparar === 'anterior' ? (famAnterior ? f(famAnterior) : null) : fam3.length ? fam3.reduce((s, m) => s + f(m), 0) / fam3.length : null;
+    // base de comparação: média dos meses da opção escolhida que têm dados
+    const baseDe = (fonte: Record<string, Mes>) => BASE_COMPARAR[comparar].map((i) => fonte[somarMeses(mesSel, i)]).filter(temDados);
+    const mediaDe = (ms: Mes[], f: (m: Mes) => number) => (ms.length ? ms.reduce((s, m) => s + f(m), 0) / ms.length : null);
+    const baseCentro = baseDe(porMes);
+    const baseFam = baseDe(geral);
+    const refFam = (f: (m: Mes) => number) => mediaDe(baseFam, f);
     const anteriorBruto = porMes[somarMeses(mesSel, -1)];
     const anterior = temDados(anteriorBruto) ? anteriorBruto : null;
     const ultimos3 = [1, 2, 3].map((i) => porMes[somarMeses(mesSel, -i)]).filter(temDados);
     const media = (f: (m: Mes) => number) => (ultimos3.length ? ultimos3.reduce((s, m) => s + f(m), 0) / ultimos3.length : null);
-    const ref = (f: (m: Mes) => number) => (comparar === 'anterior' ? (anterior ? f(anterior) : null) : media(f));
+    const ref = (f: (m: Mes) => number) => mediaDe(baseCentro, f);
 
     // projeção e ritmo (só faz sentido no mês corrente)
     const ehMesCorrente = mesSel === chaveHoje;
     const diasMes = ultimoDia(mesSel);
     const diaHoje = hoje.getDate();
     const naoCartao = atual.consumo - atual.cartao;
-    const projecao = ehMesCorrente
-      ? visao === 'compra'
-        ? (atual.consumo / diaHoje) * diasMes
-        : atual.cartao + (naoCartao / diaHoje) * diasMes
-      : atual.consumo;
+    const projecao = ehMesCorrente ? atual.cartao + (naoCartao / diaHoje) * diasMes : atual.consumo;
     const refConsumo = media((m) => m.consumo);
     const diasRestantes = ehMesCorrente ? diasMes - diaHoje + 1 : 0;
     const podePorDia = ehMesCorrente && refConsumo != null ? (refConsumo - atual.consumo) / diasRestantes : null;
@@ -451,7 +471,7 @@ export default function FinancasDashboard() {
         const valor = atual.porCat[nome] ?? 0;
         const ant = anterior?.porCat[nome] ?? 0;
         const med = ultimos3.length ? ultimos3.reduce((s, m) => s + (m.porCat[nome] ?? 0), 0) / ultimos3.length : null;
-        const base = comparar === 'anterior' ? (anterior ? ant : null) : med;
+        const base = mediaDe(baseCentro, (m) => m.porCat[nome] ?? 0);
         const serie = ult6.map((k) => porMes[k]?.porCat[nome] ?? 0);
         const anomalia = med != null && med > 0 && valor > med * (1 + CONFIG.anomaliaPct) && valor - med >= CONFIG.anomaliaMinimoReais;
         const novo = ultimos3.length > 0 && (med == null || med === 0) && valor >= CONFIG.anomaliaMinimoReais;
@@ -463,10 +483,10 @@ export default function FinancasDashboard() {
     // evolução e heatmap
     const evolucao = mesesJanela.map((k) => ({
       k,
-      receita: filtroCentro === TODOS && temReceita ? porMes[k].receita : 0,
+      receita: todos && temReceita ? porMes[k].receita : 0,
       consumo: porMes[k].consumo,
       investimento: porMes[k].investimento,
-      resultado: filtroCentro === TODOS && temReceita ? porMes[k].receita - porMes[k].consumo : -porMes[k].consumo,
+      resultado: todos && temReceita ? porMes[k].receita - porMes[k].consumo : -porMes[k].consumo,
     }));
     const totais12: Record<string, number> = {};
     mesesJanela.forEach((k) => Object.entries(porMes[k].porCat).forEach(([c, v]) => (totais12[c] = (totais12[c] ?? 0) + v)));
@@ -553,10 +573,10 @@ export default function FinancasDashboard() {
       ritmoIdeal, linhasCat, evolucao, heatCats, porCartao, cartaoDaVez, futurasPorMes, listaTerceiros, saldoTerceiros, reembolsos,
       saldoReembolsos, q, insights, temCampoSub, fam, temReceita, refFam,
     };
-  }, [transacoes, futuras, mapaNomes, mapaCartoes, visao, filtroCentro, comparar, mesSel, mesesJanela, mesesFuturos, chaveHoje, hoje]);
+  }, [transacoes, futuras, mapaNomes, mapaCartoes, todos, centrosValidos, comparar, mesSel, mesesJanela, mesesBusca, mesesFuturos, chaveHoje, hoje]);
 
   const { atual, fam } = A;
-  const rotuloComp = comparar === 'anterior' ? 'mês anterior' : 'média 3 meses';
+  const rotuloComp = ROTULO_COMPARAR[comparar];
   const resultado = fam.receita - fam.consumo;
   const taxaPoupanca = fam.receita > 0 ? resultado / fam.receita : null;
   const pesoDivida = fam.consumo > 0 ? fam.divida / fam.consumo : null;
@@ -570,54 +590,14 @@ export default function FinancasDashboard() {
   /* ------------------------------- tela ------------------------------- */
   return (
     <div className="space-y-4 md:space-y-6 max-w-[1600px] mx-auto text-zinc-100 animate-fade-in">
-      {/* CABEÇALHO + FILTROS */}
-      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-3 md:gap-4 bg-[#141417] p-3 md:p-4 rounded-xl border border-white/5 shadow-md">
-        <div>
-          <h1 className="hidden md:block text-2xl font-bold tracking-tight">Dashboard Financeira</h1>
-          <p className="text-zinc-400 text-xs mt-0.5">
-            {filtroCentro === TODOS ? 'Todos os centros de custo' : `Centro: ${filtroCentro}`} · {rotuloMesLongo(mesSel)}
-          </p>
-        </div>
-
-        <div className="grid grid-cols-2 gap-2 w-full md:flex md:flex-wrap md:items-center md:w-auto">
-          <div className="flex items-center bg-[#1a1a20] border border-gray-800 rounded-lg px-3 focus-within:border-[#10b981] transition-colors h-[42px] min-w-0">
-            <Calendar className="w-4 h-4 text-gray-400 mr-2 shrink-0" />
-            <input type="month" value={mesSel} onChange={(e) => e.target.value && setMesSel(e.target.value)} className="bg-transparent text-sm text-white focus:outline-none [color-scheme:dark] cursor-pointer min-w-0 w-full" />
-          </div>
-
-          <div className="flex items-center gap-2 bg-[#1a1a20] border border-gray-800 rounded-lg px-3 h-[42px] min-w-0">
-            <Layers className="w-4 h-4 text-gray-400" />
-            <select value={filtroCentro} onChange={(e) => setFiltroCentro(e.target.value)} className="bg-transparent text-xs font-semibold text-white focus:outline-none cursor-pointer max-w-[170px] truncate min-w-0 w-full">
-              <option value={TODOS} className="bg-[#1a1a20]">{TODOS}</option>
-              {centrosCusto.map((cc: any) => (
-                <option key={cc.id} value={cc.nome} className="bg-[#1a1a20]">{cc.nome}</option>
-              ))}
-            </select>
-          </div>
-
-          <div className="col-span-2 flex items-center bg-[#1a1a20] border border-gray-800 rounded-lg p-1 h-[42px] gap-1">
-            {(
-              [
-                ['fatura', 'Quando pagou'],
-                ['compra', 'Quando comprou'],
-              ] as const
-            ).map(([v, l]) => (
-              <button key={v} onClick={() => setVisao(v)} className={`flex-1 md:flex-none px-3 h-full rounded-md text-[11px] font-semibold transition-colors ${visao === v ? 'bg-[#10b981] text-black' : 'text-zinc-400 hover:text-white'}`}>
-                {l}
-              </button>
-            ))}
-            <span className="px-1">
-              <Dica texto='"Quando pagou": compra no cartão conta no mês da FATURA (igual à tela Transações). "Quando comprou": conta no mês em que você passou o cartão. Use "quando comprou" para saber se você está gastando mais; "quando pagou" para saber o que sai da conta.' />
-            </span>
-          </div>
-
-          <div className="col-span-2 flex items-center gap-2 bg-[#1a1a20] border border-gray-800 rounded-lg px-3 h-[42px]">
-            <Eye className="w-4 h-4 text-gray-400" />
-            <select value={comparar} onChange={(e) => setComparar(e.target.value as any)} className="bg-transparent text-xs font-semibold text-white focus:outline-none cursor-pointer">
-              <option value="media3" className="bg-[#1a1a20]">Comparar: média 3 meses</option>
-              <option value="anterior" className="bg-[#1a1a20]">Comparar: mês anterior</option>
-            </select>
-          </div>
+      {/* FILTROS */}
+      <div className="flex flex-col md:flex-row md:flex-wrap md:items-center gap-2 bg-[#141417] p-2 md:p-3 rounded-xl border border-white/5">
+        <SeletorMes valor={mesSel} onChange={setMesSel} hoje={chaveHoje} />
+        <SeletorCentros centros={nomesCentros} valor={centrosValidos} onChange={setCentrosSel} />
+        <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2 min-w-0 md:ml-auto">
+          <span className="text-[11px] text-zinc-500 shrink-0 flex items-center gap-1">Comparar com <Dica texto="Base usada nas setas ▲▼ dos cards e na coluna de variação das categorias. As médias só usam meses que têm lançamentos." /></span>
+          <Segmentos<Comparar> valor={comparar} onChange={setComparar}
+            opcoes={[['anterior', 'Mês anterior'], ['media3', 'Média 3m'], ['media6', 'Média 6m'], ['ano', 'Ano passado']]} largura />
         </div>
       </div>
 
@@ -632,7 +612,7 @@ export default function FinancasDashboard() {
       <CardGame />
 
       {/* KPIs DO CENTRO ESCOLHIDO */}
-      <p className="text-[11px] font-bold uppercase tracking-wider text-zinc-500 -mb-2 md:-mb-3">{filtroCentro === TODOS ? 'Todos os centros' : `Centro ${filtroCentro}`}</p>
+      <p className="text-[11px] font-bold uppercase tracking-wider text-zinc-500 -mb-2 md:-mb-3">{rotuloCentros}</p>
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-2 md:gap-4">
         <CardKpi titulo="Gasto do mês" valor={brl(atual.consumo)} corValor={VERMELHO} icone={ArrowDownCircle} corIcone={VERMELHO}
           dica="Tudo que foi gasto de verdade neste centro. NÃO entra aqui: dinheiro investido, compras feitas para Terceiros/Reembolsos, transferências entre suas contas e pagamento de fatura (a fatura é só o boleto das compras que já estão contadas).">
