@@ -5,7 +5,7 @@ import { Plus, Trash2, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { cn, hojeLocal } from '@/lib/utils';
 import {
   db, buscarProgramas, buscarContas, buscarContatos, buscarMovimentos, buscarVendas, buscarParcelas, buscarPassageiros,
-  buscarTitulares, buscarPassageirosCad, buscarBeneficiarios, obterConta, docFmt,
+  buscarTitulares, buscarPassageirosCad, buscarBeneficiarios, buscarCartoesFinancas, obterConta, docFmt, vencimentoNoCartao,
   situacaoDaConta, custoDaSaida, calcularLimites, lucroDaVenda, lerNumero, milhasFmt, brl, dataBR, erroAmigavel, somaMeses,
   Venda,
 } from '@/lib/milhas';
@@ -24,6 +24,7 @@ export default function Vendas() {
   const titulares = useQuery({ queryKey: ['milhas_titulares'], queryFn: buscarTitulares });
   const cadastroPax = useQuery({ queryKey: ['milhas_passageiros_cad'], queryFn: buscarPassageirosCad });
   const beneficiarios = useQuery({ queryKey: ['milhas_beneficiarios'], queryFn: buscarBeneficiarios });
+  const cartoes = useQuery({ queryKey: ['cartoes_financas'], queryFn: buscarCartoesFinancas });
 
   const hoje = hojeLocal();
   const [mes, setMes] = useState(hoje.slice(0, 7));
@@ -80,7 +81,7 @@ export default function Vendas() {
 
       <NovaVenda aberta={nova} onFechar={() => setNova(false)} onSalvo={() => { setNova(false); recarregar(); }}
         contas={contas.data || []} programas={(programas.data || []).filter(p => p.ativo)} titulares={(titulares.data || []).filter(t => t.ativo)}
-        cadastroPax={cadastroPax.data || []} beneficiarios={beneficiarios.data || []} contatos={(contatos.data || []).filter(c => c.ativo && c.tipo !== 'FORNECEDOR')}
+        cadastroPax={cadastroPax.data || []} cartoes={cartoes.data || []} beneficiarios={beneficiarios.data || []} contatos={(contatos.data || []).filter(c => c.ativo && c.tipo !== 'FORNECEDOR')}
         movs={movs.data || []} pax={pax.data || []} nomeConta={nomeConta} />
 
       <Janela titulo="Venda" aberta={!!aberta} onFechar={() => setAberta(null)}>
@@ -93,12 +94,12 @@ export default function Vendas() {
 }
 
 /* ------------------------------ Nova venda ------------------------------ */
-function NovaVenda({ aberta, onFechar, onSalvo, contas, programas, titulares, cadastroPax, beneficiarios, contatos, movs, pax }: any) {
+function NovaVenda({ aberta, onFechar, onSalvo, contas, programas, titulares, cadastroPax, cartoes, beneficiarios, contatos, movs, pax }: any) {
   const hoje = hojeLocal();
   const [cart, setCart] = useState<Carteira>({ titular: '', programa: '' });
   const contaSel = contaDe(contas, cart);
   const nomeCart = `${titulares.find((t: any) => t.id === cart.titular)?.nome || '?'} – ${programas.find((p: any) => p.id === cart.programa)?.nome || '?'}`;
-  const inicial = { contato: '', novoCliente: '', data: hoje, milhas: '', modo: 'MILHEIRO', milheiro: '', total: '', taxaEm: 'NENHUMA', taxa: '', taxaMilhas: '', localizador: '', obs: '', parcelas: '1', venc1: hoje, jaRecebido: false };
+  const inicial = { contato: '', novoCliente: '', data: hoje, milhas: '', modo: 'MILHEIRO', milheiro: '', total: '', taxaEm: 'NENHUMA', taxa: '', taxaMilhas: '', taxaForma: 'CARTAO', taxaCartao: '', taxaParcelas: '1', localizador: '', obs: '', parcelas: '1', venc1: hoje, jaRecebido: false };
   const [f, setF] = useState<any>(inicial);
   const [passageiros, setPassageiros] = useState<PaxLinha[]>([paxVazio()]);
   const [salvando, setSalvando] = useState(false);
@@ -165,6 +166,18 @@ function NovaVenda({ aberta, onFechar, onSalvo, contas, programas, titulares, ca
           vencimento: somaMeses(f.venc1, i), situacao: f.jaRecebido && n === 1 ? 'PAGA' : 'ABERTA', pago_em: f.jaRecebido && n === 1 ? f.data : null,
         })));
         if (e4) throw e4;
+        // Taxa de embarque paga em R$: no cartão vira parcelas a pagar ligadas ao cartão (tela Cartões);
+        // no Pix fica só como custo da venda.
+        if (taxaDinheiro > 0 && f.taxaForma === 'CARTAO' && f.taxaCartao) {
+          const nt = Math.max(1, Number(f.taxaParcelas) || 1), bt = Math.floor((taxaDinheiro / nt) * 100) / 100;
+          const cartaoTaxa = cartoes.find((c: any) => c.id === f.taxaCartao);
+          const { error: e5 } = await db.from('milhas_parcela').insert(Array.from({ length: nt }, (_, i) => ({
+            tipo: 'PAGAR', venda_id: venda.id, cartao_id: f.taxaCartao, descricao: `Taxa de embarque – venda ${f.localizador.trim() || nomeCart}`,
+            numero: i + 1, total: nt, valor: i === nt - 1 ? Math.round((taxaDinheiro - bt * (nt - 1)) * 100) / 100 : bt,
+            vencimento: vencimentoNoCartao(f.data, cartaoTaxa, i),
+          })));
+          if (e5) throw e5;
+        }
       } catch (err) {
         await db.from('milhas_venda').delete().eq('id', venda.id);
         throw err;
@@ -210,7 +223,20 @@ function NovaVenda({ aberta, onFechar, onSalvo, contas, programas, titulares, ca
             <option value="MILHAS">Paguei em milhas</option>
           </select>
         </Campo>
-        {f.taxaEm === 'DINHEIRO' && <Campo rotulo="Taxa (R$)"><input inputMode="decimal" className={inputCls} value={f.taxa} onChange={e => setF({ ...f, taxa: e.target.value })} /></Campo>}
+        {f.taxaEm === 'DINHEIRO' && <>
+          <div className="grid grid-cols-2 gap-3">
+            <Campo rotulo="Taxa (R$)"><input inputMode="decimal" className={inputCls} value={f.taxa} onChange={e => setF({ ...f, taxa: e.target.value })} /></Campo>
+            <Campo rotulo="Como pagou a taxa">
+              <select className={inputCls} value={f.taxaForma} onChange={e => setF({ ...f, taxaForma: e.target.value })}>
+                <option value="CARTAO">Cartão de crédito</option><option value="PIX">Pix / débito</option>
+              </select>
+            </Campo>
+          </div>
+          {f.taxaForma === 'CARTAO' && <div className="grid grid-cols-2 gap-3">
+            <Campo rotulo="Cartão da taxa" dica="Aparece em Milhas → Cartões."><select required className={inputCls} value={f.taxaCartao} onChange={e => setF({ ...f, taxaCartao: e.target.value })}><option value="" disabled>Escolha</option>{cartoes.map((c: any) => <option key={c.id} value={c.id}>{c.nome}</option>)}</select></Campo>
+            <Campo rotulo="Parcelas da taxa"><input type="number" min="1" max="12" className={inputCls} value={f.taxaParcelas} onChange={e => setF({ ...f, taxaParcelas: e.target.value })} /></Campo>
+          </div>}
+        </>}
         {f.taxaEm === 'MILHAS' && <Campo rotulo="Taxa (milhas)"><input inputMode="numeric" className={inputCls} value={f.taxaMilhas} onChange={e => setF({ ...f, taxaMilhas: e.target.value })} /></Campo>}
 
         <div className="space-y-2">
