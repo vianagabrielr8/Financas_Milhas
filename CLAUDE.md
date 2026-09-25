@@ -10,6 +10,11 @@ Edge Functions em produção:
 - `telegram-webhook`: o bot. O código está em `supabase/functions/`.
 - `cron-sync`: o código não está no repositório.
 - `pluggy-webhook`: integração Pluggy abandonada.
+
+Agendamento: o job `fechamento-jogo` do pg_cron (todo dia 03:10 UTC) chama o
+`telegram-webhook` com a tarefa `fechamento` e o cabeçalho `X-Fechamento-Secret`
+(senha no Secret `FECHAMENTO_SECRET` da função e no Vault como
+`fechamento_secret`). O que já foi fechado fica em `jogo_fechamento`.
 Um bot do Telegram também grava lançamentos no mesmo banco. Outra IA (Gemini)
 também edita este repositório — estas regras valem para todos.
 

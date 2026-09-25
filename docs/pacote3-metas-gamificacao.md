@@ -246,3 +246,14 @@ A meta do jogo é o **orçamento completo da casa**. A categoria Ingrid (R$ 2.80
 - **Frases sorteadas** em 3 faixas pela quinzena: 🟢 até 70% usado, 🟡 até 100%, 🔴 acima. No aviso, a frase muda a cada lançamento, então nunca repete duas vezes seguidas.
 - **Mês sem meta** (setembro/2026): o botão avisa que não tem meta e o aviso não é enviado.
 - **Ainda não faz:** avisar quando o dono lança ou muda algo **pelo app**, e o fechamento com "🏆 Você ganhou!". Isso é a etapa 4.
+
+## Etapa 4 feita: fechamento automático
+
+- **Quando:** o agendador do Supabase (pg_cron, job `fechamento-jogo`) chama o bot todo dia às 00h10. O bot fecha cada período que terminou há **2 dias** ou mais (folga para lançamentos atrasados) e há no máximo 17 dias (não manda mensagem velha).
+  - 🥉 1ª quinzena (1–15): fecha no dia 17; 2ª quinzena: fecha no dia 2 do mês seguinte.
+  - 🥈 Mês e 🥇 trimestre: fecham no dia 2 do mês seguinte.
+- **Resultado:** as mesmas contas do "📊 Como Estou?" e da tela Metas & Game, calculadas no último dia do período. Período sem meta não fecha.
+- **Prêmio:** se ganhou, o 1º desejo "Desejado" daquele nível vira **Conquistado** e fica ligado ao período (aparece no histórico de Metas & Game). Quando entregar, o dono marca "Entregue" no app.
+- **Mensagens:** a Ingrid (membro) recebe "🏆 Você ganhou!" ou uma mensagem acolhedora se passou; o dono (admin) recebe o resumo com o prêmio a entregar.
+- **Nunca repete:** cada período fechado fica em `jogo_fechamento` (uma linha por família, nível e período).
+- **Na mão:** o dono pode mandar `/fechamento` no bot para rodar na hora.
