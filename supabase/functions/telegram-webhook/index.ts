@@ -8,6 +8,8 @@ const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY');
 
 // TRAVA DE ACESSO: senha do webhook (Secret do Supabase)
 const WEBHOOK_SECRET = Deno.env.get('TELEGRAM_WEBHOOK_SECRET') ?? '';
+// Senha do agendador do fechamento do jogo (Secret FECHAMENTO_SECRET no Supabase)
+const FECHAMENTO_SECRET = Deno.env.get('FECHAMENTO_SECRET') ?? '';
 
 const supabase = createClient(SUPABASE_URL!, SUPABASE_KEY!);
 
@@ -478,6 +480,165 @@ async function responderComoEstou(pessoa: Pessoa) {
   await sendMessage(pessoa.chatId, textoComoEstou(p, pessoa.papel === 'membro', Math.floor(Math.random() * 1000)));
 }
 // === PLACAR FIM ===
+
+// ------------------------------------------------------------------
+// FECHAMENTO AUTOMÁTICO DO JOGO (Pacote 3, etapa 4)
+// O agendador do Supabase (pg_cron) chama o bot todo dia às 00h10 com a
+// tarefa "fechamento". Cada quinzena, mês ou trimestre que terminou há pelo
+// menos FECHAMENTO_FOLGA dias é fechado UMA vez: grava em jogo_fechamento,
+// marca o 1º desejo "DESEJADO" daquele nível como CONQUISTADO (se ganhou) e
+// manda as mensagens: a Ingrid (membro) recebe o resultado; o dono (admin),
+// o resumo com o prêmio a entregar. As contas são as do placar (calcularPlacar).
+// ------------------------------------------------------------------
+// === FECHAMENTO INICIO ===
+const FECHAMENTO_FOLGA = 2;   // dias de espera por lançamentos atrasados
+const FECHAMENTO_JANELA = 15; // períodos mais antigos que isso não são fechados (evita mensagem velha)
+type Dia = { ano: number; mes: number; dia: number };
+type PeriodoJogo = { nivel: 'QUINZENA' | 'MES' | 'TRIMESTRE'; periodo: string; fim: Dia; nome: string };
+
+function diaMais(h: Dia, n: number): Dia {
+  const d = new Date(Date.UTC(h.ano, h.mes - 1, h.dia + n));
+  return { ano: d.getUTCFullYear(), mes: d.getUTCMonth() + 1, dia: d.getUTCDate() };
+}
+const ultimoDiaDoMes = (ano: number, mes: number) => new Date(Date.UTC(ano, mes, 0)).getUTCDate();
+
+// Períodos que terminaram entre FECHAMENTO_FOLGA e FECHAMENTO_FOLGA + JANELA dias atrás, do mais antigo ao mais novo.
+function periodosTerminados(hoje: Dia): PeriodoJogo[] {
+  const lista: PeriodoJogo[] = [];
+  for (let n = FECHAMENTO_FOLGA + FECHAMENTO_JANELA; n >= FECHAMENTO_FOLGA; n--) {
+    const d = diaMais(hoje, -n);
+    const am = `${d.ano}-${doisDig(d.mes)}`;
+    const nomeMes = MESES_LONGOS[d.mes - 1];
+    if (d.dia === 15) lista.push({ nivel: 'QUINZENA', periodo: `${am}-Q1`, fim: d, nome: `1ª quinzena de ${nomeMes}` });
+    if (d.dia === ultimoDiaDoMes(d.ano, d.mes)) {
+      lista.push({ nivel: 'QUINZENA', periodo: `${am}-Q2`, fim: d, nome: `2ª quinzena de ${nomeMes}` });
+      lista.push({ nivel: 'MES', periodo: am, fim: d, nome: `${nomeMes} de ${d.ano}` });
+      if (d.mes % 3 === 0) lista.push({ nivel: 'TRIMESTRE', periodo: `${d.ano}-T${d.mes / 3}`, fim: d, nome: `trimestre ${MESES_CURTOS.slice(d.mes - 3, d.mes).join('/')} ${d.ano}` });
+    }
+  }
+  return lista;
+}
+
+// Meta e gasto do período, com o placar calculado no último dia dele. null = sem meta (não fecha).
+function resultadoDoPeriodo(pr: PeriodoJogo, p: Placar): { meta: number; gasto: number } | null {
+  if (pr.nivel === 'QUINZENA') return p.temIngrid && p.metaIngridMes > 0 ? { meta: p.metaIngridMes / 2, gasto: p.gastoQuinzena } : null;
+  if (pr.nivel === 'MES') return p.metaCasa > 0 ? { meta: p.metaCasa, gasto: p.gastoCasa } : null;
+  return p.metaTri > 0 ? { meta: p.metaTri, gasto: p.gastoTri } : null;
+}
+
+const ABERTURAS: Record<'GANHOU' | 'PERDEU', string[]> = {
+  GANHOU: ['🏆 <b>Você ganhou!</b>', '🎉 <b>Conquista desbloqueada!</b>', '🥳 <b>Mandou muito bem!</b>'],
+  PERDEU: ['💛 <b>Não foi dessa vez</b>, e tudo bem.', '🌱 <b>Fechou um pouco acima</b>, faz parte.', '🤍 <b>Quase!</b>'],
+};
+
+function textoFechamentoMembro(pr: PeriodoJogo, r: { meta: number; gasto: number }, ganhou: boolean, premio: string | undefined, sorteio: number) {
+  const lista = ABERTURAS[ganhou ? 'GANHOU' : 'PERDEU'];
+  let t = pr.nivel === 'TRIMESTRE' && ganhou ? '🥇🏆 <b>TRIMESTRE BATIDO!</b>' : lista[sorteio % lista.length];
+  const acima = reais(r.gasto - r.meta), sobra = reais(r.meta - r.gasto);
+  if (pr.nivel === 'QUINZENA') {
+    t += ganhou
+      ? `\nA <b>${pr.nome}</b> fechou em ${reais(r.gasto)} de ${reais(r.meta)}: sobraram ${sobra}.`
+      : `\nA <b>${pr.nome}</b> fechou em ${reais(r.gasto)}, ${acima} acima da verba de ${reais(r.meta)}.\nA próxima quinzena já começou zerada. Bora! 💪`;
+  } else if (pr.nivel === 'MES') {
+    t += ganhou
+      ? `\n🏠 A casa fechou <b>${pr.nome}</b> dentro da meta: ${reais(r.gasto)} de ${reais(r.meta)}.`
+      : `\n🏠 <b>${pr.nome}</b> fechou em ${reais(r.gasto)}, ${acima} acima da meta de ${reais(r.meta)}.`
+        + (pr.fim.mes % 3 !== 0 ? '\n🥇 O trimestre continua em jogo: um mês bom compensa esse.' : '');
+  } else {
+    t += ganhou
+      ? `\nO <b>${pr.nome}</b> fechou em ${reais(r.gasto)}, dentro da soma das metas (${reais(r.meta)}).`
+      : `\nO <b>${pr.nome}</b> fechou em ${reais(r.gasto)}, ${acima} acima da soma das metas (${reais(r.meta)}).\nNovo trimestre, novo jogo! 💪`;
+  }
+  if (ganhou) t += premio ? `\n\n🎁 Prêmio: <b>${premio}</b>. Já ficou marcado como conquistado!` : `\n\n🎁 Escolha o prêmio na lista de desejos do app (Metas & Game).`;
+  return t;
+}
+
+function textoFechamentoAdmin(pr: PeriodoJogo, r: { meta: number; gasto: number }, ganhou: boolean, premio: string | undefined) {
+  const icone = pr.nivel === 'QUINZENA' ? '🥉' : pr.nivel === 'MES' ? '🥈' : '🥇';
+  const quem = pr.nivel === 'QUINZENA' ? ' (Ingrid)' : ' (casa)';
+  let t = `📋 <b>Fechamento do jogo</b>\n${icone} ${pr.nome}${quem}: ${ganhou ? '✅ ganhou' : '❌ não foi'} (${reais(r.gasto)} de ${reais(r.meta)})`;
+  if (ganhou) t += premio
+    ? `\n🎁 Prêmio a entregar: <b>${premio}</b>. Quando entregar, marque "Entregue" em Metas & Game.`
+    : `\n🎁 Não havia prêmio desse nível na lista de desejos.`;
+  return t;
+}
+
+async function avisarFechamento(familiaId: string, pr: PeriodoJogo, r: { meta: number; gasto: number }, ganhou: boolean, premio?: string) {
+  const { data: membros } = await supabase.from('familia_membro').select('user_id, papel').eq('familia_id', familiaId);
+  if (!membros || membros.length === 0) return;
+  const { data: vinculos } = await supabase.from('telegram_vinculo').select('telegram_user_id, user_id')
+    .eq('familia_id', familiaId).in('user_id', membros.map((m: any) => m.user_id));
+  for (const v of vinculos || []) {
+    const papel = membros.find((m: any) => m.user_id === v.user_id)?.papel;
+    const texto = papel === 'admin' ? textoFechamentoAdmin(pr, r, ganhou, premio) : textoFechamentoMembro(pr, r, ganhou, premio, Math.floor(Math.random() * 1000));
+    await sendMessage(v.telegram_user_id, texto);
+  }
+}
+
+// Fecha os períodos pendentes de UMA família. Devolve o resumo do que fechou.
+async function fecharPeriodos(familiaId: string, hoje: Dia = hojeBrasil()): Promise<string[]> {
+  const feitos: string[] = [];
+  const periodos = periodosTerminados(hoje);
+  if (periodos.length === 0) return feitos;
+  const { data: jaFechados } = await supabase.from('jogo_fechamento').select('nivel, periodo')
+    .eq('familia_id', familiaId).in('periodo', periodos.map(p => p.periodo));
+  const ja = new Set((jaFechados || []).map((f: any) => `${f.nivel}|${f.periodo}`));
+  const placares = new Map<string, Placar>();
+  for (const pr of periodos) {
+    if (ja.has(`${pr.nivel}|${pr.periodo}`)) continue;
+    const chave = `${pr.fim.ano}-${pr.fim.mes}-${pr.fim.dia}`;
+    if (!placares.has(chave)) placares.set(chave, await calcularPlacar(familiaId, pr.fim));
+    const r = resultadoDoPeriodo(pr, placares.get(chave)!);
+    if (!r) continue; // período sem meta: não entra no jogo
+    const ganhou = r.gasto <= r.meta + 0.005;
+    // grava primeiro: se outra chamada já fechou (chave única), não manda nada de novo
+    const { data: linha, error } = await supabase.from('jogo_fechamento').insert({
+      familia_id: familiaId, nivel: pr.nivel, periodo: pr.periodo, resultado: ganhou ? 'GANHOU' : 'PERDEU',
+      meta: Math.round(r.meta * 100) / 100, gasto: Math.round(r.gasto * 100) / 100,
+    }).select('id').maybeSingle();
+    if (error || !linha) continue;
+    let premio: string | undefined;
+    if (ganhou) {
+      const { data: desejo } = await supabase.from('desejo').select('id, titulo').eq('familia_id', familiaId)
+        .eq('nivel', pr.nivel).eq('situacao', 'DESEJADO').order('criado_em').limit(1).maybeSingle();
+      if (desejo) {
+        const { data: ok } = await supabase.from('desejo').update({ situacao: 'CONQUISTADO' })
+          .eq('id', desejo.id).eq('familia_id', familiaId).eq('situacao', 'DESEJADO').select('id');
+        if (ok && ok.length) {
+          premio = desejo.titulo;
+          await supabase.from('jogo_fechamento').update({ desejo_id: desejo.id }).eq('id', linha.id).eq('familia_id', familiaId);
+        }
+      }
+    }
+    await avisarFechamento(familiaId, pr, r, ganhou, premio);
+    feitos.push(`${pr.nivel === 'QUINZENA' ? '🥉' : pr.nivel === 'MES' ? '🥈' : '🥇'} ${pr.nome}: ${ganhou ? '✅ ganhou' : '❌ não foi'}${premio ? ` · 🎁 ${premio}` : ''}`);
+  }
+  return feitos;
+}
+
+// Chamado pelo agendador: todas as famílias que têm metas.
+async function fecharPeriodosDeTodas() {
+  const familias = new Set<string>();
+  for (let i = 0; ; i += 1000) {
+    const { data } = await supabase.from('meta_categoria').select('familia_id').order('id').range(i, i + 999);
+    for (const m of data || []) familias.add(m.familia_id);
+    if (!data || data.length < 1000) break;
+  }
+  for (const f of familias) {
+    try { await fecharPeriodos(f); } catch (e) { console.error('fechamento', f, e); }
+  }
+}
+
+// "/fechamento" (só admin): roda agora para a própria família e conta o resultado.
+async function responderFechamento(p: Pessoa) {
+  const feitos = await fecharPeriodos(p.familiaId);
+  if (feitos.length) { await sendMessage(p.chatId, `📋 <b>Fechei agora:</b>\n${feitos.join('\n')}`); return; }
+  const h = hojeBrasil();
+  const fim: Dia = h.dia <= 15 ? { ano: h.ano, mes: h.mes, dia: 15 } : { ano: h.ano, mes: h.mes, dia: ultimoDiaDoMes(h.ano, h.mes) };
+  const quando = diaMais(fim, FECHAMENTO_FOLGA);
+  await sendMessage(p.chatId, `📋 Nada para fechar agora.\nA ${h.dia <= 15 ? '1ª' : '2ª'} quinzena termina dia ${doisDig(fim.dia)}/${doisDig(fim.mes)} e fecha sozinha em ${doisDig(quando.dia)}/${doisDig(quando.mes)} (${FECHAMENTO_FOLGA} dias de folga para lançamentos atrasados).`);
+}
+// === FECHAMENTO FIM ===
 
 // ------------------------------------------------------------------
 // MILHAS POR PRINT (Pacote 4.4): "✈️ Milhas" -> escolhe a conta ->
@@ -1341,6 +1502,12 @@ O total no cartão que pagou continua ${valorBR(giroAtual)}.`;
 // ROTEADOR WEBHOOK
 // ------------------------------------------------------------------
 serve(async (req) => {
+  // Agendador do fechamento do jogo (pg_cron do Supabase), com senha própria.
+  if (FECHAMENTO_SECRET && req.headers.get('X-Fechamento-Secret') === FECHAMENTO_SECRET) {
+    EdgeRuntime.waitUntil(fecharPeriodosDeTodas().catch(console.error));
+    return new Response("OK", { status: 200 });
+  }
+
   // TRAVA 1: só aceita chamadas com a senha secreta (o Telegram manda no cabeçalho).
   // Sem a senha configurada, recusa tudo.
   if (!WEBHOOK_SECRET || req.headers.get('X-Telegram-Bot-Api-Secret-Token') !== WEBHOOK_SECRET) {
@@ -1406,6 +1573,12 @@ serve(async (req) => {
         // 3. PLACAR DAS METAS
         if (['/status', 'status', 'como estou', 'como estou?', '/comoestou'].includes(textoLower)) {
           await responderComoEstou(pessoa);
+          return new Response("OK", { status: 200 });
+        }
+
+        // 3b. FECHAMENTO DO JOGO agora (só admin; o automático roda sozinho à meia-noite)
+        if (['/fechamento', 'fechamento'].includes(textoLower) && pessoa.papel === 'admin') {
+          await responderFechamento(pessoa);
           return new Response("OK", { status: 200 });
         }
 

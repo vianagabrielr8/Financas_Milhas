@@ -11,7 +11,7 @@ const COLS = 'valor, tipo, centro_custo_id, categoria_id, data, mes_fatura, cart
 
 type Pagina = PromiseLike<{ data: TxJogo[] | null; error: unknown }>;
 type Consulta = { range: (a: number, z: number) => Pagina };
-type Desejo = { titulo: string; nivel: string; situacao: string };
+type Desejo = { id: string; titulo: string; nivel: string; situacao: string };
 
 async function buscarTudo(montar: () => Consulta) {
   const todas: TxJogo[] = [];
@@ -84,6 +84,22 @@ export default function PainelGame({ centros, categorias, metas, desejos }: { ce
   const { jogo, isLoading, temJogo, hoje, mesAtual } = useJogo(centros, categorias, metas);
   const dia = Number(hoje.slice(8, 10));
   const [verTudo, setVerTudo] = useState(false);
+  // prêmios ligados pelo fechamento automático (se a tabela ainda não existir, fica vazio)
+  const { data: fechamentos = [] } = useQuery({
+    queryKey: ['jogo_fechamento'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('jogo_fechamento' as never).select('nivel, periodo, desejo_id');
+      return error ? [] : ((data || []) as { nivel: string; periodo: string; desejo_id: string | null }[]);
+    },
+  });
+  const premioDe = (nivel: string, periodo: string) => {
+    const id = fechamentos.find(f => f.nivel === nivel && f.periodo === periodo)?.desejo_id;
+    return id ? desejos.find(d => d.id === id)?.titulo : undefined;
+  };
+  const Premio = ({ nivel, periodo }: { nivel: string; periodo: string }) => {
+    const t = premioDe(nivel, periodo);
+    return t ? <span className="text-[10px] text-pink-300 truncate max-w-[40%]">🎁 {t}</span> : null;
+  };
   const premioEmJogo = (nivel: string) => desejos.find(d => d.nivel === nivel && d.situacao === 'DESEJADO')?.titulo;
   const aEntregar = desejos.filter(d => d.situacao === 'CONQUISTADO');
   const entregues = desejos.filter(d => d.situacao === 'ENTREGUE');
@@ -152,19 +168,19 @@ export default function PainelGame({ centros, categorias, metas, desejos }: { ce
           {jogo.trimestres.filter(t => t.resultado !== 'EM_JOGO').reverse().map(t => (
             <div key={t.chave} className="py-2 flex items-center justify-between gap-2 text-sm">
               <span>🥇 Trimestre {t.nome} <span className="text-[11px] text-zinc-500">· {brl(t.gasto)} de {brl(t.meta)}</span></span>
-              <Selo r={t.resultado} />
+              <span className="flex items-center gap-2 min-w-0"><Premio nivel="TRIMESTRE" periodo={t.chave} /><Selo r={t.resultado} /></span>
             </div>
           ))}
           {(verTudo ? mesesHist : mesesHist.slice(0, 3)).map(m => (
             <div key={m.mes} className="py-2 space-y-1">
               <div className="flex items-center justify-between gap-2 text-sm">
                 <span>🥈 {nomeMes(m.mes)} <span className="text-[11px] text-zinc-500">· casa {brl(m.gasto)} de {brl(m.meta)}</span></span>
-                <Selo r={m.resultado} />
+                <span className="flex items-center gap-2 min-w-0"><Premio nivel="MES" periodo={m.mes.slice(0, 7)} /><Selo r={m.resultado} /></span>
               </div>
               {m.quinzenas.map(q => (
                 <div key={q.n} className="flex items-center justify-between gap-2 text-xs pl-5 text-zinc-400">
                   <span>🥉 {q.n}ª quinzena <span className="text-zinc-500">· Ingrid {brl(q.gasto)} de {brl(q.verba)}</span></span>
-                  <Selo r={q.resultado} />
+                  <span className="flex items-center gap-2 min-w-0"><Premio nivel="QUINZENA" periodo={`${q.mes.slice(0, 7)}-Q${q.n}`} /><Selo r={q.resultado} /></span>
                 </div>
               ))}
             </div>
