@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { useFamilia } from '@/contexts/FamiliaContext';
+import PainelGame from '@/components/metas/PainelGame';
 
 // ------------------------------------------------------------------
 // Regras do jogo (Pacote 3):
@@ -248,8 +249,8 @@ export default function Metas() {
     <div className="space-y-6 max-w-[1200px] mx-auto text-zinc-100">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-[#141417] p-4 rounded-xl border border-white/5">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight hidden md:flex items-center gap-2"><Target className="w-6 h-6 text-emerald-500" /> Metas da Casa</h1>
-          <p className="text-zinc-400 text-xs mt-0.5">Quanto ainda está livre no mês, no trimestre e na quinzena.</p>
+          <h1 className="text-2xl font-bold tracking-tight hidden md:flex items-center gap-2"><Target className="w-6 h-6 text-emerald-500" /> Metas & Game</h1>
+          <p className="text-zinc-400 text-xs mt-0.5">O placar do jogo, as conquistas e quanto ainda está livre em cada meta.</p>
         </div>
         <div className="flex items-center gap-2 bg-black/40 px-3 py-1.5 rounded-lg border border-white/10">
           <CalendarDays className="w-4 h-4 text-zinc-400" />
@@ -258,6 +259,8 @@ export default function Metas() {
           </select>
         </div>
       </div>
+
+      <PainelGame centros={centros} categorias={categorias} metas={metas} desejos={desejos} />
 
       {metasDoMes.length === 0 ? (
         <div className="bg-[#1e1e24] border border-white/5 rounded-2xl p-6 text-sm text-zinc-400">
