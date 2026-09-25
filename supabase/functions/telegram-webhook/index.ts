@@ -498,6 +498,7 @@ const dataCurta = (d: string) => d ? d.slice(0, 10).split('-').reverse().join('/
 // Palavra digitada -> tipo, respeitando se o lançamento entra ou sai.
 function tipoPorPalavra(palavra: string, entra: boolean): string | null {
   const w = normalizarNome(palavra);
+  if (w.includes('clube')) return w.includes('bonus') ? 'CLUBE_BONUS' : 'CLUBE';
   if (w.startsWith('compra')) return 'COMPRA';
   if (w.startsWith('bonus') || w.startsWith('acumulo') || w.startsWith('ganho')) return 'BONUS';
   if (w.startsWith('transf')) return entra ? 'TRANSF_ENTRADA' : 'TRANSF_SAIDA';
@@ -509,6 +510,7 @@ function tipoPorPalavra(palavra: string, entra: boolean): string | null {
 function tipoDoGemini(tipo: string, pontos: number): string {
   const t = String(tipo || '').toUpperCase();
   const entra = pontos > 0;
+  if (t === 'CLUBE' || t === 'CLUBE_BONUS') return entra ? t : 'AJUSTE_MENOS';
   if (t === 'COMPRA' || t === 'BONUS' || t === 'TRANSF_ENTRADA') return entra ? t : (t === 'COMPRA' ? 'AJUSTE_MENOS' : 'TRANSF_SAIDA');
   if (t === 'TRANSF_SAIDA' || t === 'USO' || t === 'EXPIROU') return entra ? 'AJUSTE_MAIS' : t;
   return entra ? 'AJUSTE_MAIS' : 'AJUSTE_MENOS';
@@ -524,6 +526,34 @@ function lerData(txt: string): string | null {
   if (!m) return null;
   const ano = m[3].length === 2 ? '20' + m[3] : m[3];
   return `${ano}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+}
+
+const CLUBE_TOLERANCIA = 10; // dias de diferença aceitos entre o crédito programado e o extrato
+function somarDias(d: string, n: number) {
+  const x = new Date(d + 'T12:00:00Z'); x.setUTCDate(x.getUTCDate() + n);
+  return x.toISOString().slice(0, 10);
+}
+const diasEntre = (a: string, b: string) => Math.abs(Date.parse(a + 'T12:00:00Z') - Date.parse(String(b).slice(0, 10) + 'T12:00:00Z')) / 86400000;
+
+// Procura, entre os créditos do clube programados pelo app, o que corresponde a
+// uma linha do print: mesma quantidade (qualquer tipo de entrada) ou, se a IA
+// disse que é do clube, o mesmo tipo mesmo com quantidade diferente. Fica com o
+// de data mais próxima. Se o único par é um crédito já confirmado com a mesma
+// quantidade, é repetido.
+function creditoDoClube(programados: any[], jaLigados: Set<string>, data: string, qtd: number, tipo: string): any {
+  const perto = programados.filter(m => diasEntre(data, m.data) <= CLUBE_TOLERANCIA)
+    .sort((a, b) => diasEntre(data, a.data) - diasEntre(data, b.data));
+  const doClube = tipo === 'CLUBE' || tipo === 'CLUBE_BONUS';
+  const livres = perto.filter(m => !m.confirmado_em && !jaLigados.has(m.id));
+  const mesmaQtd = livres.find(m => Number(m.quantidade) === qtd && (!doClube || m.tipo === tipo))
+    || livres.find(m => Number(m.quantidade) === qtd && (doClube || ['BONUS', 'AJUSTE_MAIS'].includes(tipo)));
+  if (mesmaQtd) return mesmaQtd;
+  if (doClube) {
+    const mesmoTipo = livres.find(m => m.tipo === tipo);
+    if (mesmoTipo) return mesmoTipo;
+  }
+  if (perto.some(m => m.confirmado_em && Number(m.quantidade) === qtd)) return 'JA_CONFIRMADO';
+  return null;
 }
 
 async function nomeContaMilhas(familiaId: string, contaId: string) {
@@ -569,12 +599,17 @@ async function processarPrintMilhas(p: Pessoa, fileId: string, contaId: string) 
     const base64 = btoa(String.fromCharCode(...new Uint8Array(await resImg.arrayBuffer())));
 
     const hoje = new Date().toLocaleDateString('pt-BR');
+    const { data: clubes } = await supabase.from('milhas_clube').select('nome_plano, pontos_mes, bonus_mes, dia_credito').eq('familia_id', p.familiaId).eq('conta_id', contaId).eq('ativo', true);
+    const dicaClube = (clubes || []).length
+      ? `\nEsta conta tem clube de assinatura: ${(clubes || []).map((c: any) => `"${c.nome_plano}" credita ${c.pontos_mes} pontos do plano${c.bonus_mes ? ` e ${c.bonus_mes} de bônus` : ''} por mês, perto do dia ${c.dia_credito}`).join('; ')}.`
+      : '';
     const prompt = `Este é o print de um EXTRATO de programa de fidelidade (milhas ou pontos: LATAM Pass, Smiles, TudoAzul, Livelo, Esfera etc.).
 Extraia CADA lançamento. Ignore saldos, totais e propagandas.
 Responda em JSON puro: [{"data":"YYYY-MM-DD","descricao":"texto curto","pontos":1234,"tipo":"...","validade":"YYYY-MM-DD ou null"}]
 - "pontos": positivo quando ENTRA na conta, negativo quando SAI.
-- "tipo": COMPRA (compra de pontos/milhas), BONUS (acúmulo por cartão, compras, parceiros, promoções, bônus), TRANSF_ENTRADA (recebido de outro programa), TRANSF_SAIDA (enviado para outro programa), USO (resgate, emissão de passagem, troca por produto), EXPIROU (pontos vencidos), AJUSTE (qualquer outro).
+- "tipo": COMPRA (compra de pontos/milhas), CLUBE (pontos do PLANO de um clube de assinatura: Clube Smiles, Clube LATAM Pass, Clube TudoAzul, Clube Livelo, Clube Esfera etc.), CLUBE_BONUS (bônus do clube: pontos extras que o clube dá por ser assinante, bônus de aniversário/fidelidade do clube, lançados separados dos pontos do plano), BONUS (acúmulo por cartão, compras, parceiros, promoções e outros bônus que NÃO são do clube), TRANSF_ENTRADA (recebido de outro programa), TRANSF_SAIDA (enviado para outro programa), USO (resgate, emissão de passagem, troca por produto), EXPIROU (pontos vencidos), AJUSTE (qualquer outro).
 - "validade": data de vencimento dos pontos, se aparecer; senão null.
+Nos clubes, os pontos do plano e o bônus costumam vir em linhas separadas: mantenha separadas, uma com CLUBE e a outra com CLUBE_BONUS.${dicaClube}
 Hoje é ${hoje}.`;
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${GEMINI_API_KEY}`;
     const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: prompt }, { inline_data: { mime_type: "image/jpeg", data: base64 } }] }] }) });
@@ -585,30 +620,43 @@ Hoje é ${hoje}.`;
     if (validos.length === 0) { await sendMessage(chatId, "🤔 Não encontrei lançamentos nesse print. Tente um print mais nítido do extrato."); return; }
 
     // Barra repetidos: já gravados na conta ou já na revisão deste chat (mesma data, quantidade e direção).
-    const [gravados, revisao] = await Promise.all([
-      supabase.from('milhas_movimento').select('data, quantidade, tipo').eq('familia_id', p.familiaId).eq('conta_id', contaId).gte('data', validos.map((v: any) => v.data).sort()[0]),
-      supabase.from('milhas_staging').select('data, quantidade, tipo').eq('chat_id', chatId).eq('conta_id', contaId),
+    const datas = validos.map((v: any) => v.data).sort();
+    const [gravados, revisao, programados] = await Promise.all([
+      supabase.from('milhas_movimento').select('data, quantidade, tipo').eq('familia_id', p.familiaId).eq('conta_id', contaId).gte('data', datas[0]),
+      supabase.from('milhas_staging').select('data, quantidade, tipo, confirma_id').eq('chat_id', chatId).eq('conta_id', contaId),
+      // créditos do clube programados pelo app perto das datas do print
+      supabase.from('milhas_movimento').select('id, data, quantidade, tipo, confirmado_em').eq('familia_id', p.familiaId).eq('conta_id', contaId)
+        .not('clube_id', 'is', null).gte('data', somarDias(datas[0], -CLUBE_TOLERANCIA)).lte('data', somarDias(datas[datas.length - 1], CLUBE_TOLERANCIA)),
     ]);
     const chave = (d: string, q: number, entra: boolean) => `${d}|${q}|${entra ? '+' : '-'}`;
     const existentes = new Set([...(gravados.data || []), ...(revisao.data || [])].map((m: any) => chave(String(m.data).slice(0, 10), Number(m.quantidade), MILHAS_ENTRADA.includes(m.tipo))));
+    const jaLigados = new Set((revisao.data || []).map((m: any) => m.confirma_id).filter(Boolean));
     const novos: any[] = [];
-    let repetidos = 0;
+    let repetidos = 0, confirmados = 0;
     for (const l of validos) {
       const pts = Math.round(Number(l.pontos));
+      const tipo = tipoDoGemini(l.tipo, pts);
+      const validade = /^\d{4}-\d{2}-\d{2}$/.test(l.validade || '') && pts > 0 ? l.validade : null;
+      const base = { familia_id: p.familiaId, chat_id: chatId, conta_id: contaId, data: l.data, descricao: String(l.descricao || '').slice(0, 120), quantidade: Math.abs(pts), validade };
+      // É o crédito do clube que o app já programou? Então só confirma (não duplica).
+      const alvo = pts > 0 ? creditoDoClube(programados.data || [], jaLigados, l.data, pts, tipo) : null;
+      if (alvo === 'JA_CONFIRMADO') { repetidos++; continue; }
+      if (alvo) {
+        jaLigados.add(alvo.id); confirmados++;
+        existentes.add(chave(l.data, pts, true));
+        novos.push({ ...base, tipo: alvo.tipo, confirma_id: alvo.id });
+        continue;
+      }
       const k = chave(l.data, Math.abs(pts), pts > 0);
       if (existentes.has(k)) { repetidos++; continue; }
       existentes.add(k);
-      novos.push({
-        familia_id: p.familiaId, chat_id: chatId, conta_id: contaId, data: l.data, descricao: String(l.descricao || '').slice(0, 120),
-        tipo: tipoDoGemini(l.tipo, pts), quantidade: Math.abs(pts),
-        validade: /^\d{4}-\d{2}-\d{2}$/.test(l.validade || '') && pts > 0 ? l.validade : null,
-      });
+      novos.push({ ...base, tipo });
     }
     if (novos.length > 0) {
       const { error } = await supabase.from('milhas_staging').insert(novos);
       if (error) throw error;
     }
-    await sendMessage(chatId, `✅ Li <b>${validos.length}</b> lançamento(s)${repetidos ? ` (🛡️ ${repetidos} já estavam no app e foram ignorados)` : ''}.`);
+    await sendMessage(chatId, `✅ Li <b>${validos.length}</b> lançamento(s)${repetidos ? ` (🛡️ ${repetidos} já estavam no app e foram ignorados)` : ''}.${confirmados ? `\n🔗 ${confirmados} deles são créditos do clube que o app já tinha programado: ao gravar, só acerto a data e a quantidade, sem duplicar.` : ''}`);
     await exibirResumoMilhas(p);
   } catch (err) { console.error(err); await sendMessage(chatId, "❌ Falha ao ler o print de milhas."); }
 }
@@ -617,16 +665,27 @@ async function exibirResumoMilhas(p: Pessoa) {
   const { data: itens } = await supabase.from('milhas_staging').select('*').eq('chat_id', p.chatId).eq('familia_id', p.familiaId).order('data').order('id');
   if (!itens || itens.length === 0) { await sendMessage(p.chatId, "Nada para revisar."); return; }
   const conta = await nomeContaMilhas(p.familiaId, itens[0].conta_id);
+  const ids = itens.map((m: any) => m.confirma_id).filter(Boolean);
+  const { data: alvos } = ids.length
+    ? await supabase.from('milhas_movimento').select('id, data, quantidade').eq('familia_id', p.familiaId).in('id', ids)
+    : { data: [] as any[] };
   let t = `✈️ <b>Revisão – ${conta}</b>\n\n`;
+  let clubeSemCusto = false;
   itens.forEach((m: any, i: number) => {
     const entra = MILHAS_ENTRADA.includes(m.tipo);
     t += `[${i + 1}] ${dataCurta(m.data)} <b>${entra ? '+' : '−'}${milhasBR(m.quantidade)}</b> ${NOME_TIPO_MILHAS[m.tipo]}`;
+    const alvo = (alvos || []).find((a: any) => a.id === m.confirma_id);
+    if (m.confirma_id) {
+      const dif = alvo && (String(alvo.data).slice(0, 10) !== m.data || Number(alvo.quantidade) !== Number(m.quantidade));
+      t += `\n     🔗 <b>confirma</b> o crédito programado${alvo ? ` de ${dataCurta(alvo.data)}${Number(alvo.quantidade) !== Number(m.quantidade) ? ` (${milhasBR(alvo.quantidade)} programadas)` : ''}` : ''}${dif ? ': acerto para o extrato' : ''}`;
+    } else if (m.tipo === 'CLUBE') clubeSemCusto = true;
     if (Number(m.custo) > 0) t += ` · R$ ${Number(m.custo).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
     if (m.validade) t += ` · vence ${dataCurta(m.validade)}`;
     if (m.descricao) t += `\n     <i>${m.descricao}</i>`;
     t += '\n';
   });
-  t += `\n💡 <b>Para corrigir, escreva:</b>\n<code>apagar 2</code>\n<code>2 bonus</code> (compra, bonus, transf, uso, expirou, ajuste)\n<code>1 custo 350,00</code> (quanto pagou numa compra)\n<code>1 vence 31/12/2027</code>`;
+  if (clubeSemCusto) t += `\n⚠️ Há pontos de clube que o app não tinha programado: entram com custo zero. Se quiser o custo certo, cadastre o clube no app (Milhas → Clubes) ou escreva <code>N custo 42,90</code>.\n`;
+  t += `\n💡 <b>Para corrigir, escreva:</b>\n<code>apagar 2</code>\n<code>2 bonus</code> (compra, bonus, clube, clube bonus, transf, uso, expirou, ajuste)\n<code>1 custo 350,00</code> (quanto pagou numa compra)\n<code>1 vence 31/12/2027</code>`;
   await sendKeyboard(p.chatId, t, [
     [{ text: "✅ Gravar no estoque", callback_data: "mgravar" }],
     [{ text: "🗑️ Cancelar", callback_data: "mcancelar" }],
@@ -655,9 +714,14 @@ async function editarRevisaoMilhas(p: Pessoa, texto: string) {
     let mudanca: any = null;
     const mc = resto.match(/^custo\s+(?:r\$\s*)?([\d.,]+)$/i);
     const mv = resto.match(/^vence\s+(\S+)$/i);
+    if (mc && item.confirma_id) { erros.push(`o item ${m[1]} é crédito do clube: o custo já vem do clube cadastrado`); continue; }
     if (mc) mudanca = entra ? { custo: lerValor(mc[1]) } : null;
     else if (mv) mudanca = entra && lerData(mv[1]) ? { validade: lerData(mv[1]) } : null;
-    else { const tipo = tipoPorPalavra(resto, entra); if (tipo) mudanca = { tipo, ...(MILHAS_ENTRADA.includes(tipo) ? {} : { custo: 0, validade: null }) }; }
+    else {
+      const tipo = tipoPorPalavra(resto, entra);
+      // trocar o tipo desliga a confirmação: a linha vira um lançamento novo
+      if (tipo) mudanca = { tipo, confirma_id: null, ...(MILHAS_ENTRADA.includes(tipo) ? {} : { custo: 0, validade: null }) };
+    }
     if (!mudanca) { erros.push(`não entendi "${linha}"${(mc || mv) && !entra ? ' (custo e vencimento só em entradas)' : ''}`); continue; }
     await supabase.from('milhas_staging').update(mudanca).eq('id', item.id).eq('chat_id', p.chatId);
     feitos++;
@@ -671,7 +735,22 @@ async function gravarMilhas(p: Pessoa) {
   const { data: itens } = await supabase.from('milhas_staging').select('*').eq('chat_id', p.chatId).eq('familia_id', p.familiaId).order('data').order('id');
   if (!itens || itens.length === 0) { await sendMessage(p.chatId, "Nada para gravar."); return; }
   const contaId = itens[0].conta_id;
-  // saldo e custo atuais da conta (em páginas de 1000)
+  // 1) créditos do clube já programados: só acerta data/quantidade/validade
+  const confirmar = itens.filter((m: any) => m.confirma_id);
+  for (const m of confirmar) {
+    const { data: ok, error } = await supabase.from('milhas_movimento')
+      .update({ data: m.data, quantidade: Number(m.quantidade), confirmado_em: new Date().toISOString(), ...(m.validade ? { validade: m.validade } : {}) })
+      .eq('id', m.confirma_id).eq('familia_id', p.familiaId).eq('conta_id', contaId).is('confirmado_em', null).select('id');
+    if (error) { console.error(error); await sendMessage(p.chatId, "❌ Não consegui confirmar os créditos do clube. Nada foi gravado; tente de novo."); return; }
+    if (!ok || ok.length === 0) {
+      // já confirmado por outro print: descarta; apagado (clube cancelado): vira lançamento novo
+      const { data: existe } = await supabase.from('milhas_movimento').select('id').eq('id', m.confirma_id).eq('familia_id', p.familiaId).maybeSingle();
+      if (existe) m.descartar = true; else m.confirma_id = null;
+    }
+  }
+  const novos = itens.filter((m: any) => !m.confirma_id);
+  const nConfirmados = confirmar.filter((m: any) => m.confirma_id && !m.descartar).length;
+  // 2) saldo e custo atuais da conta (em páginas de 1000)
   let saldo = 0, custo = 0;
   for (let i = 0; ; i += 1000) {
     // créditos programados do clube (data futura) ainda não estão no saldo
@@ -682,7 +761,7 @@ async function gravarMilhas(p: Pessoa) {
     }
     if (!movs || movs.length < 1000) break;
   }
-  const linhas = itens.map((m: any) => {
+  const linhas = novos.map((m: any) => {
     const entra = MILHAS_ENTRADA.includes(m.tipo);
     const q = Number(m.quantidade);
     const c = entra ? Number(m.custo) || 0 : (saldo > 0 ? Math.round((custo / saldo) * q * 100) / 100 : 0);
@@ -693,11 +772,19 @@ async function gravarMilhas(p: Pessoa) {
       observacao: m.descricao ? `Print: ${m.descricao}` : 'Lançado pelo print', criado_por: p.userId,
     };
   });
-  const { error } = await supabase.from('milhas_movimento').insert(linhas);
-  if (error) { console.error(error); await sendMessage(p.chatId, "❌ Não consegui gravar. Nada foi alterado; tente de novo."); return; }
+  const { error } = linhas.length ? await supabase.from('milhas_movimento').insert(linhas) : { error: null };
+  if (error) {
+    console.error(error);
+    await sendMessage(p.chatId, nConfirmados
+      ? `❌ Confirmei ${nConfirmados} crédito(s) do clube, mas não consegui gravar os outros lançamentos. Toque em Gravar de novo.`
+      : "❌ Não consegui gravar. Nada foi alterado; tente de novo.");
+    if (nConfirmados) await supabase.from('milhas_staging').delete().eq('chat_id', p.chatId).eq('familia_id', p.familiaId).not('confirma_id', 'is', null);
+    return;
+  }
   await supabase.from('milhas_staging').delete().eq('chat_id', p.chatId).eq('familia_id', p.familiaId);
   const aviso = linhas.some((l: any) => l.tipo === 'USO') ? '\nℹ️ Usos pelo print entram sem passageiros: para o limite de CPF, lance as emissões pelo app.' : '';
-  await sendMessage(p.chatId, `🎉 <b>${linhas.length}</b> lançamento(s) gravado(s) em <b>${await nomeContaMilhas(p.familiaId, contaId)}</b>.\nSaldo agora: <b>${milhasBR(saldo)}</b> milhas.${aviso}`);
+  const txtConf = nConfirmados ? `\n🔗 <b>${nConfirmados}</b> crédito(s) do clube confirmado(s) pelo extrato.` : '';
+  await sendMessage(p.chatId, `🎉 <b>${linhas.length}</b> lançamento(s) gravado(s) em <b>${await nomeContaMilhas(p.familiaId, contaId)}</b>.${txtConf}\nSaldo agora: <b>${milhasBR(saldo)}</b> milhas.${aviso}`);
 }
 // === MILHAS FIM ===
 
