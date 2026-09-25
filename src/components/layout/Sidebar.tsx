@@ -1,8 +1,8 @@
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { 
-  LayoutDashboard, Package, ArrowRightLeft, DollarSign,
-  Wallet, UserCircle, Plane, Users, ShieldCheck, LogOut, ChevronLeft, Menu, Target, CalendarDays, Tags, FolderTree, Landmark, Home, Send, MessageSquareWarning 
+  LayoutDashboard, Package, PlusCircle, DollarSign,
+  Wallet, UserCircle, LogOut, ChevronLeft, Menu, Target, CalendarDays, Tags, FolderTree, Landmark, Home, Send, MessageSquareWarning 
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useState, useEffect } from 'react';
@@ -67,17 +67,14 @@ export const Sidebar = ({ gaveta = false }: { gaveta?: boolean }) => {
       { icon: Tags, label: 'Categorias', path: '/financas/categorias' },
     ]}
   ] : [
-    { group: "PRINCIPAL", items: [{ icon: LayoutDashboard, label: 'Dashboard', path: '/milhas' }] },
-    { group: "OPERACIONAL", items: [
+    { group: "MILHAS", items: [
+      { icon: LayoutDashboard, label: 'Painel', path: '/milhas' },
+      { icon: PlusCircle, label: 'Lançar', path: '/milhas/lancar' },
       { icon: Package, label: 'Estoque', path: '/milhas/estoque' },
-      { icon: ArrowRightLeft, label: 'Transferências', path: '/milhas/transferencias' },
     ]},
-    { group: "GESTÃO E CADASTROS", items: [
-      { icon: UserCircle, label: 'Contas (CPFs)', path: '/milhas/contas' },
-      { icon: Plane, label: 'Programas', path: '/milhas/programas' },
-      { icon: Users, label: 'Passageiros', path: '/milhas/passageiros' },
+    { group: "CADASTROS", items: [
+      { icon: UserCircle, label: 'Programas, contas e clientes', path: '/milhas/cadastros' },
     ]},
-    { group: "SEGURANÇA", items: [{ icon: ShieldCheck, label: 'Limites CPF', path: '/milhas/limites' }]}
   ];
 
   // Admin vê tudo + Família e Telegram. Membro só vê as telas de consulta + Telegram.
@@ -99,7 +96,7 @@ export const Sidebar = ({ gaveta = false }: { gaveta?: boolean }) => {
       <div className={cn("h-16 flex items-center border-b border-white/5", collapsed ? "justify-center" : "px-6 justify-between")}>
         {!collapsed && (
           <span className="text-lg font-black tracking-tighter text-white truncate">
-            Milheiro<span className="text-[#10b981]">Smart</span>
+            Milheiro<span className={moduloAtivo === 'MILHAS' ? "text-violet-400" : "text-[#10b981]"}>Smart</span>
           </span>
         )}
         {!gaveta && <Button variant="ghost" size="icon" onClick={() => setCollapsed(!collapsed)} className="text-zinc-400 hover:text-white shrink-0">
@@ -153,7 +150,7 @@ export const Sidebar = ({ gaveta = false }: { gaveta?: boolean }) => {
       </nav>
 
       <div className={cn("p-4 border-t border-white/5 flex items-center gap-3", collapsed ? "justify-center" : "")}>
-        <div className="w-8 h-8 rounded-full bg-[#10b981]/20 border border-[#10b981]/30 flex items-center justify-center shrink-0 text-xs text-[#10b981] font-bold">
+        <div className={cn("w-8 h-8 rounded-full border flex items-center justify-center shrink-0 text-xs font-bold", moduloAtivo === 'MILHAS' ? "bg-violet-500/20 border-violet-500/30 text-violet-300" : "bg-[#10b981]/20 border-[#10b981]/30 text-[#10b981]")}>
           {userInitial}
         </div>
         {!collapsed && (

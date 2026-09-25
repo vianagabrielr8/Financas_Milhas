@@ -11,13 +11,10 @@ const TITULOS: Record<string, string> = {
   '/financas/cartoes': 'Cartões',
   '/financas/centros-custo': 'Centros de Custo',
   '/financas/categorias': 'Categorias',
-  '/milhas': 'Dashboard de Milhas',
-  '/milhas/estoque': 'Estoque',
-  '/milhas/transferencias': 'Transferências',
-  '/milhas/contas': 'Contas (CPFs)',
-  '/milhas/programas': 'Programas',
-  '/milhas/passageiros': 'Passageiros',
-  '/milhas/limites': 'Limites CPF',
+  '/milhas': 'Painel de Milhas',
+  '/milhas/lancar': 'Lançar Milhas',
+  '/milhas/estoque': 'Estoque de Milhas',
+  '/milhas/cadastros': 'Cadastros de Milhas',
   '/configuracoes/familia': 'Família',
   '/configuracoes/telegram': 'Telegram',
   '/configuracoes/contestacoes': 'Contestações',
@@ -29,7 +26,7 @@ export const Header = ({ onAbrirMenu }: { onAbrirMenu?: () => void }) => {
 
   const titulo = TITULOS[caminho]
     ?? (caminho.startsWith('/financas/cartoes/') ? 'Fatura do Cartão'
-      : caminho.startsWith('/milhas/estoque/') ? 'Detalhes do Programa'
+      : caminho.startsWith('/milhas/estoque/') ? 'Histórico da Conta'
       : '');
 
   return (
