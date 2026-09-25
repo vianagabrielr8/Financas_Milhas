@@ -171,11 +171,18 @@ export function custoDaSaida(sit: SituacaoConta, qtd: number) {
 }
 
 /** Mensagem amigável para erros do banco. */
+/** Tabela ou coluna que ainda não existe no banco (SQL da atualização não rodado). */
+export function ehFaltaNoBanco(e: any) {
+  const msg = String(e?.message || '');
+  return ['PGRST205', 'PGRST204', '42P01', '42703'].includes(e?.code) || msg.includes('schema cache') || msg.includes('does not exist');
+}
+
 export function erroAmigavel(e: any) {
   const msg = String(e?.message || e || '');
   if (msg.includes('violates foreign key') || e?.code === '23503') return 'Tem lançamentos ligados a este cadastro. Em vez de apagar, desative.';
   if (msg.includes('duplicate key') || e?.code === '23505') return 'Já existe um cadastro com esse nome.';
   if (msg.includes('row-level security')) return 'Só o admin da família pode alterar.';
+  if (ehFaltaNoBanco(e)) return 'O banco ainda não tem esta parte do app: falta rodar um SQL da pasta supabase/migrations no SQL Editor do Supabase.';
   return msg || 'Erro desconhecido';
 }
 
