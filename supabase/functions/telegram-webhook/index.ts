@@ -1169,7 +1169,7 @@ async function escolherFaturaPaga(p: Pessoa, idx: number, txId: string) {
 }
 
 async function marcarFaturaPaga(p: Pessoa, idx: number, rotulo: string, txId: string) {
-  const { data: linha } = await supabase.from('transacao_pessoal').select('id, valor, descricao, observacao, cartao_id').eq('id', txId).eq('familia_id', p.familiaId).maybeSingle();
+  const { data: linha } = await supabase.from('transacao_pessoal').select('*').eq('id', txId).eq('familia_id', p.familiaId).maybeSingle();
   const cartao = (await cartoesDaFamilia(p.familiaId))[idx];
   if (!linha || !cartao) return;
   const { data: itens } = await supabase.from('transacao_pessoal').select('valor, tipo')
@@ -1190,9 +1190,62 @@ async function marcarFaturaPaga(p: Pessoa, idx: number, rotulo: string, txId: st
 
 Fatura no app: ${valorBR(total)}
 Pagamento lançado: ${valorBR(pago)}`;
-  if (Math.abs(dif) >= 0.01) msg += `
-⚠️ Diferença de ${valorBR(Math.abs(dif))}: ${dif > 0 ? 'o pagamento foi maior (juros lançados junto? eles devem ir em Empréstimos/Juros)' : 'falta lançar algo na fatura ou o pagamento foi parcial'}.`;
+  if (Math.abs(dif) >= 0.01) {
+    const ajuste = (parcelas || []).length <= 1 ? await ajustarJurosDoPagamento(p, linha, total) : null;
+    msg += ajuste ?? `
+⚠️ Diferença de ${valorBR(Math.abs(dif))}: ${dif > 0 ? 'o pagamento foi maior que a fatura' : 'falta lançar algo na fatura ou o pagamento foi parcial'}. Confira no app.`;
+  }
   await sendMessage(p.chatId, msg);
+}
+
+// A diferença entre o pagamento e a fatura paga vira JUROS, sem mudar o total
+// cobrado no cartão que pagou:
+//  - se já existe a linha de juros "irmã" (mesmo lançamento dividido em Split),
+//    passa a diferença entre as duas;
+//  - se não existe e o pagamento foi MAIOR que a fatura (até 15%), separa o
+//    excedente numa linha nova de juros (Empréstimos / Juros).
+// Pagamento MENOR sem linha de juros = pagamento parcial: só avisa.
+async function ajustarJurosDoPagamento(p: Pessoa, linha: any, totalFatura: number): Promise<string | null> {
+  const novoGiro = Math.round(totalFatura * 100) / 100;
+  const giroAtual = Number(linha.valor);
+  const delta = Math.round((novoGiro - giroAtual) * 100) / 100; // quanto o pagamento precisa subir (+) ou descer (−)
+  const { data: cats } = await supabase.from('categoria_pessoal').select('id, nome, centro_custo_id').eq('familia_id', p.familiaId);
+  const ehJuros = (catId: string | null) => { const n = normalizarNome(cats?.find((c: any) => c.id === catId)?.nome || ''); return n.includes('juro') || n.includes('emprest'); };
+
+  const origem = String(linha.descricao || '').replace(/\s*\(Split \d+\/\d+\).*$/, '');
+  const { data: irmas } = await supabase.from('transacao_pessoal').select('id, valor, descricao, categoria_id')
+    .eq('familia_id', p.familiaId).eq('cartao_id', linha.cartao_id).eq('data', linha.data).neq('id', linha.id).like('descricao', `${origem}%`).range(0, 49);
+  const juros = (irmas || []).find((t: any) => ehJuros(t.categoria_id));
+
+  if (juros) {
+    const jurosAtual = Number(juros.valor);
+    const novoJuros = Math.round((jurosAtual - delta) * 100) / 100;
+    if (novoJuros < 0) return null;
+    await supabase.from('transacao_pessoal').update({ valor: novoGiro }).eq('id', linha.id).eq('familia_id', p.familiaId);
+    await supabase.from('transacao_pessoal').update({ valor: novoJuros }).eq('id', juros.id).eq('familia_id', p.familiaId);
+    return `
+🔧 Ajustei a diferença de ${valorBR(Math.abs(delta))} entre pagamento e juros:
+• Pagamento: ${valorBR(giroAtual)} → <b>${valorBR(novoGiro)}</b>
+• Juros: ${valorBR(jurosAtual)} → <b>${valorBR(novoJuros)}</b>
+O total no cartão que pagou continua ${valorBR(giroAtual + jurosAtual)}.`;
+  }
+
+  if (delta < 0 && -delta <= novoGiro * 0.15) {
+    const catJuros = cats?.find((c: any) => ehJuros(c.id));
+    if (!catJuros) return null;
+    const { id: _id, created_at: _c, criado_em: _ce, ...copia } = linha;
+    const { error } = await supabase.from('transacao_pessoal').insert([{
+      ...copia, valor: -delta, descricao: `${linha.descricao} (juros)`, categoria_id: catJuros.id, subcategoria_id: null,
+      centro_custo_id: catJuros.centro_custo_id, observacao: 'Diferença entre o pagamento e a fatura paga',
+      pluggy_transaction_id: linha.pluggy_transaction_id ? `${linha.pluggy_transaction_id}_juros` : null,
+    }]);
+    if (error) return null;
+    await supabase.from('transacao_pessoal').update({ valor: novoGiro }).eq('id', linha.id).eq('familia_id', p.familiaId);
+    return `
+🔧 O pagamento foi ${valorBR(-delta)} maior que a fatura: separei essa diferença como <b>juros</b> (${catJuros.nome}).
+O total no cartão que pagou continua ${valorBR(giroAtual)}.`;
+  }
+  return null;
 }
 
 // ------------------------------------------------------------------
