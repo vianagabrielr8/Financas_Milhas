@@ -2,7 +2,7 @@ import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { 
   LayoutDashboard, Package, PlusCircle, DollarSign,
-  Wallet, UserCircle, ShieldCheck, Plane, Users, Contact, Repeat, LogOut, ChevronLeft, Menu, Target, CalendarDays, Tags, FolderTree, Landmark, Home, Send, MessageSquareWarning 
+  Wallet, UserCircle, ShieldCheck, Plane, Users, Contact, Repeat, LogOut, ChevronLeft, Menu, Target, Trophy, CalendarDays, Tags, FolderTree, Landmark, Home, Send, MessageSquareWarning 
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useState, useEffect } from 'react';
@@ -54,7 +54,7 @@ export const Sidebar = ({ gaveta = false }: { gaveta?: boolean }) => {
     { group: "VISÃO GERAL", items: [
       { icon: LayoutDashboard, label: 'Dashboard', path: '/financas' },
       { icon: DollarSign, label: 'Transações', path: '/financas/transacoes' },
-      { icon: Target, label: 'Metas', path: '/financas/metas' },
+      { icon: Trophy, label: 'Metas & Game', path: '/financas/metas' },
       { icon: CalendarDays, label: 'Fluxo por Dia', path: '/financas/fluxo-caixa' },
     ]},
     { group: "FINANCEIRO", items: [

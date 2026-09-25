@@ -5,7 +5,7 @@ import { Menu } from 'lucide-react';
 const TITULOS: Record<string, string> = {
   '/financas': 'Dashboard',
   '/financas/transacoes': 'Transações',
-  '/financas/metas': 'Metas da Casa',
+  '/financas/metas': 'Metas & Game',
   '/financas/fluxo-caixa': 'Fluxo por Dia',
   '/financas/contas': 'Contas e Caixas',
   '/financas/cartoes': 'Cartões',
