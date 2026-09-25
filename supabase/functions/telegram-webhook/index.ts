@@ -70,6 +70,39 @@ function chunkArray(array: any[], size: number) {
   return result;
 }
 
+// ------------------------------------------------------------------
+// NOMES TOLERANTES: acha categoria / centro de custo mesmo com acento,
+// maiúscula, espaço, pontuação ou pequeno erro de digitação diferentes.
+// ------------------------------------------------------------------
+const chaveNome = (t: string) => (t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+function distancia(a: string, b: string) {
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++)
+    d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  return d[a.length][b.length];
+}
+function acharPorNome<T extends { nome: string }>(lista: T[] | null | undefined, texto: string | null | undefined): T | null {
+  const k = chaveNome(texto || '');
+  if (!k || !lista || lista.length === 0) return null;
+  const exato = lista.find(x => chaveNome(x.nome) === k);
+  if (exato) return exato;
+  let melhor: T | null = null, menor = Infinity;
+  for (const x of lista) { const d = distancia(k, chaveNome(x.nome)); if (d < menor) { menor = d; melhor = x; } }
+  return menor <= Math.max(1, Math.floor(k.length * 0.15)) ? melhor : null; // até ~15% de letras diferentes
+}
+const VAZIOS = ['', 'semcategoria', 'null', 'pendente', 'nenhuma', 'nenhum'];
+// "Categoria" ou "Categoria • Subcategoria" -> ids e nome oficial.
+function resolverCategoria(texto: string | null | undefined, cats: any[] | null, subs: any[] | null) {
+  if (VAZIOS.includes(chaveNome(texto || ''))) return { cat: null as any, sub: null as any, vazio: true };
+  const inteira = acharPorNome(cats, texto);
+  if (inteira) return { cat: inteira, sub: null, vazio: false };
+  const [pCat, pSub] = String(texto).split(/\s*[•·]\s*/);
+  const cat = acharPorNome(cats, pCat);
+  const sub = cat && pSub ? acharPorNome((subs || []).filter((x: any) => x.categoria_id === cat.id), pSub) : null;
+  return { cat, sub, vazio: false };
+}
+
 function addMonthsToFatura(fatura: string, add: number) {
   const meses = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
   const [mesStr, anoStr] = fatura.split('/');
@@ -927,17 +960,37 @@ async function obterTextoResumo(p: Pessoa) {
   const { data: stagingData } = await supabase.from('open_finance_staging').select('*').eq('chat_id', p.chatId).order('data').order('id');
   if (!stagingData || stagingData.length === 0) return null;
 
+  const [{ data: cats }, { data: subs }, { data: ccs }] = await Promise.all([
+    supabase.from('categoria_pessoal').select('id, nome').eq('familia_id', p.familiaId),
+    supabase.from('subcategoria_pessoal').select('id, nome, categoria_id').eq('familia_id', p.familiaId),
+    supabase.from('centro_custo_projeto').select('id, nome').eq('familia_id', p.familiaId),
+  ]);
+
   let resumo = "📋 <b>Resumo da Classificação:</b>\n<i>💡 Mande os ajustes (Ex: A 2 é CC Familiar)</i>\n\n";
+  let avisos = 0;
   for (let i = 0; i < stagingData.length; i++) {
     const tx = stagingData[i];
+    // Troca o texto pelo nome oficial do app (e grava a troca na triagem).
+    const rc = resolverCategoria(tx.sugestao_ia, cats, subs);
+    const cc = acharPorNome(ccs, tx.sugestao_cc);
+    const catOficial = rc.cat ? rc.cat.nome + (rc.sub ? ` • ${rc.sub.nome}` : '') : (rc.vazio ? 'Sem Categoria' : null);
+    const mudar: any = {};
+    if (catOficial && catOficial !== tx.sugestao_ia) mudar.sugestao_ia = tx.sugestao_ia = catOficial;
+    if (cc && cc.nome !== tx.sugestao_cc) mudar.sugestao_cc = tx.sugestao_cc = cc.nome;
+    if (Object.keys(mudar).length) await supabase.from('open_finance_staging').update(mudar).eq('id', tx.id).eq('chat_id', p.chatId);
+    const catNaoExiste = !catOficial;
+    const ccNaoExiste = !cc;
+    if (catNaoExiste || ccNaoExiste) avisos++;
     const valorDisplay = Math.abs(tx.valor).toFixed(2).replace('.', ',');
     const partesData = tx.data ? tx.data.split('-') : [];
     const dataDisplay = partesData.length === 3 ? `${partesData[2]}/${partesData[1]}` : tx.data;
 
     let icone = tx.conta_id ? "🏦" : "💳";
-    let catDisplay = tx.sugestao_ia || "Sem Categoria";
-    resumo += `[ ${i + 1} ] ${icone} <b>${tx.descricao}</b> (${dataDisplay} | R$ ${valorDisplay})\n🏷️ Cat: <b>${catDisplay}</b>\n🏢 CC: <b>${tx.sugestao_cc || "Pendente"}</b>\n\n`;
+    const catDisplay = catNaoExiste ? `⚠️ ${tx.sugestao_ia} (não existe no app)` : (tx.sugestao_ia || "Sem Categoria");
+    const ccDisplay = ccNaoExiste ? `⚠️ ${tx.sugestao_cc && chaveNome(tx.sugestao_cc) !== 'pendente' ? `${tx.sugestao_cc} (não existe no app)` : 'Pendente'}` : tx.sugestao_cc;
+    resumo += `[ ${i + 1} ] ${icone} <b>${tx.descricao}</b> (${dataDisplay} | R$ ${valorDisplay})\n🏷️ Cat: <b>${catDisplay}</b>\n🏢 CC: <b>${ccDisplay}</b>\n\n`;
   }
+  if (avisos > 0) resumo += `⚠️ <b>${avisos}</b> linha(s) com ⚠️ serão gravadas sem categoria ou sem centro de custo. Corrija antes de aprovar (ex.: "A 2 é CC Familiar").\n`;
   return resumo;
 }
 
@@ -972,19 +1025,11 @@ async function executarTarefaGravacao(p: Pessoa, mesFaturaEscolhida: string | nu
       let matchCat = null;
       let matchSubId = null;
 
-      if (tx.sugestao_ia && tx.sugestao_ia !== "Sem Categoria") {
-          const nomeCatSplit = tx.sugestao_ia.split(' • ');
-          const strCat = nomeCatSplit.length > 0 ? nomeCatSplit[0].trim().toLowerCase() : '';
-          const strSub = nomeCatSplit.length > 1 ? nomeCatSplit[1].trim().toLowerCase() : '';
+      const rc = resolverCategoria(tx.sugestao_ia, catData, subData);
+      matchCat = rc.cat;
+      matchSubId = rc.sub ? rc.sub.id : null;
 
-          matchCat = catData?.find(c => c.nome.toLowerCase() === strCat);
-          if (matchCat && strSub) {
-              const matchSub = subData?.find(s => s.categoria_id === matchCat.id && s.nome.toLowerCase() === strSub);
-              if (matchSub) matchSubId = matchSub.id;
-          }
-      }
-
-      const matchCC = ccData?.find(c => c.nome.toLowerCase() === tx.sugestao_cc?.toLowerCase());
+      const matchCC = acharPorNome(ccData, tx.sugestao_cc);
 
       let cartaoPrincipalId = tx.cartao_principal_id || null;
       if (tx.cartao_vinculado_id) {
