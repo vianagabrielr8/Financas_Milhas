@@ -49,11 +49,13 @@ function Placar({ nivel, titulo, livre, gasto, meta, detalhe, premio }: { nivel:
   );
 }
 
-export default function PainelGame({ centros, categorias, metas, desejos }: { centros: { id: string; conta_na_meta: boolean | null }[]; categorias: { id: string; nome: string }[]; metas: MetaJogo[]; desejos: Desejo[] }) {
+type Centro = { id: string; conta_na_meta: boolean | null };
+type Categoria = { id: string; nome: string };
+
+/** Busca os lançamentos dos meses do jogo e calcula o placar (usado aqui e no card do Dashboard). */
+export function useJogo(centros: Centro[], categorias: Categoria[], metas: MetaJogo[]) {
   const hoje = hojeLocal();
   const mesAtual = hoje.slice(0, 7) + '-01';
-  const dia = Number(hoje.slice(8, 10));
-  const [verTudo, setVerTudo] = useState(false);
   const idIngrid = useMemo(() => categorias.find(c => normalizarTexto(c.nome) === 'ingrid')?.id, [categorias]);
   // meses do jogo: do 1º mês com meta até o mês atual
   const primeiro = useMemo(() => metas.map(m => m.mes).filter(m => m <= mesAtual).sort()[0], [metas, mesAtual]);
@@ -75,11 +77,18 @@ export default function PainelGame({ centros, categorias, metas, desejos }: { ce
   });
 
   const jogo = useMemo(() => tx ? calcularJogo({ hoje, centros, categorias, metas, transacoes: tx.transacoes, ingrid: tx.ingrid }) : null, [tx, hoje, centros, categorias, metas]);
+  return { jogo, isLoading, temJogo: !!primeiro, hoje, mesAtual };
+}
+
+export default function PainelGame({ centros, categorias, metas, desejos }: { centros: Centro[]; categorias: Categoria[]; metas: MetaJogo[]; desejos: Desejo[] }) {
+  const { jogo, isLoading, temJogo, hoje, mesAtual } = useJogo(centros, categorias, metas);
+  const dia = Number(hoje.slice(8, 10));
+  const [verTudo, setVerTudo] = useState(false);
   const premioEmJogo = (nivel: string) => desejos.find(d => d.nivel === nivel && d.situacao === 'DESEJADO')?.titulo;
   const aEntregar = desejos.filter(d => d.situacao === 'CONQUISTADO');
   const entregues = desejos.filter(d => d.situacao === 'ENTREGUE');
 
-  if (!primeiro) return (
+  if (!temJogo) return (
     <div className="bg-[#1e1e24] border border-white/5 rounded-2xl p-5 text-sm text-zinc-400">
       <p className="font-bold text-white flex items-center gap-2 mb-1"><Trophy className="w-5 h-5 text-amber-400" /> Game</p>
       O jogo começa no primeiro mês com metas cadastradas. Cadastre as metas do mês abaixo.

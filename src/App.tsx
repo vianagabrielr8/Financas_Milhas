@@ -5,7 +5,9 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { toast } from "sonner";
+import { ehFaltaNoBanco, erroAmigavel } from "@/lib/milhas";
 
 import { MainLayout } from "./components/layout/MainLayout";
 import Login from "./pages/Login";
@@ -44,7 +46,13 @@ import Familia from "./pages/configuracoes/Familia";
 import Telegram from "./pages/configuracoes/Telegram";
 import Contestacoes from "./pages/configuracoes/Contestacoes";
 
-const queryClient = new QueryClient();
+// Falta de tabela/coluna no banco (SQL pendente): não tenta de novo e avisa uma vez, em português.
+const queryClient = new QueryClient({
+  queryCache: new QueryCache({
+    onError: (e) => { if (ehFaltaNoBanco(e)) toast.error(erroAmigavel(e), { id: 'falta-no-banco', duration: 10000 }); },
+  }),
+  defaultOptions: { queries: { retry: (n, e) => !ehFaltaNoBanco(e) && n < 3 } },
+});
 
 // Páginas que o MEMBRO não acessa (configurações, cadastros e o módulo Milhas).
 // Os botões de lançar/editar/apagar também somem para ele nas outras páginas.

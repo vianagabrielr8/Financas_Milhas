@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import CardGame from '@/components/metas/CardGame';
 import {
   Landmark, ArrowUpCircle, ArrowDownCircle, Calendar, Layers, BarChart3, AlertTriangle, Wallet,
   PiggyBank, Percent, CreditCard, Users, Gauge, Lightbulb, ShieldCheck, ChevronDown, ChevronRight,
@@ -326,8 +327,40 @@ export default function FinancasDashboard() {
       return t.data ? String(t.data).slice(0, 7) : null;
     };
 
+    // porMes = só o centro do filtro; geral = família toda (todos os centros).
+    // Receita, resultado, poupança, juros e investimento olham a família toda:
+    // num centro só eles não fazem sentido (ex.: os juros ficam no centro Dívidas).
     const porMes: Record<string, Mes> = {};
-    mesesJanela.forEach((k) => (porMes[k] = novoMes()));
+    const geral: Record<string, Mes> = {};
+    mesesJanela.forEach((k) => { porMes[k] = novoMes(); geral[k] = novoMes(); });
+    const acumular = (m: Mes, t: { cartao_id?: string | null; [campo: string]: unknown }, cat: string, entrada: boolean, estorno: boolean, val: number, foraConsumo: boolean) => {
+      if (entrada) {
+        if (!foraConsumo) m.receita += val;
+        return;
+      }
+      const v = estorno ? -val : val;
+      if (foraConsumo) {
+        m.foraConsumo += v;
+        return;
+      }
+      const catN = norm(cat);
+      if (CONFIG.categoriasInvestimento.some((p) => catN.includes(p))) {
+        m.investimento += v;
+        return;
+      }
+      m.consumo += v;
+      if (CONFIG.categoriasDivida.some((p) => catN.includes(p))) m.divida += v;
+      if (t.cartao_id) {
+        m.cartao += v;
+        m.porCartao[t.cartao_id] = (m.porCartao[t.cartao_id] ?? 0) + v;
+      }
+      m.porCat[cat] = (m.porCat[cat] ?? 0) + v;
+      const subId = t[CONFIG.transacaoCampoSubcategoria];
+      const sub = subId ? mapaNomes.get(String(subId)) ?? 'Subcategoria sem nome' : 'Sem subcategoria';
+      const ps = (m.porSub[cat] ??= {});
+      ps[sub] = (ps[sub] ?? 0) + v;
+      m.txs.push({ ...t, _cat: cat, _valor: v });
+    };
     const terceiros: Record<string, { lancado: number; recebido: number }> = {};
     const reembolsos = { lancado: 0, recebido: 0 };
     const q = { totalDespesas: 0, valorDespesas: 0, semCategoria: 0, valorSemCategoria: 0, semCentro: 0, semSub: 0, duplicadas: 0 };
@@ -344,7 +377,6 @@ export default function FinancasDashboard() {
       const entrada = tipo === 'RECEITA';
       const estorno = tipo === 'ESTORNO';
       const cat = nomeDe(t.categoria_id);
-      const catN = norm(cat);
       const ehTerceiros = norm(centro) === norm(CONFIG.centroTerceiros);
       const ehReemb = norm(centro) === norm(CONFIG.centroReembolsos);
 
@@ -359,9 +391,9 @@ export default function FinancasDashboard() {
         else reembolsos.lancado += val;
       }
       if (k === mesSel && centro === 'Sem Centro') q.semCentro++;
+      acumular(geral[k], t, cat, entrada, estorno, val, ehTerceiros || ehReemb);
 
       if (filtroCentro !== TODOS && centro !== filtroCentro) continue;
-      const m = porMes[k];
       const foraConsumo = filtroCentro === TODOS && (ehTerceiros || ehReemb);
 
       // qualidade dos dados (mês selecionado)
@@ -379,34 +411,17 @@ export default function FinancasDashboard() {
         if (n === 2) q.duplicadas++;
       }
 
-      if (entrada) {
-        if (!foraConsumo) m.receita += val;
-        continue;
-      }
-      const v = estorno ? -val : val;
-      if (foraConsumo) {
-        m.foraConsumo += v;
-        continue;
-      }
-      if (CONFIG.categoriasInvestimento.some((p) => catN.includes(p))) {
-        m.investimento += v;
-        continue;
-      }
-      m.consumo += v;
-      if (CONFIG.categoriasDivida.some((p) => catN.includes(p))) m.divida += v;
-      if (t.cartao_id) {
-        m.cartao += v;
-        m.porCartao[t.cartao_id] = (m.porCartao[t.cartao_id] ?? 0) + v;
-      }
-      m.porCat[cat] = (m.porCat[cat] ?? 0) + v;
-      const subId = t[CONFIG.transacaoCampoSubcategoria];
-      const sub = subId ? mapaNomes.get(String(subId)) ?? 'Subcategoria sem nome' : 'Sem subcategoria';
-      const ps = (m.porSub[cat] ??= {});
-      ps[sub] = (ps[sub] ?? 0) + v;
-      m.txs.push({ ...t, _cat: cat, _valor: v });
+      acumular(porMes[k], t, cat, entrada, estorno, val, foraConsumo);
     }
 
     const atual = porMes[mesSel];
+    const fam = geral[mesSel];
+    // receitas ainda não são lançadas (pacote futuro): sem nenhuma em 12 meses, os cards de receita somem
+    const temReceita = mesesJanela.some((k) => geral[k].receita > 0);
+    const famAnterior = temDados(geral[somarMeses(mesSel, -1)]) ? geral[somarMeses(mesSel, -1)] : null;
+    const fam3 = [1, 2, 3].map((i) => geral[somarMeses(mesSel, -i)]).filter(temDados);
+    const refFam = (f: (m: Mes) => number) =>
+      comparar === 'anterior' ? (famAnterior ? f(famAnterior) : null) : fam3.length ? fam3.reduce((s, m) => s + f(m), 0) / fam3.length : null;
     const anteriorBruto = porMes[somarMeses(mesSel, -1)];
     const anterior = temDados(anteriorBruto) ? anteriorBruto : null;
     const ultimos3 = [1, 2, 3].map((i) => porMes[somarMeses(mesSel, -i)]).filter(temDados);
@@ -448,10 +463,10 @@ export default function FinancasDashboard() {
     // evolução e heatmap
     const evolucao = mesesJanela.map((k) => ({
       k,
-      receita: porMes[k].receita,
+      receita: filtroCentro === TODOS && temReceita ? porMes[k].receita : 0,
       consumo: porMes[k].consumo,
       investimento: porMes[k].investimento,
-      resultado: porMes[k].receita - porMes[k].consumo,
+      resultado: filtroCentro === TODOS && temReceita ? porMes[k].receita - porMes[k].consumo : -porMes[k].consumo,
     }));
     const totais12: Record<string, number> = {};
     mesesJanela.forEach((k) => Object.entries(porMes[k].porCat).forEach(([c, v]) => (totais12[c] = (totais12[c] ?? 0) + v)));
@@ -502,8 +517,8 @@ export default function FinancasDashboard() {
     // insights em linguagem simples
     const rotulo = rotuloMesLongo(mesSel);
     const ins: { txt: string; tipo: 'alerta' | 'bom' | 'info'; peso: number }[] = [];
-    if (atual.receita === 0 && filtroCentro !== CONFIG.centroTerceiros)
-      ins.push({ tipo: 'alerta', peso: 1e12, txt: `Nenhuma receita lançada em ${rotulo}. Sem ela, "Resultado" e "Taxa de poupança" não significam nada — lance salários e retiradas primeiro.` });
+    if (temReceita && fam.receita === 0)
+      ins.push({ tipo: 'alerta', peso: 1e12, txt: `Nenhuma receita lançada em ${rotulo}. Sem ela, "Resultado" e "Taxa de poupança" do mês não significam nada.` });
     const comMedia = linhasCat.filter((r) => r.med != null && r.med > 0).map((r) => ({ ...r, dif: r.valor - (r.med as number) }));
     const alta = [...comMedia].sort((a, b) => b.dif - a.dif)[0];
     if (alta && alta.dif >= CONFIG.anomaliaMinimoReais)
@@ -511,10 +526,10 @@ export default function FinancasDashboard() {
     const queda = [...comMedia].sort((a, b) => a.dif - b.dif)[0];
     if (queda && queda.dif <= -CONFIG.anomaliaMinimoReais)
       ins.push({ tipo: 'bom', peso: -queda.dif / 2, txt: `${queda.nome} caiu ${brl(-queda.dif)} em relação à sua média de 3 meses.` });
-    if (atual.consumo > 0 && atual.divida / atual.consumo >= 0.1) {
-      const alim = linhasCat.find((r) => norm(r.nome).includes('alimenta'));
-      const equiv = alim && alim.valor > 0 ? ` Isso é ${(atual.divida / alim.valor).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}x o que foi gasto com Alimentação.` : '';
-      ins.push({ tipo: 'alerta', peso: atual.divida, txt: `Empréstimos e juros levaram ${pct(atual.divida / atual.consumo)} de tudo que foi gasto (${brl(atual.divida)}).${equiv}` });
+    if (fam.consumo > 0 && fam.divida / fam.consumo >= 0.1) {
+      const alim = fam.porCat[Object.keys(fam.porCat).find((c) => norm(c).includes('alimenta')) ?? ''];
+      const equiv = alim && alim > 0 ? ` Isso é ${(fam.divida / alim).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}x o que foi gasto com Alimentação.` : '';
+      ins.push({ tipo: 'alerta', peso: fam.divida, txt: `Empréstimos e juros levaram ${pct(fam.divida / fam.consumo)} de tudo que a família gastou (${brl(fam.divida)}).${equiv}` });
     }
     if (ehMesCorrente && refConsumo) {
       if (projecao > refConsumo * 1.05)
@@ -528,23 +543,24 @@ export default function FinancasDashboard() {
       ins.push({ tipo: 'alerta', peso: Math.abs(saldoTerceiros), txt: `Terceiros não está zerado: ${saldoTerceiros > 0 ? 'falta receber' : 'foi recebido a mais'} ${brl(Math.abs(saldoTerceiros))} (últimos 12 meses).` });
     if (q.semCategoria > 0)
       ins.push({ tipo: 'alerta', peso: q.valorSemCategoria, txt: `${q.semCategoria} lançamento(s) sem categoria somando ${brl(q.valorSemCategoria)}. Enquanto não classificar, os números acima ficam incompletos.` });
-    if (atual.investimento > 0)
-      ins.push({ tipo: 'bom', peso: atual.investimento / 2, txt: `Você investiu ${brl(atual.investimento)} este mês${atual.receita > 0 ? ` (${pct(atual.investimento / atual.receita)} do que entrou)` : ''}.` });
+    if (fam.investimento > 0)
+      ins.push({ tipo: 'bom', peso: fam.investimento / 2, txt: `Vocês investiram ${brl(fam.investimento)} este mês${fam.receita > 0 ? ` (${pct(fam.investimento / fam.receita)} do que entrou)` : ''}.` });
     const ordemTipo = { alerta: 0, bom: 1, info: 2 };
     const insights = ins.sort((a, b) => ordemTipo[a.tipo] - ordemTipo[b.tipo] || b.peso - a.peso).slice(0, 6);
 
     return {
       porMes, atual, anterior, ultimos3, ref, media, ehMesCorrente, diasMes, diaHoje, projecao, refConsumo, diasRestantes, podePorDia,
       ritmoIdeal, linhasCat, evolucao, heatCats, porCartao, cartaoDaVez, futurasPorMes, listaTerceiros, saldoTerceiros, reembolsos,
-      saldoReembolsos, q, insights, temCampoSub,
+      saldoReembolsos, q, insights, temCampoSub, fam, temReceita, refFam,
     };
   }, [transacoes, futuras, mapaNomes, mapaCartoes, visao, filtroCentro, comparar, mesSel, mesesJanela, mesesFuturos, chaveHoje, hoje]);
 
-  const { atual } = A;
+  const { atual, fam } = A;
   const rotuloComp = comparar === 'anterior' ? 'mês anterior' : 'média 3 meses';
-  const resultado = atual.receita - atual.consumo;
-  const taxaPoupanca = atual.receita > 0 ? resultado / atual.receita : null;
-  const pesoDivida = atual.consumo > 0 ? atual.divida / atual.consumo : null;
+  const resultado = fam.receita - fam.consumo;
+  const taxaPoupanca = fam.receita > 0 ? resultado / fam.receita : null;
+  const pesoDivida = fam.consumo > 0 ? fam.divida / fam.consumo : null;
+  const maiorCat = A.linhasCat[0];
   const corPoupanca = taxaPoupanca == null ? '#a1a1aa' : taxaPoupanca >= 0.2 ? VERDE : taxaPoupanca >= 0.1 ? AMARELO : taxaPoupanca >= 0 ? '#fb923c' : VERMELHO;
   const corDivida = pesoDivida == null ? '#a1a1aa' : pesoDivida <= 0.1 ? VERDE : pesoDivida <= 0.25 ? AMARELO : VERMELHO;
   const maxCat = Math.max(...A.linhasCat.map((r) => r.valor), 1);
@@ -612,38 +628,20 @@ export default function FinancasDashboard() {
       )}
       {isLoading && <p className="text-xs text-zinc-500">Carregando 12 meses de lançamentos…</p>}
 
-      {/* KPIs */}
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-2 md:gap-4">
-        <CardKpi titulo="Receita do mês" valor={brl(atual.receita)} corValor={VERDE} icone={ArrowUpCircle} corIcone={VERDE}
-          dica="Todo dinheiro que ENTROU neste centro no mês: salário, retirada da empresa, reembolso recebido. Se estiver zerado, os percentuais ficam sem sentido.">
-          <Variacao atual={atual.receita} referencia={A.ref((m) => m.receita)} sobeEhBom rotulo={rotuloComp} />
-        </CardKpi>
+      {/* GAME */}
+      <CardGame />
 
+      {/* KPIs DO CENTRO ESCOLHIDO */}
+      <p className="text-[11px] font-bold uppercase tracking-wider text-zinc-500 -mb-2 md:-mb-3">{filtroCentro === TODOS ? 'Todos os centros' : `Centro ${filtroCentro}`}</p>
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-2 md:gap-4">
         <CardKpi titulo="Gasto do mês" valor={brl(atual.consumo)} corValor={VERMELHO} icone={ArrowDownCircle} corIcone={VERMELHO}
-          dica="Tudo que foi gasto de verdade. NÃO entra aqui: dinheiro investido, compras feitas para Terceiros/Reembolsos, transferências entre suas contas e pagamento de fatura (a fatura é só o boleto das compras que já estão contadas).">
+          dica="Tudo que foi gasto de verdade neste centro. NÃO entra aqui: dinheiro investido, compras feitas para Terceiros/Reembolsos, transferências entre suas contas e pagamento de fatura (a fatura é só o boleto das compras que já estão contadas).">
           <Variacao atual={atual.consumo} referencia={A.ref((m) => m.consumo)} sobeEhBom={false} rotulo={rotuloComp} />
         </CardKpi>
 
-        <CardKpi titulo="Resultado (sobrou / faltou)" valor={brl(resultado)} corValor={resultado >= 0 ? VERDE : VERMELHO} icone={Landmark} corIcone={AZUL}
-          dica="Entrou menos gastou. Positivo = sobrou dinheiro. Negativo = você gastou mais do que ganhou e cobriu com saldo guardado, cartão ou empréstimo.">
-          <Variacao atual={resultado} referencia={A.ref((m) => m.receita - m.consumo)} sobeEhBom rotulo={rotuloComp} />
-        </CardKpi>
-
-        <CardKpi titulo="Taxa de poupança" valor={pct(taxaPoupanca)} corValor={corPoupanca} icone={PiggyBank} corIcone={corPoupanca}
-          sub={taxaPoupanca == null ? 'Lance a receita para calcular' : 'Referência saudável: 20% ou mais'}
-          dica="De cada R$ 100 que entram, quantos reais sobram depois dos gastos. 20 ou mais é saudável; abaixo de 10 é sinal de aperto." />
-
-        <CardKpi titulo="Peso de empréstimos e juros" valor={pct(pesoDivida)} corValor={corDivida} icone={Percent} corIcone={corDivida}
-          sub={`${brl(atual.divida)}${atual.receita > 0 ? ` · ${pct(atual.divida / atual.receita)} da renda` : ''}`}
-          dica="Quanto do seu gasto foi para empréstimos e juros. É dinheiro pagando o passado, não o seu mês. Até 10% é tranquilo; acima de 25% aperta tudo o resto." />
-
         <CardKpi titulo="Pago no cartão" valor={brl(atual.cartao)} corValor={AMARELO} icone={Wallet} corIcone={AMARELO}
           sub={atual.consumo > 0 ? `${pct(atual.cartao / atual.consumo)} do gasto passou pelo cartão` : undefined}
-          dica="Parte do 'Gasto do mês' feita no cartão de crédito. NÃO é um gasto a mais — é o mesmo gasto, só mostrando o meio de pagamento." />
-
-        <CardKpi titulo="Investido no mês" valor={brl(atual.investimento)} corValor={AZUL} icone={TrendingUp} corIcone={AZUL}
-          sub={atual.receita > 0 ? `${pct(atual.investimento / atual.receita)} do que entrou` : undefined}
-          dica="Dinheiro guardado ou aplicado (categoria Investimentos). Não conta como gasto, porque continua sendo seu." />
+          dica="Parte do 'Gasto do mês' feita no cartão de crédito. NÃO é um gasto a mais: é o mesmo gasto, só mostrando o meio de pagamento." />
 
         {A.ehMesCorrente ? (
           <CardKpi titulo="Projeção de fechamento" valor={brl(A.projecao)} corValor={A.refConsumo != null && A.projecao > A.refConsumo ? VERMELHO : '#fff'} icone={Gauge} corIcone={AZUL}
@@ -653,12 +651,50 @@ export default function FinancasDashboard() {
           <CardKpi titulo="Média de gasto (3 meses antes)" valor={A.refConsumo != null ? brl(A.refConsumo) : '—'} corValor="#fff" icone={Gauge} corIcone={AZUL}
             dica="Quanto você costuma gastar por mês, olhando os 3 meses anteriores ao mês escolhido." />
         )}
+
+        <CardKpi titulo="Maior categoria" valor={maiorCat ? brl(maiorCat.valor) : '—'} corValor="#fff" icone={BarChart3} corIcone="#8b5cf6"
+          sub={maiorCat ? `${maiorCat.nome} · ${pct(maiorCat.pct, 0)} do gasto` : 'Nenhuma despesa no mês'}
+          dica="A categoria que mais pesou no gasto do mês neste centro. Clique nela na lista 'Gastos por categoria' para ver os lançamentos." />
+      </div>
+
+      {/* KPIs DA FAMÍLIA TODA */}
+      <p className="text-[11px] font-bold uppercase tracking-wider text-zinc-500 -mb-2 md:-mb-3 flex items-center gap-1.5">
+        Família toda (todos os centros)
+        <Dica texto="Receita, resultado, poupança, juros e investimento só fazem sentido olhando a família inteira: os juros, por exemplo, ficam no centro Dívidas, e o dinheiro que entra não é de um centro só. Por isso esses números não mudam com o filtro de centro." />
+      </p>
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-2 md:gap-4">
+        {A.temReceita ? (
+          <>
+            <CardKpi titulo="Receita do mês" valor={brl(fam.receita)} corValor={VERDE} icone={ArrowUpCircle} corIcone={VERDE}
+              dica="Todo dinheiro que ENTROU no mês: salário, retirada da empresa, reembolso recebido.">
+              <Variacao atual={fam.receita} referencia={A.refFam((m) => m.receita)} sobeEhBom rotulo={rotuloComp} />
+            </CardKpi>
+            <CardKpi titulo="Resultado (sobrou / faltou)" valor={brl(resultado)} corValor={resultado >= 0 ? VERDE : VERMELHO} icone={Landmark} corIcone={AZUL}
+              sub={taxaPoupanca == null ? 'Lance a receita do mês' : `Poupança: ${pct(taxaPoupanca)} (saudável: 20% ou mais)`}
+              dica="Entrou menos gastou, da família toda. Positivo = sobrou dinheiro. Negativo = gastou mais do que entrou. A taxa de poupança diz quantos reais sobram de cada R$ 100 que entram.">
+              <Variacao atual={resultado} referencia={A.refFam((m) => m.receita - m.consumo)} sobeEhBom rotulo={rotuloComp} />
+            </CardKpi>
+          </>
+        ) : (
+          <div className="col-span-2 bg-[#1e1e24] border border-white/5 rounded-xl p-3 md:p-5 text-xs text-zinc-400 flex items-start gap-2">
+            <PiggyBank className="w-4 h-4 shrink-0 mt-0.5" style={{ color: corPoupanca }} />
+            <span>As receitas (salário, contribuição da Ingrid) ainda não são lançadas no app. Quando forem, aparecem aqui a <b className="text-zinc-200">receita</b>, o <b className="text-zinc-200">resultado</b> do mês (sobrou ou faltou) e a <b className="text-zinc-200">taxa de poupança</b>.</span>
+          </div>
+        )}
+
+        <CardKpi titulo="Peso de empréstimos e juros" valor={pct(pesoDivida)} corValor={corDivida} icone={Percent} corIcone={corDivida}
+          sub={`${brl(fam.divida)} de ${brl(fam.consumo)} gastos${fam.receita > 0 ? ` · ${pct(fam.divida / fam.receita)} da renda` : ''}`}
+          dica="Quanto de todo o gasto da família foi para empréstimos e juros (categorias com 'empréstimo' ou 'juros' no nome, em qualquer centro). É dinheiro pagando o passado, não o seu mês. Até 10% é tranquilo; acima de 25% aperta tudo o resto." />
+
+        <CardKpi titulo="Investido no mês" valor={brl(fam.investimento)} corValor={AZUL} icone={TrendingUp} corIcone={AZUL}
+          sub={fam.receita > 0 ? `${pct(fam.investimento / fam.receita)} do que entrou` : undefined}
+          dica="Dinheiro guardado ou aplicado (categoria Investimentos, em qualquer centro). Não conta como gasto, porque continua sendo seu." />
       </div>
 
       {/* TERMÔMETRO + PARA ONDE VAI CADA R$ 100 */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
-        <Bloco titulo={A.ehMesCorrente ? 'Termômetro do mês' : 'Resumo do mês'} icone={Gauge} corIcone={VERDE} className="lg:col-span-2"
-          dica="Compara o que você já gastou com a sua própria média dos últimos 3 meses. Quando as metas estiverem preenchidas, a referência passa a ser a meta.">
+        <Bloco titulo={A.ehMesCorrente ? 'Termômetro do mês' : 'Resumo do mês'} icone={Gauge} corIcone={VERDE} className={fam.receita > 0 ? 'lg:col-span-2' : 'lg:col-span-3'}
+          dica="Compara o que este centro já gastou com a média dele nos últimos 3 meses. A meta da casa e o jogo ficam no card Game, lá em cima.">
           {A.refConsumo == null ? (
             <Vazio texto="Ainda não há 3 meses de histórico para comparar." />
           ) : (
@@ -708,20 +744,17 @@ export default function FinancasDashboard() {
           )}
         </Bloco>
 
-        <Bloco titulo="Para onde vai cada R$ 100 que entra" icone={PiggyBank} corIcone={AZUL}
-          dica="Divide a receita do mês em: gastos do dia a dia, empréstimos/juros, investido e o que sobrou (ou faltou).">
-          {atual.receita <= 0 ? (
-            <Vazio texto="Lance a receita do mês para ver essa divisão." />
-          ) : (
-            (() => {
-              const r = atual.receita;
+        {fam.receita > 0 && <Bloco titulo="Para onde vai cada R$ 100 que entra" icone={PiggyBank} corIcone={AZUL}
+          dica="Divide a receita do mês da família toda em: gastos do dia a dia, empréstimos/juros, investido e o que sobrou (ou faltou).">
+          {(() => {
+              const r = fam.receita;
               const partes = [
-                { nome: 'Gastos do dia a dia', v: Math.max(0, atual.consumo - atual.divida), cor: VERMELHO },
-                { nome: 'Empréstimos e juros', v: Math.max(0, atual.divida), cor: AMARELO },
-                { nome: 'Investido', v: Math.max(0, atual.investimento), cor: AZUL },
-                { nome: 'Sobrou', v: Math.max(0, r - atual.consumo - atual.investimento), cor: VERDE },
+                { nome: 'Gastos do dia a dia', v: Math.max(0, fam.consumo - fam.divida), cor: VERMELHO },
+                { nome: 'Empréstimos e juros', v: Math.max(0, fam.divida), cor: AMARELO },
+                { nome: 'Investido', v: Math.max(0, fam.investimento), cor: AZUL },
+                { nome: 'Sobrou', v: Math.max(0, r - fam.consumo - fam.investimento), cor: VERDE },
               ];
-              const faltou = Math.max(0, atual.consumo + atual.investimento - r);
+              const faltou = Math.max(0, fam.consumo + fam.investimento - r);
               const total = partes.reduce((s, x) => s + x.v, 0) || 1;
               return (
                 <div className="space-y-4">
@@ -743,9 +776,8 @@ export default function FinancasDashboard() {
                   )}
                 </div>
               );
-            })()
-          )}
-        </Bloco>
+            })()}
+        </Bloco>}
       </div>
 
       {/* CATEGORIAS + INSIGHTS */}
@@ -841,10 +873,10 @@ export default function FinancasDashboard() {
 
       {/* EVOLUÇÃO 12 MESES */}
       <Bloco titulo="Evolução dos últimos 12 meses" icone={TrendingUp} corIcone={VERDE}
-        dica="Verde = o que entrou. Vermelho = o que foi gasto. O número embaixo é o resultado do mês (sobrou ou faltou). Clique numa coluna para abrir aquele mês."
+        dica="Vermelho = o que foi gasto. Com 'Todos os centros' e receitas lançadas, aparece também o verde (o que entrou) e o número embaixo é o resultado do mês; senão, o número é o gasto. Clique numa coluna para abrir aquele mês."
         extra={
           <div className="flex gap-4 text-[10px] text-zinc-400">
-            <span><span className="inline-block w-2.5 h-2.5 rounded-sm mr-1" style={{ backgroundColor: VERDE }} />Receita</span>
+            {A.evolucao.some((e) => e.receita > 0) && <span><span className="inline-block w-2.5 h-2.5 rounded-sm mr-1" style={{ backgroundColor: VERDE }} />Receita</span>}
             <span><span className="inline-block w-2.5 h-2.5 rounded-sm mr-1" style={{ backgroundColor: VERMELHO }} />Gasto</span>
           </div>
         }>
@@ -856,7 +888,7 @@ export default function FinancasDashboard() {
                   <div className="w-3 rounded-t" style={{ height: `${(e.receita / maxEvol) * 100}%`, backgroundColor: VERDE }} title={`Receita ${brl(e.receita)}`} />
                   <div className="w-3 rounded-t" style={{ height: `${(Math.max(0, e.consumo) / maxEvol) * 100}%`, backgroundColor: VERMELHO }} title={`Gasto ${brl(e.consumo)}`} />
                 </div>
-                <span className={`text-[10px] font-semibold ${e.resultado >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{e.receita === 0 && e.consumo === 0 ? '—' : brlCurto(e.resultado)}</span>
+                <span className={`text-[10px] font-semibold ${e.receita === 0 ? 'text-zinc-300' : e.resultado >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{e.receita === 0 && e.consumo === 0 ? '—' : brlCurto(e.receita === 0 ? e.consumo : e.resultado)}</span>
                 <span className={`text-[10px] pb-1 ${e.k === mesSel ? 'text-white font-bold' : 'text-zinc-500'}`}>{rotuloMes(e.k)}</span>
               </button>
             ))}
@@ -1001,7 +1033,7 @@ export default function FinancasDashboard() {
           {(() => {
             const confianca = A.q.valorDespesas > 0 ? 1 - A.q.valorSemCategoria / A.q.valorDespesas : null;
             const itens = [
-              { ok: atual.receita > 0, txt: atual.receita > 0 ? 'Receita do mês lançada' : 'Receita do mês NÃO lançada' },
+              ...(A.temReceita ? [{ ok: fam.receita > 0, txt: fam.receita > 0 ? 'Receita do mês lançada' : 'Receita do mês NÃO lançada' }] : []),
               { ok: A.q.semCategoria === 0, txt: A.q.semCategoria === 0 ? 'Todos os gastos têm categoria' : `${A.q.semCategoria} gasto(s) sem categoria (${brl(A.q.valorSemCategoria)})` },
               { ok: A.q.semCentro === 0, txt: A.q.semCentro === 0 ? 'Todos os lançamentos têm centro de custo' : `${A.q.semCentro} lançamento(s) sem centro de custo (em qualquer centro)` },
               ...(A.temCampoSub ? [{ ok: A.q.semSub === 0, txt: A.q.semSub === 0 ? 'Todos os gastos têm subcategoria' : `${A.q.semSub} gasto(s) sem subcategoria` }] : []),
