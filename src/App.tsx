@@ -9,17 +9,14 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { MainLayout } from "./components/layout/MainLayout";
 import Login from "./pages/Login";
-import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 
 // IMPORTS MILHAS
-import Passageiros from "./pages/milhas/Passageiros";
-import Programas from "./pages/milhas/Programas";
-import Estoque from "./pages/milhas/Estoque";
-import ProgramDetails from "./pages/milhas/ProgramDetails";
-import Limites from "./pages/milhas/Limites";
-import ContasMilhas from "./pages/milhas/Titulares"; 
-import TransferenciasMilhas from "./pages/milhas/Transferencias"; 
+import PainelMilhas from "./pages/milhas/Painel";
+import LancarMilhas from "./pages/milhas/Lancar";
+import EstoqueMilhas from "./pages/milhas/Estoque";
+import ContaHistorico from "./pages/milhas/ContaHistorico";
+import CadastrosMilhas from "./pages/milhas/Cadastros";
 
 // IMPORTS FINANÇAS
 import FinancasDashboard from "./pages/financas/FinancasDashboard";
@@ -64,15 +61,11 @@ const AppLogado = () => {
         {/* Depois do login, cai sempre no painel de Finanças. O painel de Milhas fica em /milhas. */}
         <Route path="/" element={<Navigate to="/financas" replace />} />
         <Route path="/login" element={<Navigate to="/financas" replace />} />
-        <Route path="/milhas" element={<SomenteAdmin><Index /></SomenteAdmin>} />
-
-        <Route path="/milhas/estoque" element={<SomenteAdmin><Estoque /></SomenteAdmin>} />
-        <Route path="/milhas/estoque/:id" element={<SomenteAdmin><ProgramDetails /></SomenteAdmin>} />
-        <Route path="/milhas/limites" element={<SomenteAdmin><Limites /></SomenteAdmin>} />
-        <Route path="/milhas/passageiros" element={<SomenteAdmin><Passageiros /></SomenteAdmin>} />
-        <Route path="/milhas/programas" element={<SomenteAdmin><Programas /></SomenteAdmin>} />
-        <Route path="/milhas/contas" element={<SomenteAdmin><ContasMilhas /></SomenteAdmin>} />
-        <Route path="/milhas/transferencias" element={<SomenteAdmin><TransferenciasMilhas /></SomenteAdmin>} />
+        <Route path="/milhas" element={<SomenteAdmin><PainelMilhas /></SomenteAdmin>} />
+        <Route path="/milhas/lancar" element={<SomenteAdmin><LancarMilhas /></SomenteAdmin>} />
+        <Route path="/milhas/estoque" element={<SomenteAdmin><EstoqueMilhas /></SomenteAdmin>} />
+        <Route path="/milhas/estoque/:id" element={<SomenteAdmin><ContaHistorico /></SomenteAdmin>} />
+        <Route path="/milhas/cadastros" element={<SomenteAdmin><CadastrosMilhas /></SomenteAdmin>} />
 
         <Route path="/financas" element={<FinancasDashboard />} />
         <Route path="/financas/contas" element={<SomenteAdmin><Contas /></SomenteAdmin>} />
