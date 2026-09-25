@@ -16,13 +16,11 @@ export const Sidebar = ({ gaveta = false }: { gaveta?: boolean }) => {
   const [recolhido, setCollapsed] = useState(false);
   const collapsed = !gaveta && recolhido;
   const { isAdmin } = useFamilia();
-  // O módulo vem da página aberta: /milhas... = MILHAS, /financas... = FINANÇAS.
-  // Nas configurações, vale o último módulo escolhido.
-  const moduloGuardado = (localStorage.getItem('erp_modulo_ativo') as 'FINANCAS' | 'MILHAS') || 'FINANCAS';
-  const moduloDaPagina = pathname.startsWith('/milhas') ? 'MILHAS' : pathname.startsWith('/financas') ? 'FINANCAS' : moduloGuardado;
+  // O módulo vem da página aberta: /milhas... = MILHAS; o resto (Finanças e
+  // Configurações) = FINANÇAS.
+  const moduloDaPagina = pathname.startsWith('/milhas') ? 'MILHAS' : 'FINANCAS';
   // O membro só usa Finanças (o módulo Milhas é só do admin).
   const moduloAtivo = isAdmin ? moduloDaPagina : 'FINANCAS';
-  useEffect(() => { localStorage.setItem('erp_modulo_ativo', moduloAtivo); }, [moduloAtivo]);
 
   // Estados para armazenar os dados reais do usuário logado
   const [userName, setUserName] = useState('Carregando...');
@@ -44,7 +42,6 @@ export const Sidebar = ({ gaveta = false }: { gaveta?: boolean }) => {
   }, []);
 
   const alterarModulo = (modulo: 'FINANCAS' | 'MILHAS') => {
-    localStorage.setItem('erp_modulo_ativo', modulo);
     navigate(modulo === 'MILHAS' ? '/milhas' : '/financas');
   };
 
@@ -84,7 +81,8 @@ export const Sidebar = ({ gaveta = false }: { gaveta?: boolean }) => {
   const PATHS_DO_MEMBRO = ['/financas', '/financas/transacoes', '/financas/metas', '/financas/fluxo-caixa', '/financas/cartoes'];
   const itemTelegram = { icon: Send, label: 'Telegram', path: '/configuracoes/telegram' };
   const menuConfig = isAdmin
-    ? [...menuCompleto, { group: "CONFIGURAÇÕES", items: [{ icon: Home, label: 'Família', path: '/configuracoes/familia' }, { icon: MessageSquareWarning, label: 'Contestações', path: '/configuracoes/contestacoes' }, itemTelegram] }]
+    // Configurações só aparecem no módulo Finanças.
+    ? [...menuCompleto, ...(moduloAtivo === 'FINANCAS' ? [{ group: "CONFIGURAÇÕES", items: [{ icon: Home, label: 'Família', path: '/configuracoes/familia' }, { icon: MessageSquareWarning, label: 'Contestações', path: '/configuracoes/contestacoes' }, itemTelegram] }] : [])]
     : [...menuCompleto
         .map(g => ({ ...g, items: g.items.filter(i => PATHS_DO_MEMBRO.includes(i.path)) }))
         .filter(g => g.items.length > 0),
