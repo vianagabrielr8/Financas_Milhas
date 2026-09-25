@@ -1,8 +1,8 @@
 import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { PlusCircle, Package, CalendarClock } from 'lucide-react';
-import { buscarProgramas, buscarContas, buscarMovimentos, situacaoDaConta, milhasFmt, brl, dataBR, somaDias } from '@/lib/milhas';
+import { PlusCircle, Package, CalendarClock, DollarSign, ShieldCheck } from 'lucide-react';
+import { buscarProgramas, buscarContas, buscarMovimentos, buscarVendas, buscarParcelas, buscarPassageiros, situacaoDaConta, calcularLimites, lucroDaVenda, milhasFmt, brl, dataBR, somaDias } from '@/lib/milhas';
 import { hojeLocal } from '@/lib/utils';
 import { Cartao, Indicador, Vazio } from '@/components/milhas/ui';
 
@@ -10,7 +10,18 @@ export default function Painel() {
   const programas = useQuery({ queryKey: ['milhas_programas'], queryFn: buscarProgramas });
   const contas = useQuery({ queryKey: ['milhas_contas'], queryFn: buscarContas });
   const movs = useQuery({ queryKey: ['milhas_movimentos'], queryFn: () => buscarMovimentos() });
-  const hoje = hojeLocal(), limite90 = somaDias(hoje, 90);
+  const vendas = useQuery({ queryKey: ['milhas_vendas'], queryFn: buscarVendas });
+  const parcelas = useQuery({ queryKey: ['milhas_parcelas'], queryFn: buscarParcelas });
+  const pax = useQuery({ queryKey: ['milhas_passageiros'], queryFn: buscarPassageiros });
+  const hoje = hojeLocal(), limite90 = somaDias(hoje, 90), mes = hoje.slice(0, 7);
+
+  const vendasMes = (vendas.data || []).filter(v => v.data.startsWith(mes));
+  const abertas = (parcelas.data || []).filter(p => p.situacao === 'ABERTA');
+  const aReceber = abertas.filter(p => p.tipo === 'RECEBER'), aPagar = abertas.filter(p => p.tipo === 'PAGAR');
+  const soma = (l: any[]) => l.reduce((a, p) => a + Number(p.valor), 0);
+  const atrasado = abertas.filter(p => p.tipo === 'RECEBER' && p.vencimento < hoje);
+  const limitesApertados = useMemo(() => calcularLimites(programas.data || [], (contas.data || []).filter(c => c.ativo), movs.data || [], pax.data || [], hoje)
+    .filter(l => l.usados / l.limite >= 0.8), [programas.data, contas.data, movs.data, pax.data, hoje]);
 
   const dados = useMemo(() => {
     const porConta = new Map<string, any[]>();
@@ -41,7 +52,27 @@ export default function Painel() {
         <Indicador titulo="Vencem em 90 dias" valor={milhasFmt(dados.vencendo.reduce((a, v) => a + v.restante, 0))} />
       </div>
 
-      <div className="grid grid-cols-2 gap-2 md:gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-4">
+        <Indicador titulo="Vendido no mês" valor={brl(vendasMes.reduce((a, v) => a + Number(v.valor_total), 0))} sub={`${vendasMes.length} venda(s)`} />
+        <Indicador titulo="Lucro no mês" valor={brl(vendasMes.reduce((a, v) => a + lucroDaVenda(v), 0))} destaque />
+        <Link to="/milhas/receber-pagar"><Indicador titulo="A receber" valor={brl(soma(aReceber))} sub={atrasado.length ? `${brl(soma(atrasado))} atrasado` : undefined} /></Link>
+        <Link to="/milhas/receber-pagar"><Indicador titulo="A pagar" valor={brl(soma(aPagar))} /></Link>
+      </div>
+
+      {limitesApertados.length > 0 && (
+        <Link to="/milhas/limites-cpf">
+          <Cartao className="border-amber-500/30 flex items-start gap-3">
+            <ShieldCheck className="w-5 h-5 text-amber-400 shrink-0" />
+            <div className="text-sm">
+              <p className="font-bold text-amber-300">Limite de CPF quase no fim</p>
+              {limitesApertados.map(l => <p key={l.conta.id} className="text-xs text-zinc-400">{l.conta.titular} – {l.programa.nome}: {l.usados} de {l.limite}</p>)}
+            </div>
+          </Cartao>
+        </Link>
+      )}
+
+      <div className="grid grid-cols-3 gap-2 md:gap-4">
+        <Link to="/milhas/vendas"><Cartao className="flex items-center gap-3 hover:border-violet-500/50"><DollarSign className="w-5 h-5 text-violet-400" /><span className="font-semibold text-sm">Vender</span></Cartao></Link>
         <Link to="/milhas/lancar"><Cartao className="flex items-center gap-3 hover:border-violet-500/50"><PlusCircle className="w-5 h-5 text-violet-400" /><span className="font-semibold text-sm">Lançar</span></Cartao></Link>
         <Link to="/milhas/estoque"><Cartao className="flex items-center gap-3 hover:border-violet-500/50"><Package className="w-5 h-5 text-violet-400" /><span className="font-semibold text-sm">Estoque</span></Cartao></Link>
       </div>
@@ -74,7 +105,6 @@ export default function Painel() {
           )}
         </Cartao>
       </div>
-      <p className="text-[11px] text-zinc-500">Vendas, lucro, contas a receber e limites de CPF entram na próxima etapa.</p>
     </div>
   );
 }

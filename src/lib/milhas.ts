@@ -118,3 +118,77 @@ export function somaMeses(data: string, meses: number) {
   d.setUTCDate(Math.min(dia, ultimo));
   return d.toISOString().slice(0, 10);
 }
+
+/** Lê número digitado: aceita "10.000", "350,50" e "350.50". */
+export function lerNumero(v: string | number) {
+  const t = String(v ?? '').trim();
+  if (t.includes(',')) return Number(t.replace(/\./g, '').replace(',', '.')) || 0;
+  if (/^\d+\.\d{1,2}$/.test(t)) return Number(t) || 0;
+  return Number(t.replace(/\./g, '')) || 0;
+}
+
+export type Venda = {
+  id: string; conta_id: string; contato_id: string | null; data: string; milhas: number; valor_total: number;
+  taxa_dinheiro: number; taxa_milhas: number; custo_milhas: number; localizador: string | null; observacao: string | null;
+};
+export type Parcela = {
+  id: string; tipo: 'PAGAR' | 'RECEBER'; venda_id: string | null; movimento_id: string | null; contato_id: string | null;
+  descricao: string; numero: number; total: number; valor: number; vencimento: string; situacao: 'ABERTA' | 'PAGA'; pago_em: string | null;
+};
+export type Passageiro = { id: string; movimento_id: string; nome: string; cpf: string };
+
+export const buscarVendas = (): Promise<Venda[]> =>
+  buscarTudo(() => db.from('milhas_venda').select('*').order('data', { ascending: false }).order('id'));
+export const buscarParcelas = (): Promise<Parcela[]> =>
+  buscarTudo(() => db.from('milhas_parcela').select('*').order('vencimento').order('id'));
+export const buscarPassageiros = (): Promise<Passageiro[]> =>
+  buscarTudo(() => db.from('milhas_venda_passageiro').select('id, movimento_id, nome, cpf').order('id'));
+
+/** Lucro da venda: o que o cliente paga − custo das milhas − taxa paga em R$. */
+export const lucroDaVenda = (v: Pick<Venda, 'valor_total' | 'custo_milhas' | 'taxa_dinheiro'>) =>
+  (Number(v.valor_total) || 0) - (Number(v.custo_milhas) || 0) - (Number(v.taxa_dinheiro) || 0);
+
+export const soDigitos = (s: string) => String(s || '').replace(/\D/g, '');
+
+export type LimiteConta = {
+  conta: Conta; programa: Programa; usados: number; limite: number;
+  cpfs: { cpf: string; nome: string; ultima: string; libera: string }[];
+};
+
+/**
+ * Limite de CPF por conta (programas aéreos com limite cadastrado).
+ * Conta os CPFs diferentes emitidos na janela do programa:
+ *   ANO_CIVIL -> emissões deste ano; libera em 1º de janeiro;
+ *   12_MESES  -> emissões dos últimos 12 meses; libera 12 meses após a ÚLTIMA emissão
+ *                (estimativa conservadora).
+ * O CPF do próprio titular não conta.
+ */
+export function calcularLimites(programas: Programa[], contas: Conta[], movs: Movimento[], pax: Passageiro[], hoje: string): LimiteConta[] {
+  const movPorId = new Map(movs.map(m => [m.id, m]));
+  const inicioAno = hoje.slice(0, 4) + '-01-01';
+  const umAnoAtras = somaMeses(hoje, -12);
+  const res: LimiteConta[] = [];
+  for (const conta of contas) {
+    const programa = programas.find(p => p.id === conta.programa_id);
+    if (!programa || programa.tipo !== 'AEREA' || !programa.limite_cpf) continue;
+    const anual = programa.renovacao_cpf !== '12_MESES';
+    const cpfTitular = soDigitos(conta.cpf || '');
+    const porCpf = new Map<string, { nome: string; ultima: string }>();
+    for (const p of pax) {
+      const m = movPorId.get(p.movimento_id);
+      if (!m || m.conta_id !== conta.id) continue;
+      const cpf = soDigitos(p.cpf);
+      if (!cpf || cpf === cpfTitular) continue;
+      const dentro = anual ? m.data >= inicioAno : m.data > umAnoAtras;
+      if (!dentro || m.data > hoje) continue;
+      const atual = porCpf.get(cpf);
+      if (!atual || m.data > atual.ultima) porCpf.set(cpf, { nome: p.nome, ultima: m.data });
+    }
+    const cpfs = Array.from(porCpf.entries()).map(([cpf, v]) => ({
+      cpf, nome: v.nome, ultima: v.ultima,
+      libera: anual ? `${Number(hoje.slice(0, 4)) + 1}-01-01` : somaMeses(v.ultima, 12),
+    })).sort((a, b) => a.libera.localeCompare(b.libera));
+    res.push({ conta, programa, usados: cpfs.length, limite: programa.limite_cpf, cpfs });
+  }
+  return res;
+}
