@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { ChevronLeft, Trash2 } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, hojeLocal } from '@/lib/utils';
 import { db, buscarProgramas, buscarContas, buscarMovimentos, situacaoDaConta, ehEntrada, NOME_TIPO, milhasFmt, brl, dataBR, erroAmigavel, Movimento } from '@/lib/milhas';
 import { Cartao, Indicador, Vazio } from '@/components/milhas/ui';
 
@@ -15,6 +15,7 @@ export default function ContaHistorico() {
   const movs = useQuery({ queryKey: ['milhas_movimentos', id], queryFn: () => buscarMovimentos(id) });
 
   const conta = contas.data?.find(c => c.id === id);
+  const hoje = hojeLocal();
   const s = useMemo(() => situacaoDaConta(movs.data || []), [movs.data]);
   const lista = [...(movs.data || [])].reverse(); // mais recentes primeiro
 
@@ -57,7 +58,7 @@ export default function ContaHistorico() {
               return (
                 <div key={m.id} className="flex items-center gap-3 px-4 py-3">
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold">{NOME_TIPO[m.tipo] || m.tipo}</p>
+                    <p className="text-sm font-semibold">{NOME_TIPO[m.tipo] || m.tipo}{m.data > hoje && <span className="text-[10px] text-violet-300 font-bold"> · PROGRAMADO</span>}</p>
                     <p className="text-[11px] text-zinc-500 truncate">
                       {dataBR(m.data)}{m.custo > 0 && ` · ${brl(m.custo)}`}{m.validade && ` · vence ${dataBR(m.validade)}`}{m.observacao && ` · ${m.observacao}`}
                     </p>

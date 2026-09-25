@@ -1,23 +1,30 @@
 import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Plus, Trash2, ArrowDown } from 'lucide-react';
+import { ArrowDown } from 'lucide-react';
 import { hojeLocal } from '@/lib/utils';
 import {
-  db, buscarProgramas, buscarContas, buscarContatos, buscarMovimentos, situacaoDaConta, custoDaSaida,
-  milhasFmt, brl, milheiro, erroAmigavel, somaMeses, lerNumero, Conta, Programa,
+  db, buscarProgramas, buscarContas, buscarContatos, buscarMovimentos, buscarTitulares, buscarPassageirosCad, buscarCartoesFinancas,
+  situacaoDaConta, custoDaSaida, obterConta, vencimentoNoCartao, milhasFmt, brl, milheiro, erroAmigavel, somaMeses, lerNumero,
+  Conta, Programa, Titular, PassageiroCad, CartaoFin, SituacaoConta,
 } from '@/lib/milhas';
 import { Campo, Pilulas, BotaoRoxo, Cartao, inputCls } from '@/components/milhas/ui';
+import { SeletorCarteira, Carteira, contaDe, EditorPassageiros, paxVazio, paxParaGravar, gravarPassageiros, PaxLinha } from '@/components/milhas/escolhas';
 
 type Aba = 'COMPRA' | 'BONUS' | 'TRANSF' | 'USO' | 'EXPIROU' | 'AJUSTE';
 const num = lerNumero;
+const carteiraVazia = (): Carteira => ({ titular: '', programa: '' });
 
 export default function Lancar() {
   const qc = useQueryClient();
   const [aba, setAba] = useState<Aba>('COMPRA');
   const programas = useQuery({ queryKey: ['milhas_programas'], queryFn: buscarProgramas });
   const contas = useQuery({ queryKey: ['milhas_contas'], queryFn: buscarContas });
+  const titulares = useQuery({ queryKey: ['milhas_titulares'], queryFn: buscarTitulares });
   const contatos = useQuery({ queryKey: ['milhas_contatos'], queryFn: buscarContatos });
+  const passageiros = useQuery({ queryKey: ['milhas_passageiros_cad'], queryFn: buscarPassageirosCad });
+  const cartoes = useQuery({ queryKey: ['cartoes_financas'], queryFn: buscarCartoesFinancas });
   const movs = useQuery({ queryKey: ['milhas_movimentos'], queryFn: () => buscarMovimentos() });
 
   const situacoes = useMemo(() => {
@@ -26,17 +33,16 @@ export default function Lancar() {
     return new Map(Array.from(porConta.entries()).map(([id, l]) => [id, situacaoDaConta(l)]));
   }, [movs.data]);
   const sit = (contaId: string) => situacoes.get(contaId) || situacaoDaConta([]);
+  const recarregar = () => ['milhas_movimentos', 'milhas_parcelas', 'milhas_contas', 'milhas_passageiros', 'milhas_passageiros_cad'].forEach(k => qc.invalidateQueries({ queryKey: [k] }));
 
-  const nomeProg = (id: string) => programas.data?.find(p => p.id === id)?.nome || '?';
-  const contasAtivas = (contas.data || []).filter(c => c.ativo);
-  const rotulo = (c: Conta) => `${c.titular} – ${nomeProg(c.programa_id)}`;
-  const recarregar = () => { qc.invalidateQueries({ queryKey: ['milhas_movimentos'] }); qc.invalidateQueries({ queryKey: ['milhas_parcelas'] }); };
-
-  if (!contas.isLoading && contasAtivas.length === 0) {
-    return <Cartao className="max-w-xl mx-auto text-center text-sm text-zinc-400">Cadastre primeiro uma conta em <b className="text-violet-300">Cadastros → Contas (CPFs)</b>.</Cartao>;
+  if (!titulares.isLoading && (titulares.data || []).length === 0) {
+    return <Cartao className="max-w-xl mx-auto text-center text-sm text-zinc-400">Cadastre primeiro um titular em <Link to="/milhas/titulares" className="text-violet-300 underline">Titulares</Link>.</Cartao>;
   }
 
-  const props = { contas: contasAtivas, rotulo, sit, recarregar, programas: programas.data || [] };
+  const props: Props = {
+    titulares: (titulares.data || []).filter(t => t.ativo), programas: (programas.data || []).filter(p => p.ativo), contas: contas.data || [],
+    sit, recarregar, cartoes: cartoes.data || [], passageiros: passageiros.data || [],
+  };
   return (
     <div className="space-y-4 max-w-xl mx-auto text-zinc-100">
       <Pilulas<Aba> valor={aba} onChange={setAba} opcoes={[['COMPRA', 'Compra'], ['BONUS', 'Bônus'], ['TRANSF', 'Transferência'], ['USO', 'Uso'], ['EXPIROU', 'Expirou'], ['AJUSTE', 'Ajuste']]} />
@@ -50,19 +56,12 @@ export default function Lancar() {
   );
 }
 
-type Props = { contas: Conta[]; rotulo: (c: Conta) => string; sit: (id: string) => ReturnType<typeof situacaoDaConta>; recarregar: () => void; programas: Programa[] };
-
-function SeletorConta({ contas, rotulo, sit, valor, onChange, rotuloCampo = 'Conta' }: Props & { valor: string; onChange: (v: string) => void; rotuloCampo?: string }) {
-  const s = valor ? sit(valor) : null;
-  return (
-    <Campo rotulo={rotuloCampo} dica={s ? `Saldo: ${milhasFmt(s.saldo)} milhas · milheiro ${brl(s.milheiro)}` : undefined}>
-      <select required className={inputCls} value={valor} onChange={e => onChange(e.target.value)}>
-        <option value="" disabled>Escolha a conta</option>
-        {contas.map(c => <option key={c.id} value={c.id}>{rotulo(c)}</option>)}
-      </select>
-    </Campo>
-  );
-}
+type Props = {
+  titulares: Titular[]; programas: Programa[]; contas: Conta[]; sit: (id: string) => SituacaoConta; recarregar: () => void;
+  cartoes: CartaoFin[]; passageiros: PassageiroCad[];
+};
+const sitDe = (p: Props, c: Carteira) => { const conta = contaDe(p.contas, c); return conta ? p.sit(conta.id) : situacaoDaConta([]); };
+const nomeCarteira = (p: Props, c: Carteira) => `${p.titulares.find(t => t.id === c.titular)?.nome || '?'} – ${p.programas.find(x => x.id === c.programa)?.nome || '?'}`;
 
 function Resumo({ linhas }: { linhas: [string, string][] }) {
   return (
@@ -74,54 +73,64 @@ function Resumo({ linhas }: { linhas: [string, string][] }) {
 
 /* ------------------------------ Compra ------------------------------ */
 function FormCompra(p: Props & { fornecedores: any[] }) {
-  const [f, setF] = useState({ conta: '', data: hojeLocal(), qtd: '', custo: '', validade: '', forma: 'CARTAO', parcelas: '2', venc1: '', contato: '', obs: '' });
+  const [cart, setCart] = useState<Carteira>(carteiraVazia());
+  const [f, setF] = useState({ data: hojeLocal(), qtd: '', custo: '', validade: '', forma: 'CARTAO', cartao: '', parcelas: '1', venc1: '', contato: '', obs: '' });
   const [salvando, setSalvando] = useState(false);
-  const qtd = num(f.qtd), custo = num(f.custo);
+  const qtd = num(f.qtd), custo = num(f.custo), n = Math.max(1, Number(f.parcelas) || 1);
+  const s = sitDe(p, cart);
+  const cartao = p.cartoes.find(c => c.id === f.cartao);
 
   const salvar = async (e: React.FormEvent) => {
     e.preventDefault();
     if (qtd <= 0) return toast.error('Informe a quantidade de milhas.');
-    if (f.forma === 'PARCELADO' && (!f.venc1 || Number(f.parcelas) < 1)) return toast.error('Informe as parcelas e o 1º vencimento.');
+    if (f.forma === 'CARTAO' && !f.cartao) return toast.error('Escolha o cartão.');
+    if (f.forma === 'PARCELADO' && !f.venc1) return toast.error('Informe o 1º vencimento.');
     setSalvando(true);
-    const { data: mov, error } = await db.from('milhas_movimento').insert([{
-      conta_id: f.conta, tipo: 'COMPRA', quantidade: qtd, custo, data: f.data, validade: f.validade || null,
-      forma_pagamento: f.forma, contato_id: f.contato || null, observacao: f.obs.trim() || null,
-    }]).select('id').single();
-    if (error) { setSalvando(false); return toast.error(erroAmigavel(error)); }
-    if (f.forma === 'PARCELADO') {
-      const n = Number(f.parcelas), base = Math.floor((custo / n) * 100) / 100;
-      const conta = p.contas.find(c => c.id === f.conta)!;
-      const linhas = Array.from({ length: n }, (_, i) => ({
-        tipo: 'PAGAR', movimento_id: mov.id, contato_id: f.contato || null,
-        descricao: `Compra de ${milhasFmt(qtd)} milhas – ${p.rotulo(conta)}`, numero: i + 1, total: n,
-        valor: i === n - 1 ? Math.round((custo - base * (n - 1)) * 100) / 100 : base, vencimento: somaMeses(f.venc1, i),
-      }));
-      const { error: e2 } = await db.from('milhas_parcela').insert(linhas);
-      if (e2) { await db.from('milhas_movimento').delete().eq('id', mov.id); setSalvando(false); return toast.error('Não gravei (erro nas parcelas): ' + erroAmigavel(e2)); }
-    }
-    setSalvando(false);
-    toast.success(`Compra de ${milhasFmt(qtd)} milhas lançada.`);
-    setF({ ...f, qtd: '', custo: '', validade: '', obs: '' });
-    p.recarregar();
+    try {
+      const contaId = await obterConta(cart.titular, cart.programa, p.contas);
+      const { data: mov, error } = await db.from('milhas_movimento').insert([{
+        conta_id: contaId, tipo: 'COMPRA', quantidade: qtd, custo, data: f.data, validade: f.validade || null,
+        forma_pagamento: f.forma === 'CARTAO' ? 'CARTAO' : f.forma === 'PARCELADO' ? 'PARCELADO' : 'A_VISTA', contato_id: f.contato || null, observacao: f.obs.trim() || null,
+      }]).select('id').single();
+      if (error) throw error;
+      if (f.forma === 'CARTAO' || f.forma === 'PARCELADO') {
+        const base = Math.floor((custo / n) * 100) / 100;
+        const linhas = Array.from({ length: n }, (_, i) => ({
+          tipo: 'PAGAR', movimento_id: mov.id, contato_id: f.contato || null, cartao_id: f.forma === 'CARTAO' ? f.cartao : null,
+          descricao: `Compra de ${milhasFmt(qtd)} milhas – ${nomeCarteira(p, cart)}`, numero: i + 1, total: n,
+          valor: i === n - 1 ? Math.round((custo - base * (n - 1)) * 100) / 100 : base,
+          vencimento: f.forma === 'CARTAO' ? vencimentoNoCartao(f.data, cartao, i) : somaMeses(f.venc1, i),
+        }));
+        const { error: e2 } = await db.from('milhas_parcela').insert(linhas);
+        if (e2) { await db.from('milhas_movimento').delete().eq('id', mov.id); throw e2; }
+      }
+      toast.success(`Compra de ${milhasFmt(qtd)} milhas lançada.`);
+      setF({ ...f, qtd: '', custo: '', validade: '', obs: '' });
+      p.recarregar();
+    } catch (err) { toast.error(erroAmigavel(err)); } finally { setSalvando(false); }
   };
 
   return (
     <Cartao>
       <form onSubmit={salvar} className="space-y-4">
-        <SeletorConta {...p} valor={f.conta} onChange={v => setF({ ...f, conta: v })} />
+        <SeletorCarteira {...p} valor={cart} onChange={setCart} rotulo="Titular e programa" />
         <div className="grid grid-cols-2 gap-3">
           <Campo rotulo="Milhas"><input required inputMode="numeric" className={inputCls} value={f.qtd} onChange={e => setF({ ...f, qtd: e.target.value })} placeholder="10.000" /></Campo>
           <Campo rotulo="Valor pago (R$)"><input required inputMode="decimal" className={inputCls} value={f.custo} onChange={e => setF({ ...f, custo: e.target.value })} placeholder="350,00" /></Campo>
           <Campo rotulo="Data"><input type="date" required className={inputCls} value={f.data} onChange={e => setF({ ...f, data: e.target.value })} /></Campo>
           <Campo rotulo="Vencem em"><input type="date" className={inputCls} value={f.validade} onChange={e => setF({ ...f, validade: e.target.value })} /></Campo>
         </div>
-        <Campo rotulo="Como pagou" dica={f.forma === 'CARTAO' ? 'A compra no cartão já aparece em Finanças (centro "Gestão de Milhas"). Aqui não gera conta a pagar.' : f.forma === 'PARCELADO' ? 'Gera as parcelas em Contas a pagar.' : undefined}>
+        <Campo rotulo="Como pagou">
           <select className={inputCls} value={f.forma} onChange={e => setF({ ...f, forma: e.target.value })}>
             <option value="CARTAO">Cartão de crédito</option>
             <option value="A_VISTA">Pix / boleto à vista</option>
-            <option value="PARCELADO">Parcelado com o fornecedor</option>
+            <option value="PARCELADO">Parcelado com o fornecedor (Pix/boleto)</option>
           </select>
         </Campo>
+        {f.forma === 'CARTAO' && <div className="grid grid-cols-2 gap-3">
+          <Campo rotulo="Cartão" dica="Aparece em Milhas → Cartões, no mês da fatura."><select required className={inputCls} value={f.cartao} onChange={e => setF({ ...f, cartao: e.target.value })}><option value="" disabled>Escolha</option>{p.cartoes.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}</select></Campo>
+          <Campo rotulo="Parcelas"><input type="number" min="1" max="24" className={inputCls} value={f.parcelas} onChange={e => setF({ ...f, parcelas: e.target.value })} /></Campo>
+        </div>}
         {f.forma === 'PARCELADO' && <div className="grid grid-cols-2 gap-3">
           <Campo rotulo="Parcelas"><input type="number" min="1" max="48" className={inputCls} value={f.parcelas} onChange={e => setF({ ...f, parcelas: e.target.value })} /></Campo>
           <Campo rotulo="1º vencimento"><input type="date" className={inputCls} value={f.venc1} onChange={e => setF({ ...f, venc1: e.target.value })} /></Campo>
@@ -132,8 +141,11 @@ function FormCompra(p: Props & { fornecedores: any[] }) {
           </select>
         </Campo>}
         <Campo rotulo="Observação"><input className={inputCls} value={f.obs} onChange={e => setF({ ...f, obs: e.target.value })} /></Campo>
-        {qtd > 0 && custo > 0 && <Resumo linhas={[['Milheiro desta compra', brl(milheiro(custo, qtd))],
-          ...(f.conta ? [['Novo milheiro da conta', brl(milheiro(p.sit(f.conta).custo + custo, p.sit(f.conta).saldo + qtd))] as [string, string]] : [])]} />}
+        {qtd > 0 && custo > 0 && <Resumo linhas={[
+          ['Milheiro desta compra', brl(milheiro(custo, qtd))],
+          ...(cart.titular && cart.programa ? [['Novo milheiro da conta', brl(milheiro(s.custo + custo, s.saldo + qtd))] as [string, string]] : []),
+          ...(f.forma === 'CARTAO' && cartao ? [[`1ª parcela vence`, vencimentoNoCartao(f.data, cartao, 0).split('-').reverse().join('/')] as [string, string]] : []),
+        ]} />}
         <BotaoRoxo type="submit" disabled={salvando} className="w-full">{salvando ? 'Gravando...' : 'Lançar compra'}</BotaoRoxo>
       </form>
     </Cartao>
@@ -142,26 +154,28 @@ function FormCompra(p: Props & { fornecedores: any[] }) {
 
 /* ------------------- Bônus, Expirou e Ajuste ------------------- */
 function FormSimples(p: Props & { tipo: 'BONUS' | 'EXPIROU' | 'AJUSTE' }) {
-  const [f, setF] = useState({ conta: '', data: hojeLocal(), qtd: '', validade: '', sinal: 'MAIS', custo: '', obs: '' });
+  const [cart, setCart] = useState<Carteira>(carteiraVazia());
+  const [f, setF] = useState({ data: hojeLocal(), qtd: '', validade: '', sinal: 'MAIS', custo: '', obs: '' });
   const [salvando, setSalvando] = useState(false);
   const qtd = num(f.qtd);
   const entra = p.tipo === 'BONUS' || (p.tipo === 'AJUSTE' && f.sinal === 'MAIS');
   const tipoFinal = p.tipo === 'AJUSTE' ? (f.sinal === 'MAIS' ? 'AJUSTE_MAIS' : 'AJUSTE_MENOS') : p.tipo;
-  const s = f.conta ? p.sit(f.conta) : null;
+  const s = sitDe(p, cart);
 
   const salvar = async (e: React.FormEvent) => {
     e.preventDefault();
     if (qtd <= 0) return toast.error('Informe a quantidade.');
-    if (!entra && s && qtd > s.saldo) return toast.error(`A conta só tem ${milhasFmt(s.saldo)} milhas.`);
+    if (!entra && qtd > s.saldo) return toast.error(`A conta só tem ${milhasFmt(s.saldo)} milhas.`);
     setSalvando(true);
-    const custo = entra ? num(f.custo) : custoDaSaida(s!, qtd);
-    const { error } = await db.from('milhas_movimento').insert([{
-      conta_id: f.conta, tipo: tipoFinal, quantidade: qtd, custo, data: f.data,
-      validade: entra ? (f.validade || null) : null, observacao: f.obs.trim() || null,
-    }]);
-    setSalvando(false);
-    if (error) return toast.error(erroAmigavel(error));
-    toast.success('Lançado.'); setF({ ...f, qtd: '', custo: '', validade: '', obs: '' }); p.recarregar();
+    try {
+      const contaId = await obterConta(cart.titular, cart.programa, p.contas);
+      const { error } = await db.from('milhas_movimento').insert([{
+        conta_id: contaId, tipo: tipoFinal, quantidade: qtd, custo: entra ? num(f.custo) : custoDaSaida(s, qtd), data: f.data,
+        validade: entra ? (f.validade || null) : null, observacao: f.obs.trim() || null,
+      }]);
+      if (error) throw error;
+      toast.success('Lançado.'); setF({ ...f, qtd: '', custo: '', validade: '', obs: '' }); p.recarregar();
+    } catch (err) { toast.error(erroAmigavel(err)); } finally { setSalvando(false); }
   };
 
   const titulo = p.tipo === 'BONUS' ? 'Lançar bônus' : p.tipo === 'EXPIROU' ? 'Lançar milhas vencidas' : 'Lançar ajuste';
@@ -169,8 +183,8 @@ function FormSimples(p: Props & { tipo: 'BONUS' | 'EXPIROU' | 'AJUSTE' }) {
     <Cartao>
       <form onSubmit={salvar} className="space-y-4">
         {p.tipo === 'BONUS' && <p className="text-xs text-zinc-500">Milhas que entraram sem você pagar: bônus do cartão, promoção, indicação...</p>}
-        {p.tipo === 'AJUSTE' && <p className="text-xs text-zinc-500">Para o saldo do app bater com o extrato do programa.</p>}
-        <SeletorConta {...p} valor={f.conta} onChange={v => setF({ ...f, conta: v })} />
+        {p.tipo === 'AJUSTE' && <p className="text-xs text-zinc-500">Para o saldo do app bater com o extrato do programa (ex.: saldo inicial).</p>}
+        <SeletorCarteira {...p} valor={cart} onChange={setCart} rotulo="Titular e programa" soComSaldo={!entra} />
         {p.tipo === 'AJUSTE' && <Pilulas valor={f.sinal} onChange={v => setF({ ...f, sinal: v })} opcoes={[['MAIS', 'Somar milhas'], ['MENOS', 'Tirar milhas']]} />}
         <div className="grid grid-cols-2 gap-3">
           <Campo rotulo="Milhas"><input required inputMode="numeric" className={inputCls} value={f.qtd} onChange={e => setF({ ...f, qtd: e.target.value })} /></Campo>
@@ -179,7 +193,7 @@ function FormSimples(p: Props & { tipo: 'BONUS' | 'EXPIROU' | 'AJUSTE' }) {
           {p.tipo === 'AJUSTE' && entra && <Campo rotulo="Custo (R$)" dica="Se pagou algo"><input inputMode="decimal" className={inputCls} value={f.custo} onChange={e => setF({ ...f, custo: e.target.value })} placeholder="0" /></Campo>}
         </div>
         <Campo rotulo="Observação"><input className={inputCls} value={f.obs} onChange={e => setF({ ...f, obs: e.target.value })} /></Campo>
-        {!entra && s && qtd > 0 && <Resumo linhas={[['Sai do estoque pelo custo médio', brl(custoDaSaida(s, qtd))], ['Saldo depois', `${milhasFmt(s.saldo - qtd)} milhas`]]} />}
+        {!entra && qtd > 0 && <Resumo linhas={[['Sai do estoque pelo custo médio', brl(custoDaSaida(s, qtd))], ['Saldo depois', `${milhasFmt(s.saldo - qtd)} milhas`]]} />}
         <BotaoRoxo type="submit" disabled={salvando} className="w-full">{salvando ? 'Gravando...' : titulo}</BotaoRoxo>
       </form>
     </Cartao>
@@ -188,40 +202,44 @@ function FormSimples(p: Props & { tipo: 'BONUS' | 'EXPIROU' | 'AJUSTE' }) {
 
 /* --------------------------- Transferência --------------------------- */
 function FormTransferencia(p: Props) {
-  const [f, setF] = useState({ origem: '', destino: '', data: hojeLocal(), qtd: '', bonus: '0', entrada: '', taxa: '', validade: '', obs: '' });
+  const [origem, setOrigem] = useState<Carteira>(carteiraVazia());
+  const [destino, setDestino] = useState<Carteira>(carteiraVazia());
+  const [f, setF] = useState({ data: hojeLocal(), qtd: '', bonus: '0', entrada: '', taxa: '', validade: '', obs: '' });
   const [salvando, setSalvando] = useState(false);
   const qtd = num(f.qtd);
   const entradaCalc = Math.round(qtd * (1 + num(f.bonus) / 100));
   const entrada = f.entrada ? num(f.entrada) : entradaCalc;
-  const so = f.origem ? p.sit(f.origem) : null, sd = f.destino ? p.sit(f.destino) : null;
-  const custoSaida = so ? custoDaSaida(so, qtd) : 0;
+  const so = sitDe(p, origem), sd = sitDe(p, destino);
+  const custoSaida = custoDaSaida(so, qtd);
   const custoEntrada = custoSaida + num(f.taxa);
 
   const salvar = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (f.origem === f.destino) return toast.error('Origem e destino precisam ser contas diferentes.');
+    if (origem.titular === destino.titular && origem.programa === destino.programa) return toast.error('Origem e destino precisam ser diferentes.');
     if (qtd <= 0 || entrada <= 0) return toast.error('Informe as quantidades.');
-    if (so && qtd > so.saldo) return toast.error(`A conta de origem só tem ${milhasFmt(so.saldo)} milhas.`);
+    if (qtd > so.saldo) return toast.error(`A origem só tem ${milhasFmt(so.saldo)} milhas.`);
     setSalvando(true);
-    const tid = crypto.randomUUID();
-    const obs = f.obs.trim() || null;
-    // As duas pontas vão juntas num único envio: ou grava as duas, ou nenhuma.
-    const { error } = await db.from('milhas_movimento').insert([
-      { conta_id: f.origem, tipo: 'TRANSF_SAIDA', quantidade: qtd, custo: custoSaida, data: f.data, transferencia_id: tid, observacao: obs },
-      { conta_id: f.destino, tipo: 'TRANSF_ENTRADA', quantidade: entrada, custo: custoEntrada, data: f.data, validade: f.validade || null, transferencia_id: tid, observacao: obs },
-    ]);
-    setSalvando(false);
-    if (error) return toast.error(erroAmigavel(error));
-    toast.success(`Transferência lançada: entraram ${milhasFmt(entrada)} milhas.`);
-    setF({ ...f, qtd: '', bonus: '0', entrada: '', taxa: '', validade: '', obs: '' }); p.recarregar();
+    try {
+      const idOrigem = await obterConta(origem.titular, origem.programa, p.contas);
+      const idDestino = await obterConta(destino.titular, destino.programa, p.contas);
+      const tid = crypto.randomUUID(), obs = f.obs.trim() || null;
+      // As duas pontas vão juntas num único envio: ou grava as duas, ou nenhuma.
+      const { error } = await db.from('milhas_movimento').insert([
+        { conta_id: idOrigem, tipo: 'TRANSF_SAIDA', quantidade: qtd, custo: custoSaida, data: f.data, transferencia_id: tid, observacao: obs },
+        { conta_id: idDestino, tipo: 'TRANSF_ENTRADA', quantidade: entrada, custo: custoEntrada, data: f.data, validade: f.validade || null, transferencia_id: tid, observacao: obs },
+      ]);
+      if (error) throw error;
+      toast.success(`Transferência lançada: entraram ${milhasFmt(entrada)} milhas.`);
+      setF({ ...f, qtd: '', bonus: '0', entrada: '', taxa: '', validade: '', obs: '' }); p.recarregar();
+    } catch (err) { toast.error(erroAmigavel(err)); } finally { setSalvando(false); }
   };
 
   return (
     <Cartao>
       <form onSubmit={salvar} className="space-y-4">
-        <SeletorConta {...p} rotuloCampo="Sai de" valor={f.origem} onChange={v => setF({ ...f, origem: v })} />
+        <SeletorCarteira {...p} valor={origem} onChange={setOrigem} rotulo="Sai de" soComSaldo />
         <div className="flex justify-center -my-1"><ArrowDown className="w-5 h-5 text-violet-400" /></div>
-        <SeletorConta {...p} rotuloCampo="Entra em" valor={f.destino} onChange={v => setF({ ...f, destino: v })} />
+        <SeletorCarteira {...p} valor={destino} onChange={setDestino} rotulo="Entra em" />
         <div className="grid grid-cols-2 gap-3">
           <Campo rotulo="Milhas que saem"><input required inputMode="numeric" className={inputCls} value={f.qtd} onChange={e => setF({ ...f, qtd: e.target.value })} /></Campo>
           <Campo rotulo="Bônus (%)"><input inputMode="decimal" className={inputCls} value={f.bonus} onChange={e => setF({ ...f, bonus: e.target.value })} /></Campo>
@@ -231,10 +249,10 @@ function FormTransferencia(p: Props) {
           <Campo rotulo="Vencem em"><input type="date" className={inputCls} value={f.validade} onChange={e => setF({ ...f, validade: e.target.value })} /></Campo>
         </div>
         <Campo rotulo="Observação"><input className={inputCls} value={f.obs} onChange={e => setF({ ...f, obs: e.target.value })} placeholder="Ex.: promoção Livelo → LATAM 80%" /></Campo>
-        {qtd > 0 && so && <Resumo linhas={[
+        {qtd > 0 && origem.programa && <Resumo linhas={[
           ['Custo que sai da origem', brl(custoSaida)],
           ['Milheiro das milhas que entram', brl(milheiro(custoEntrada, entrada))],
-          ...(sd ? [['Novo milheiro no destino', brl(milheiro(sd.custo + custoEntrada, sd.saldo + entrada))] as [string, string]] : []),
+          ...(destino.programa ? [['Novo milheiro no destino', brl(milheiro(sd.custo + custoEntrada, sd.saldo + entrada))] as [string, string]] : []),
         ]} />}
         <BotaoRoxo type="submit" disabled={salvando} className="w-full">{salvando ? 'Gravando...' : 'Lançar transferência'}</BotaoRoxo>
       </form>
@@ -244,51 +262,44 @@ function FormTransferencia(p: Props) {
 
 /* ------------------------------- Uso ------------------------------- */
 function FormUso(p: Props) {
-  const [f, setF] = useState({ conta: '', data: hojeLocal(), qtd: '', obs: '' });
-  const [pax, setPax] = useState<{ nome: string; cpf: string }[]>([{ nome: '', cpf: '' }]);
+  const [cart, setCart] = useState<Carteira>(carteiraVazia());
+  const [f, setF] = useState({ data: hojeLocal(), qtd: '', obs: '' });
+  const [pax, setPax] = useState<PaxLinha[]>([paxVazio()]);
   const [salvando, setSalvando] = useState(false);
   const qtd = num(f.qtd);
-  const s = f.conta ? p.sit(f.conta) : null;
+  const s = sitDe(p, cart);
 
   const salvar = async (e: React.FormEvent) => {
     e.preventDefault();
-    const passageiros = pax.map(x => ({ nome: x.nome.trim(), cpf: x.cpf.replace(/\D/g, '') })).filter(x => x.nome && x.cpf);
+    const lista = paxParaGravar(pax, p.passageiros);
     if (qtd <= 0) return toast.error('Informe as milhas usadas.');
-    if (s && qtd > s.saldo) return toast.error(`A conta só tem ${milhasFmt(s.saldo)} milhas.`);
-    if (passageiros.length === 0) return toast.error('Informe pelo menos um passageiro (nome e CPF).');
+    if (qtd > s.saldo) return toast.error(`A conta só tem ${milhasFmt(s.saldo)} milhas.`);
+    if (lista.length === 0) return toast.error('Informe pelo menos um passageiro.');
     setSalvando(true);
-    const { data: mov, error } = await db.from('milhas_movimento').insert([{
-      conta_id: f.conta, tipo: 'USO', quantidade: qtd, custo: custoDaSaida(s!, qtd), data: f.data, observacao: f.obs.trim() || null,
-    }]).select('id').single();
-    if (error) { setSalvando(false); return toast.error(erroAmigavel(error)); }
-    const { error: e2 } = await db.from('milhas_venda_passageiro').insert(passageiros.map(x => ({ ...x, movimento_id: mov.id })));
-    if (e2) { await db.from('milhas_movimento').delete().eq('id', mov.id); setSalvando(false); return toast.error('Não gravei (erro nos passageiros): ' + erroAmigavel(e2)); }
-    setSalvando(false);
-    toast.success('Emissão lançada.'); setF({ ...f, qtd: '', obs: '' }); setPax([{ nome: '', cpf: '' }]); p.recarregar();
+    try {
+      const contaId = await obterConta(cart.titular, cart.programa, p.contas);
+      const { data: mov, error } = await db.from('milhas_movimento').insert([{
+        conta_id: contaId, tipo: 'USO', quantidade: qtd, custo: custoDaSaida(s, qtd), data: f.data, observacao: f.obs.trim() || null,
+      }]).select('id').single();
+      if (error) throw error;
+      const { error: e2 } = await gravarPassageiros(mov.id, lista);
+      if (e2) { await db.from('milhas_movimento').delete().eq('id', mov.id); throw e2; }
+      toast.success('Emissão lançada.'); setF({ ...f, qtd: '', obs: '' }); setPax([paxVazio()]); p.recarregar();
+    } catch (err) { toast.error(erroAmigavel(err)); } finally { setSalvando(false); }
   };
 
   return (
     <Cartao>
       <form onSubmit={salvar} className="space-y-4">
-        <p className="text-xs text-zinc-500">Passagem emitida para você ou para a família (sem venda). Os passageiros contam no limite de CPF do programa.</p>
-        <SeletorConta {...p} valor={f.conta} onChange={v => setF({ ...f, conta: v })} />
+        <p className="text-xs text-zinc-500">Passagem emitida para você ou para a família (sem venda). Os passageiros contam no limite do programa.</p>
+        <SeletorCarteira {...p} valor={cart} onChange={setCart} rotulo="Titular e programa" soComSaldo />
         <div className="grid grid-cols-2 gap-3">
           <Campo rotulo="Milhas usadas"><input required inputMode="numeric" className={inputCls} value={f.qtd} onChange={e => setF({ ...f, qtd: e.target.value })} /></Campo>
           <Campo rotulo="Data da emissão"><input type="date" required className={inputCls} value={f.data} onChange={e => setF({ ...f, data: e.target.value })} /></Campo>
         </div>
-        <div className="space-y-2">
-          <span className="text-zinc-400 text-[11px] font-bold uppercase block">Passageiros</span>
-          {pax.map((x, i) => (
-            <div key={i} className="flex gap-2">
-              <input className={inputCls} placeholder="Nome" value={x.nome} onChange={e => setPax(pax.map((y, j) => j === i ? { ...y, nome: e.target.value } : y))} />
-              <input className={inputCls + ' max-w-[9.5rem]'} inputMode="numeric" placeholder="CPF" value={x.cpf} onChange={e => setPax(pax.map((y, j) => j === i ? { ...y, cpf: e.target.value } : y))} />
-              {pax.length > 1 && <button type="button" onClick={() => setPax(pax.filter((_, j) => j !== i))} className="p-2 text-zinc-500 hover:text-red-400 shrink-0"><Trash2 className="w-4 h-4" /></button>}
-            </div>
-          ))}
-          <button type="button" onClick={() => setPax([...pax, { nome: '', cpf: '' }])} className="text-xs font-bold text-violet-300 flex items-center gap-1 py-1"><Plus className="w-3.5 h-3.5" /> Passageiro</button>
-        </div>
+        <EditorPassageiros linhas={pax} onChange={setPax} cadastro={p.passageiros} />
         <Campo rotulo="Observação"><input className={inputCls} value={f.obs} onChange={e => setF({ ...f, obs: e.target.value })} placeholder="Ex.: GRU–LIS, localizador ABC123" /></Campo>
-        {s && qtd > 0 && <Resumo linhas={[['Custo das milhas usadas', brl(custoDaSaida(s, qtd))], ['Saldo depois', `${milhasFmt(s.saldo - qtd)} milhas`]]} />}
+        {qtd > 0 && cart.programa && <Resumo linhas={[['Custo das milhas usadas', brl(custoDaSaida(s, qtd))], ['Saldo depois', `${milhasFmt(s.saldo - qtd)} milhas`]]} />}
         <BotaoRoxo type="submit" disabled={salvando} className="w-full">{salvando ? 'Gravando...' : 'Lançar emissão'}</BotaoRoxo>
       </form>
     </Cartao>

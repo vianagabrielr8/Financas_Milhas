@@ -56,7 +56,7 @@ export default function Estoque() {
       </div>
 
       {linhas.length === 0 ? (
-        <Vazio>Nenhuma conta. Cadastre em <Link to="/milhas/cadastros" className="text-violet-300 underline">Cadastros</Link> e lance em <Link to="/milhas/lancar" className="text-violet-300 underline">Lançar</Link>.</Vazio>
+        <Vazio>Nenhuma conta. Cadastre em <Link to="/milhas/titulares" className="text-violet-300 underline">Titulares</Link> e lance em <Link to="/milhas/lancar" className="text-violet-300 underline">Lançar</Link>.</Vazio>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
           {linhas.map(({ c, s, proximo, vence90 }) => (
@@ -71,6 +71,7 @@ export default function Estoque() {
                 </div>
                 <p className="text-2xl font-bold text-white mt-2">{milhasFmt(s.saldo)} <span className="text-xs text-zinc-500 font-medium">milhas</span></p>
                 <p className="text-xs text-zinc-400 mt-1">Milheiro {brl(s.milheiro)} · investido {brl(s.custo)}</p>
+                {s.futuro > 0 && <p className="text-[11px] text-violet-300 mt-1">+{milhasFmt(s.futuro)} programadas (clube)</p>}
                 {proximo && (
                   <p className={'text-[11px] mt-2 flex items-center gap-1 ' + (vence90 > 0 ? 'text-amber-400' : 'text-zinc-500')}>
                     <CalendarClock className="w-3.5 h-3.5" /> {milhasFmt(proximo.restante)} vencem em {dataBR(proximo.validade)}

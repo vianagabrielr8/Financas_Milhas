@@ -486,9 +486,10 @@ async function responderComoEstou(pessoa: Pessoa) {
 // Tudo filtrado por familia_id e por chat_id.
 // ------------------------------------------------------------------
 // === MILHAS INICIO ===
-const MILHAS_ENTRADA = ['COMPRA', 'BONUS', 'TRANSF_ENTRADA', 'AJUSTE_MAIS'];
+const MILHAS_ENTRADA = ['COMPRA', 'BONUS', 'TRANSF_ENTRADA', 'AJUSTE_MAIS', 'CLUBE', 'CLUBE_BONUS'];
 const NOME_TIPO_MILHAS: Record<string, string> = {
   COMPRA: 'Compra', BONUS: 'Bônus', TRANSF_ENTRADA: 'Transferência (entrou)', AJUSTE_MAIS: 'Ajuste (+)',
+  CLUBE: 'Clube (plano)', CLUBE_BONUS: 'Clube (bônus)',
   TRANSF_SAIDA: 'Transferência (saiu)', USO: 'Uso/resgate', EXPIROU: 'Expirou', AJUSTE_MENOS: 'Ajuste (−)',
 };
 const milhasBR = (n: number) => Math.round(n).toLocaleString('pt-BR');
@@ -673,7 +674,8 @@ async function gravarMilhas(p: Pessoa) {
   // saldo e custo atuais da conta (em páginas de 1000)
   let saldo = 0, custo = 0;
   for (let i = 0; ; i += 1000) {
-    const { data: movs } = await supabase.from('milhas_movimento').select('tipo, quantidade, custo').eq('familia_id', p.familiaId).eq('conta_id', contaId).order('id').range(i, i + 999);
+    // créditos programados do clube (data futura) ainda não estão no saldo
+    const { data: movs } = await supabase.from('milhas_movimento').select('tipo, quantidade, custo').eq('familia_id', p.familiaId).eq('conta_id', contaId).lte('data', new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10)).order('id').range(i, i + 999);
     for (const m of movs || []) {
       const s = MILHAS_ENTRADA.includes(m.tipo) ? 1 : -1;
       saldo += s * Number(m.quantidade); custo += s * Number(m.custo);
