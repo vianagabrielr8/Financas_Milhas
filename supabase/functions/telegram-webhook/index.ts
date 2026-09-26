@@ -1334,7 +1334,7 @@ async function executarTarefaGravacao(p: Pessoa, mesFaturaEscolhida: string | nu
           else if (i > 1 && mesFaturaEscolhida) mesFaturaFinal = addMonthsToFatura(mesFaturaEscolhida, i - 1);
 
           let descFinal = descLimpa;
-          if (qtdParcelas > 1) descFinal = `${descLimpa} [Parc ${i}/${qtdParcelas}]`;
+          if (qtdParcelas > 1) descFinal = `${descLimpa} (${i}/${qtdParcelas})`; // padrão do app: "Geladeira (2/10)"
 
           const dataObj = new Date(tx.data + 'T12:00:00Z');
           if (tx.conta_id && qtdParcelas > 1) {
@@ -1431,10 +1431,10 @@ async function marcarFaturaPaga(p: Pessoa, idx: number, rotulo: string, txId: st
   const nota = `Pagou a fatura ${cartao.nome} ${rotulo}`;
   await supabase.from('transacao_pessoal').update({ observacao: linha.observacao ? `${linha.observacao} · ${nota}` : nota }).eq('id', linha.id).eq('familia_id', p.familiaId);
   // Compara com o valor TOTAL do pagamento (todas as parcelas da linha)
-  const base = String(linha.descricao || '').replace(/\s*\[Parc \d+\/\d+\]$/, '');
+  const base = String(linha.descricao || '').replace(/\s*(\[Parc \d+\/\d+\]|\(\d+\/\d+\))$/, ''); // aceita o formato antigo [Parc n/t] e o padrão (n/t)
   const { data: parcelas } = await supabase.from('transacao_pessoal').select('valor, descricao')
     .eq('familia_id', p.familiaId).eq('cartao_id', linha.cartao_id).like('descricao', `${base}%`).range(0, 199);
-  const pago = (parcelas || []).filter((t: any) => t.descricao === base || String(t.descricao).startsWith(`${base} [Parc `)).reduce((a: number, t: any) => a + Number(t.valor), 0) || Number(linha.valor);
+  const pago = (parcelas || []).filter((t: any) => t.descricao === base || String(t.descricao).startsWith(`${base} [Parc `) || /^ \(\d+\/\d+\)$/.test(String(t.descricao).slice(base.length))).reduce((a: number, t: any) => a + Number(t.valor), 0) || Number(linha.valor);
   const dif = Math.round((pago - total) * 100) / 100;
   let msg = `✅ Fatura <b>${cartao.nome} ${rotulo}</b> marcada como <b>paga</b> (nenhuma conta bancária foi mexida).
 
