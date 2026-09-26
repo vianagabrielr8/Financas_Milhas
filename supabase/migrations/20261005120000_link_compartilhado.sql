@@ -14,6 +14,7 @@
 --      O período (de/até, por mês) é o único filtro que a pessoa escolhe.
 -- NÃO MEXE em nenhum dado existente.
 -- COMO RODAR: SQL Editor. PASSO 0 e depois PASSO 2 (bloco inteiro).
+-- Pode rodar o PASSO 2 de novo sem problema: ele pula o que já existe.
 -- =====================================================================
 
 -- PASSO 0 (conferência). Esperado: tabela_ja_existe = false, categorias_terceiros = 3 (ou mais)
@@ -27,7 +28,7 @@ SELECT
 -- PASSO 2: aplica (rode o bloco inteiro).
 BEGIN;
 
-CREATE TABLE public.link_compartilhado (
+CREATE TABLE IF NOT EXISTS public.link_compartilhado (
   id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   familia_id    uuid NOT NULL DEFAULT public.minha_familia() REFERENCES public.familia(id) ON DELETE CASCADE,
   codigo        text NOT NULL UNIQUE DEFAULT (replace(gen_random_uuid()::text, '-', '') || replace(gen_random_uuid()::text, '-', '')),
@@ -38,34 +39,39 @@ CREATE TABLE public.link_compartilhado (
   criado_por    uuid DEFAULT auth.uid(),
   criado_em     timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX link_compartilhado_familia_idx ON public.link_compartilhado (familia_id);
+CREATE INDEX IF NOT EXISTS link_compartilhado_familia_idx ON public.link_compartilhado (familia_id);
 
 ALTER TABLE public.link_compartilhado ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS admin_ver ON public.link_compartilhado;
 CREATE POLICY admin_ver ON public.link_compartilhado FOR SELECT TO authenticated
   USING (familia_id = (SELECT public.minha_familia()) AND (SELECT public.sou_admin()));
+DROP POLICY IF EXISTS admin_criar ON public.link_compartilhado;
 CREATE POLICY admin_criar ON public.link_compartilhado FOR INSERT TO authenticated
   WITH CHECK (familia_id = (SELECT public.minha_familia()) AND (SELECT public.sou_admin()));
+DROP POLICY IF EXISTS admin_editar ON public.link_compartilhado;
 CREATE POLICY admin_editar ON public.link_compartilhado FOR UPDATE TO authenticated
   USING (familia_id = (SELECT public.minha_familia()) AND (SELECT public.sou_admin()))
   WITH CHECK (familia_id = (SELECT public.minha_familia()));
+DROP POLICY IF EXISTS admin_apagar ON public.link_compartilhado;
 CREATE POLICY admin_apagar ON public.link_compartilhado FOR DELETE TO authenticated
   USING (familia_id = (SELECT public.minha_familia()) AND (SELECT public.sou_admin()));
 
 -- A categoria do link tem que ser da mesma família
-CREATE FUNCTION public.link_compartilhado_confere() RETURNS trigger LANGUAGE plpgsql AS $$
+CREATE OR REPLACE FUNCTION public.link_compartilhado_confere() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM public.categoria_pessoal WHERE id = NEW.categoria_id AND familia_id = NEW.familia_id) THEN
     RAISE EXCEPTION 'Categoria de outra família.';
   END IF;
   RETURN NEW;
 END $$;
+DROP TRIGGER IF EXISTS link_compartilhado_confere ON public.link_compartilhado;
 CREATE TRIGGER link_compartilhado_confere BEFORE INSERT OR UPDATE OF categoria_id, familia_id ON public.link_compartilhado
   FOR EACH ROW EXECUTE FUNCTION public.link_compartilhado_confere();
 
 -- Porta de leitura para quem abre o link (sem login).
 -- p_de / p_ate: 'AAAA-MM' (vazio = sem limite). Cartão conta no mês da
 -- fatura (quando se paga); conta bancária, no mês da data.
-CREATE FUNCTION public.extrato_compartilhado(p_codigo text, p_de text DEFAULT NULL, p_ate text DEFAULT NULL)
+CREATE OR REPLACE FUNCTION public.extrato_compartilhado(p_codigo text, p_de text DEFAULT NULL, p_ate text DEFAULT NULL)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 DECLARE
   l public.link_compartilhado;

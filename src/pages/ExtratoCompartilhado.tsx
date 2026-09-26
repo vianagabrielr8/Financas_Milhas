@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
-import { CreditCard, Landmark, CalendarDays } from 'lucide-react';
+import { CreditCard, CalendarDays, ChevronDown, Check } from 'lucide-react';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
 
 // Página aberta por quem recebeu o link (sem login). Só lê o que a função
@@ -45,20 +46,25 @@ export default function ExtratoCompartilhado() {
     return l;
   }, [dados?.primeiro_mes, dados?.ultimo_mes]);
 
-  // vencimentos de cartão presentes no período (para o 2º filtro)
-  const vencimentos = useMemo(() => {
-    const m = new Map<string, { data: string; cartao: string; total: number }>();
-    for (const l of dados?.lancamentos || []) {
-      if (!l.cartao || l.tipo === 'RECEITA') continue;
-      const k = `${l.vencimento}|${l.cartao}`;
-      const x = m.get(k) || { data: l.vencimento, cartao: l.cartao, total: 0 };
-      x.total += l.tipo === 'ESTORNO' ? -Number(l.valor) : Number(l.valor);
-      m.set(k, x);
+  // vencimentos de cartão do período, só pelo dia (cartões que vencem no mesmo dia ficam juntos)
+  const vencimentos = useMemo(() => Array.from(new Set((dados?.lancamentos || [])
+    .filter((l) => l.cartao && l.tipo !== 'RECEITA').map((l) => l.vencimento))).sort(), [dados?.lancamentos]);
+  const lista = (dados?.lancamentos || []).filter((l) => !venc || (l.cartao && l.vencimento === venc));
+  const filtrado = !!mes || !!venc;
+  // grupos por dia de vencimento (conta bancária: pelo dia do lançamento), do mais novo ao mais antigo
+  const grupos = (() => {
+    const m = new Map<string, { data: string; cartao: boolean; total: number; itens: Lanc[] }>();
+    for (const l of lista) {
+      const g = m.get(l.vencimento) || { data: l.vencimento, cartao: false, total: 0, itens: [] };
+      g.cartao = g.cartao || !!l.cartao;
+      g.total += (l.tipo === 'DESPESA' ? 1 : -1) * Number(l.valor);
+      g.itens.push(l);
+      m.set(l.vencimento, g);
     }
-    return Array.from(m.entries()).sort((a, b) => a[1].data.localeCompare(b[1].data));
-  }, [dados?.lancamentos]);
-  const lista = (dados?.lancamentos || []).filter((l) => !venc || `${l.vencimento}|${l.cartao}` === venc);
-  const vencEscolhido = vencimentos.find(([k]) => k === venc)?.[1];
+    return Array.from(m.values()).sort((a, b) => b.data.localeCompare(a.data));
+  })();
+  const somaLista = lista.reduce((a, l) => a + (l.tipo === 'DESPESA' ? Number(l.valor) : l.tipo === 'ESTORNO' ? -Number(l.valor) : 0), 0);
+  const pagoLista = lista.reduce((a, l) => a + (l.tipo === 'RECEITA' ? Number(l.valor) : 0), 0);
 
   if (estado === 'CARREGANDO' && !dados) return <Tela><p className="text-zinc-400 text-sm">Carregando...</p></Tela>;
   if (estado === 'INVALIDO') return <Tela><p className="text-zinc-300">Este link não existe ou foi desativado.</p><p className="text-zinc-500 text-sm mt-1">Peça um link novo para quem te enviou.</p></Tela>;
@@ -79,59 +85,47 @@ export default function ExtratoCompartilhado() {
           <p className="text-xs text-zinc-400 mt-2">Total lançado {brl(dados.total_lancado)} · já pago {brl(dados.total_pago)}</p>
         </div>
 
-        {/* Período: o único filtro que a pessoa escolhe */}
-        <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-1 px-1">
-          <Chip ativo={!mes} onClick={() => setMes('')}>Tudo</Chip>
-          {meses.map((m) => <Chip key={m} ativo={mes === m} onClick={() => setMes(m)}>{rotulo(m)}</Chip>)}
+        {/* Filtros: mês e vencimento do cartão, cada um abre sua lista */}
+        <div className="grid grid-cols-2 gap-2">
+          <Filtro icone={<CalendarDays className="w-4 h-4" />} rotulo="Mês" valor={mes ? rotulo(mes) : 'Todos'}
+            opcoes={[['', 'Todos'], ...meses.map((m) => [m, `${MESES_LONGOS[Number(m.slice(5, 7)) - 1]} ${m.slice(0, 4)}`] as [string, string])]}
+            escolhido={mes} onEscolher={setMes} />
+          <Filtro icone={<CreditCard className="w-4 h-4" />} rotulo="Vencimento" valor={venc ? `dia ${dataBR(venc).slice(0, 5)}` : 'Todos'}
+            opcoes={[['', 'Todos'], ...vencimentos.map((v) => [v, `Vence ${dataBR(v)}`] as [string, string])]}
+            escolhido={venc} onEscolher={setVenc} vazio="Nenhuma compra no cartão neste mês" />
         </div>
 
-        {/* Vencimento do cartão: mostra só o que cai numa fatura */}
-        {vencimentos.length > 0 && (
-          <div>
-            <p className="text-[11px] text-zinc-500 mb-1.5">Vencimento do cartão</p>
-            <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-1 px-1">
-              <Chip ativo={!venc} onClick={() => setVenc('')}>Todos</Chip>
-              {vencimentos.map(([k, v]) => <Chip key={k} ativo={venc === k} onClick={() => setVenc(k)}>{dataBR(v.data).slice(0, 5)} · {v.cartao}</Chip>)}
+        {filtrado && (
+          <div className="flex items-center justify-between gap-2 text-xs bg-[#1a1a20] border border-white/5 rounded-xl px-3 py-2.5">
+            <span className="text-zinc-400">{venc ? `A pagar no vencimento ${dataBR(venc).slice(0, 5)}` : 'Neste mês'}: <b className="text-white">{brl(somaLista)}</b>{pagoLista > 0 && <> · pago <b className="text-emerald-300">{brl(pagoLista)}</b></>}</span>
+            <button onClick={() => { setMes(''); setVenc(''); }} className="text-emerald-400 font-semibold shrink-0">Limpar</button>
+          </div>
+        )}
+
+        {lista.length === 0 && <p className="p-4 text-sm text-zinc-500 bg-[#1a1a20] border border-white/5 rounded-2xl">Nenhum lançamento neste período.</p>}
+        {/* Agrupado por vencimento: um título com o total de cada dia, as compras embaixo */}
+        {grupos.map((g) => (
+          <div key={g.data} className="bg-[#1a1a20] border border-white/5 rounded-2xl overflow-hidden">
+            <div className="flex items-center justify-between gap-2 px-4 py-2.5 bg-white/[0.03] border-b border-white/5">
+              <p className="text-xs font-bold text-zinc-300">{g.cartao ? 'Vence' : 'Em'} {dataBR(g.data)}</p>
+              <p className={cn('text-sm font-bold', g.total < 0 ? 'text-emerald-300' : 'text-white')}>{g.total < 0 ? `−${brl(-g.total)}` : brl(g.total)}</p>
+            </div>
+            <div className="divide-y divide-white/5">
+              {g.itens.map((l, i) => {
+                const pagamento = l.tipo === 'RECEITA', estorno = l.tipo === 'ESTORNO';
+                return (
+                  <div key={i} className="px-4 py-3 flex items-center gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className={cn('text-sm break-words', pagamento ? 'text-emerald-300 font-semibold' : 'text-zinc-100')}>{pagamento ? `Pagamento recebido${l.descricao ? ` · ${l.descricao}` : ''}` : l.descricao}</p>
+                      <p className="text-[11px] text-zinc-500 mt-0.5">{l.cartao ? `compra em ${dataBR(l.data)}` : (l.conta || '')}{estorno ? ' · estorno' : ''}</p>
+                    </div>
+                    <p className={cn('text-sm font-semibold whitespace-nowrap', pagamento || estorno ? 'text-emerald-300' : 'text-zinc-100')}>{pagamento || estorno ? '−' : ''}{brl(l.valor)}</p>
+                  </div>
+                );
+              })}
             </div>
           </div>
-        )}
-
-        {vencEscolhido && (
-          <div className="bg-violet-500/10 border border-violet-500/30 rounded-xl p-3">
-            <p className="text-[11px] text-zinc-300">Fatura {vencEscolhido.cartao} que vence em {dataBR(vencEscolhido.data)}</p>
-            <p className="text-xl font-bold text-violet-200">{brl(vencEscolhido.total)}</p>
-          </div>
-        )}
-
-        {mes && !venc && (
-          <div className="grid grid-cols-2 gap-2">
-            <div className="bg-[#1a1a20] border border-white/5 rounded-xl p-3"><p className="text-[11px] text-zinc-400">Lançado em {MESES_LONGOS[Number(mes.slice(5, 7)) - 1]}</p><p className="font-bold text-white">{brl(dados.periodo_lancado)}</p></div>
-            <div className="bg-[#1a1a20] border border-white/5 rounded-xl p-3"><p className="text-[11px] text-zinc-400">Pago em {MESES_LONGOS[Number(mes.slice(5, 7)) - 1]}</p><p className="font-bold text-emerald-300">{brl(dados.periodo_pago)}</p></div>
-          </div>
-        )}
-
-        <div className="bg-[#1a1a20] border border-white/5 rounded-2xl divide-y divide-white/5">
-          {lista.length === 0 && <p className="p-4 text-sm text-zinc-500">Nenhum lançamento neste período.</p>}
-          {lista.map((l, i) => {
-            const pagamento = l.tipo === 'RECEITA', estorno = l.tipo === 'ESTORNO';
-            return (
-              <div key={i} className="p-3.5 flex items-start gap-3">
-                <div className={cn('mt-0.5 h-8 w-8 rounded-full flex items-center justify-center shrink-0', pagamento ? 'bg-emerald-500/15 text-emerald-300' : l.cartao ? 'bg-violet-500/15 text-violet-300' : 'bg-sky-500/15 text-sky-300')}>
-                  {l.cartao ? <CreditCard className="w-4 h-4" /> : <Landmark className="w-4 h-4" />}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold text-white break-words">{pagamento ? `Pagamento recebido${l.descricao ? ` · ${l.descricao}` : ''}` : l.descricao}</p>
-                  <p className="text-[11px] text-zinc-400 mt-0.5">
-                    {l.cartao
-                      ? <>Compra em {dataBR(l.data)} · 💳 {l.cartao} · <b className="text-zinc-200">vence {dataBR(l.vencimento)}</b></>
-                      : <><CalendarDays className="w-3 h-3 inline -mt-0.5" /> {dataBR(l.data)}{l.conta ? ` · ${l.conta}` : ''}</>}
-                  </p>
-                </div>
-                <p className={cn('text-sm font-bold whitespace-nowrap', pagamento || estorno ? 'text-emerald-300' : 'text-white')}>{pagamento || estorno ? '−' : ''}{brl(l.valor)}</p>
-              </div>
-            );
-          })}
-        </div>
+        ))}
         <p className="text-[11px] text-zinc-600 text-center">Compras no cartão aparecem no mês em que a fatura vence. Link somente para consulta.</p>
       </div>
     </Tela>
@@ -149,10 +143,31 @@ function Tela({ children }: { children: React.ReactNode }) {
   );
 }
 
-function Chip({ ativo, onClick, children }: { ativo: boolean; onClick: () => void; children: React.ReactNode }) {
+function Filtro({ icone, rotulo, valor, opcoes, escolhido, onEscolher, vazio }: {
+  icone: React.ReactNode; rotulo: string; valor: string; opcoes: [string, string][]; escolhido: string; onEscolher: (v: string) => void; vazio?: string;
+}) {
+  const [aberto, setAberto] = useState(false);
   return (
-    <button onClick={onClick} className={cn('h-9 px-3.5 rounded-full text-xs font-semibold whitespace-nowrap border transition-colors', ativo ? 'bg-emerald-500 text-black border-emerald-500' : 'bg-[#1a1a20] text-zinc-300 border-white/10 hover:border-white/20')}>
-      {children}
-    </button>
+    <Popover open={aberto} onOpenChange={setAberto}>
+      <PopoverTrigger asChild>
+        <button className={cn('h-12 w-full flex items-center gap-2 px-3 rounded-xl border text-left transition-colors', escolhido ? 'bg-emerald-500/10 border-emerald-500/40' : 'bg-[#1a1a20] border-white/10 hover:border-white/20')}>
+          <span className={escolhido ? 'text-emerald-300' : 'text-zinc-400'}>{icone}</span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-[10px] uppercase tracking-wider text-zinc-500 font-bold leading-none">{rotulo}</span>
+            <span className="block text-sm font-semibold text-white truncate mt-1">{valor}</span>
+          </span>
+          <ChevronDown className="w-4 h-4 text-zinc-500 shrink-0" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-[var(--radix-popover-trigger-width)] min-w-[200px] p-1 bg-[#1a1a20] border-white/10 text-white max-h-72 overflow-y-auto">
+        {opcoes.length <= 1 && vazio && <p className="px-3 py-2 text-xs text-zinc-500">{vazio}</p>}
+        {opcoes.map(([v, texto]) => (
+          <button key={v || 'todos'} onClick={() => { onEscolher(v); setAberto(false); }}
+            className={cn('w-full h-10 px-3 flex items-center justify-between rounded-lg text-sm text-left hover:bg-white/5', v === escolhido && 'text-emerald-300 font-semibold')}>
+            {texto}{v === escolhido && <Check className="w-4 h-4" />}
+          </button>
+        ))}
+      </PopoverContent>
+    </Popover>
   );
 }
