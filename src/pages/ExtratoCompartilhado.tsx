@@ -41,11 +41,22 @@ export default function ExtratoCompartilhado() {
     return () => { vivo = false; };
   }, [codigo]);
 
-  // "A pagar" = compras ainda PENDENTES (a fatura ainda não foi paga).
-  // O que já está PAGO (fatura quitada) não entra na conta.
+  // "A pagar" = o que a pessoa ainda não te pagou. Os pagamentos dela (Receitas
+  // na categoria dela) e os estornos quitam as compras da mais antiga para a
+  // mais nova (pelo vencimento). Cada compra fica com o que ainda falta.
   const todos = dados?.lancamentos || [];
-  const aPagar = (l: Lanc) => l.tipo !== 'RECEITA' && l.situacao !== 'PAGO';
-  const valorDe = (l: Lanc) => (l.tipo === 'ESTORNO' ? -1 : 1) * Number(l.valor);
+  const falta = useMemo(() => {
+    const m = new Map<Lanc, number>();
+    let credito = todos.filter((l) => l.tipo !== 'DESPESA').reduce((a, l) => a + Number(l.valor), 0);
+    for (const l of [...todos].filter((l) => l.tipo === 'DESPESA').sort((a, b) => a.vencimento.localeCompare(b.vencimento) || a.data.localeCompare(b.data))) {
+      const usa = Math.min(credito, Number(l.valor));
+      credito -= usa;
+      m.set(l, Math.round((Number(l.valor) - usa) * 100) / 100);
+    }
+    return m;
+  }, [dados]); // eslint-disable-line react-hooks/exhaustive-deps
+  const aPagar = (l: Lanc) => l.tipo === 'DESPESA' && (falta.get(l) ?? 0) > 0.004;
+  const valorDe = (l: Lanc) => falta.get(l) ?? 0;
   const mesDe = (l: Lanc) => l.vencimento.slice(0, 7);
   const pendentes = todos.filter(aPagar);
   const totalAPagar = pendentes.reduce((a, l) => a + valorDe(l), 0);
@@ -124,12 +135,13 @@ export default function ExtratoCompartilhado() {
             </div>
             <div className="divide-y divide-white/5">
               {g.itens.map((l, i) => {
-                const pagamento = l.tipo === 'RECEITA', estorno = l.tipo === 'ESTORNO', pago = !aPagar(l) && !pagamento;
+                const pagamento = l.tipo === 'RECEITA', estorno = l.tipo === 'ESTORNO', pago = l.tipo === 'DESPESA' && !aPagar(l);
+                const parcial = aPagar(l) && valorDe(l) < Number(l.valor) - 0.004;
                 return (
                   <div key={i} className={cn('px-4 py-3 flex items-center gap-3', pago && 'opacity-50')}>
                     <div className="min-w-0 flex-1">
                       <p className={cn('text-sm break-words', pagamento ? 'text-emerald-300 font-semibold' : 'text-zinc-100')}>{pagamento ? `Pagamento recebido${l.descricao ? ` · ${l.descricao}` : ''}` : l.descricao}</p>
-                      <p className="text-[11px] text-zinc-500 mt-0.5">{l.cartao ? `compra em ${dataBR(l.data)}` : (l.conta || '')}{estorno ? ' · estorno' : ''}{pago ? ' · ✓ pago' : ''}</p>
+                      <p className="text-[11px] text-zinc-500 mt-0.5">{l.cartao ? `compra em ${dataBR(l.data)}` : (l.conta || '')}{estorno ? ' · estorno' : ''}{pago ? ' · ✓ pago' : ''}{parcial ? ` · falta ${brl(valorDe(l))}` : ''}</p>
                     </div>
                     <p className={cn('text-sm font-semibold whitespace-nowrap', pagamento || estorno ? 'text-emerald-300' : 'text-zinc-100')}>{pagamento || estorno ? '−' : ''}{brl(l.valor)}</p>
                   </div>
