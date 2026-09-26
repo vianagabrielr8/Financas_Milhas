@@ -5,6 +5,17 @@ import { Search, Plus, X, Calendar, ChevronDown, CornerDownRight, Filter, Trendi
 import { cn, hojeLocal } from '@/lib/utils';
 import { useFamilia } from '@/contexts/FamiliaContext';
 import { ContestarModal, podeContestar } from '@/components/finance/ContestarModal';
+import { LinksCompartilhados } from '@/components/finance/LinksCompartilhados';
+
+// Dia em que a fatura do cartão vence: mês da fatura ("Out/2026") + dia de vencimento do cartão.
+const MESES_FATURA = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+function vencimentoFatura(mesFatura?: string | null, diaVencimento?: number | null) {
+  const [m, a] = String(mesFatura || '').split('/');
+  const i = MESES_FATURA.indexOf(m);
+  if (i < 0 || !a || !diaVencimento) return null;
+  const dia = Math.min(Number(diaVencimento), new Date(Number(a), i + 1, 0).getDate());
+  return `${String(dia).padStart(2, '0')}/${String(i + 1).padStart(2, '0')}`;
+}
 
 export default function Transacoes() {
   const { podeEditar } = useFamilia();
@@ -358,6 +369,8 @@ export default function Transacoes() {
             <Download className="w-4 h-4 mr-2" /> Exportar
           </button>
 
+          {podeEditar && <LinksCompartilhados categorias={categorias} centros={centrosCusto} />}
+
           {podeEditar && (
             <button onClick={() => { resetForm(); setModalAberto(true); }} className="bg-emerald-500 hover:bg-emerald-600 text-white px-5 h-[42px] rounded-lg font-medium transition-all shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2">
               <Plus className="w-4 h-4" /> Nova
@@ -424,7 +437,7 @@ export default function Transacoes() {
                 <p className="text-[11px] text-zinc-500 mt-1 leading-relaxed">
                   {new Date(t.data).toLocaleDateString('pt-BR', { timeZone: 'UTC', day: '2-digit', month: '2-digit' })}
                   {' · '}{renderNomeCategoria(t.categoria_id, t.subcategoria_id)}
-                  {' · '}{t.cartao_pessoal ? `💳 ${t.cartao_pessoal.nome} (${t.mes_fatura})` : (t.conta_financeira_pessoal?.nome || '—')}
+                  {' · '}{t.cartao_pessoal ? `💳 ${t.cartao_pessoal.nome} (${t.mes_fatura}${vencimentoFatura(t.mes_fatura, t.cartao_pessoal.dia_vencimento) ? ` · vence ${vencimentoFatura(t.mes_fatura, t.cartao_pessoal.dia_vencimento)}` : ''})` : (t.conta_financeira_pessoal?.nome || '—')}
                 </p>
                 {t.tipo === 'PAGAMENTO_FATURA' && <p className="text-[10px] text-sky-400 font-bold uppercase mt-1">Pagamento de fatura</p>}
               </div>
@@ -505,7 +518,7 @@ export default function Transacoes() {
                       {t.cartao_pessoal ? (
                          <div className="flex flex-col gap-1 items-start">
                            <span className="text-[10px] bg-purple-500/10 text-purple-400 px-2 py-1 rounded border border-purple-500/20 uppercase font-bold tracking-wider flex items-center gap-1 w-max">💳 {t.cartao_pessoal.nome}</span>
-                           <span className="text-[9px] text-gray-500 font-bold uppercase tracking-wider pl-1">• Fatura {t.mes_fatura}</span>
+                           <span className="text-[9px] text-gray-500 font-bold uppercase tracking-wider pl-1">• Fatura {t.mes_fatura}{vencimentoFatura(t.mes_fatura, t.cartao_pessoal.dia_vencimento) && <span className="text-amber-300/80"> · vence {vencimentoFatura(t.mes_fatura, t.cartao_pessoal.dia_vencimento)}</span>}</span>
                          </div>
                       ) : (t.conta_financeira_pessoal?.nome || '—')}
                     </td>
