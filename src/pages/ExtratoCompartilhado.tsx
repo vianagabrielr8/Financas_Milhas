@@ -18,7 +18,9 @@ const somar = (am: string, n: number) => { const d = new Date(Number(am.slice(0,
 
 export default function ExtratoCompartilhado() {
   const { codigo = '' } = useParams();
-  const [mes, setMes] = useState<string>(''); // '' = tudo
+  const [mes, setMesEstado] = useState<string>(''); // '' = tudo
+  const [venc, setVenc] = useState<string>(''); // vencimento do cartão: 'AAAA-MM-DD|Cartão' ('' = todos)
+  const setMes = (m: string) => { setMesEstado(m); setVenc(''); };
   const [dados, setDados] = useState<Extrato | null>(null);
   const [estado, setEstado] = useState<'CARREGANDO' | 'OK' | 'INVALIDO' | 'ERRO'>('CARREGANDO');
 
@@ -42,6 +44,21 @@ export default function ExtratoCompartilhado() {
     for (let m = dados.ultimo_mes; m >= dados.primeiro_mes && l.length < 36; m = somar(m, -1)) l.push(m);
     return l;
   }, [dados?.primeiro_mes, dados?.ultimo_mes]);
+
+  // vencimentos de cartão presentes no período (para o 2º filtro)
+  const vencimentos = useMemo(() => {
+    const m = new Map<string, { data: string; cartao: string; total: number }>();
+    for (const l of dados?.lancamentos || []) {
+      if (!l.cartao || l.tipo === 'RECEITA') continue;
+      const k = `${l.vencimento}|${l.cartao}`;
+      const x = m.get(k) || { data: l.vencimento, cartao: l.cartao, total: 0 };
+      x.total += l.tipo === 'ESTORNO' ? -Number(l.valor) : Number(l.valor);
+      m.set(k, x);
+    }
+    return Array.from(m.entries()).sort((a, b) => a[1].data.localeCompare(b[1].data));
+  }, [dados?.lancamentos]);
+  const lista = (dados?.lancamentos || []).filter((l) => !venc || `${l.vencimento}|${l.cartao}` === venc);
+  const vencEscolhido = vencimentos.find(([k]) => k === venc)?.[1];
 
   if (estado === 'CARREGANDO' && !dados) return <Tela><p className="text-zinc-400 text-sm">Carregando...</p></Tela>;
   if (estado === 'INVALIDO') return <Tela><p className="text-zinc-300">Este link não existe ou foi desativado.</p><p className="text-zinc-500 text-sm mt-1">Peça um link novo para quem te enviou.</p></Tela>;
@@ -68,7 +85,25 @@ export default function ExtratoCompartilhado() {
           {meses.map((m) => <Chip key={m} ativo={mes === m} onClick={() => setMes(m)}>{rotulo(m)}</Chip>)}
         </div>
 
-        {mes && (
+        {/* Vencimento do cartão: mostra só o que cai numa fatura */}
+        {vencimentos.length > 0 && (
+          <div>
+            <p className="text-[11px] text-zinc-500 mb-1.5">Vencimento do cartão</p>
+            <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-1 px-1">
+              <Chip ativo={!venc} onClick={() => setVenc('')}>Todos</Chip>
+              {vencimentos.map(([k, v]) => <Chip key={k} ativo={venc === k} onClick={() => setVenc(k)}>{dataBR(v.data).slice(0, 5)} · {v.cartao}</Chip>)}
+            </div>
+          </div>
+        )}
+
+        {vencEscolhido && (
+          <div className="bg-violet-500/10 border border-violet-500/30 rounded-xl p-3">
+            <p className="text-[11px] text-zinc-300">Fatura {vencEscolhido.cartao} que vence em {dataBR(vencEscolhido.data)}</p>
+            <p className="text-xl font-bold text-violet-200">{brl(vencEscolhido.total)}</p>
+          </div>
+        )}
+
+        {mes && !venc && (
           <div className="grid grid-cols-2 gap-2">
             <div className="bg-[#1a1a20] border border-white/5 rounded-xl p-3"><p className="text-[11px] text-zinc-400">Lançado em {MESES_LONGOS[Number(mes.slice(5, 7)) - 1]}</p><p className="font-bold text-white">{brl(dados.periodo_lancado)}</p></div>
             <div className="bg-[#1a1a20] border border-white/5 rounded-xl p-3"><p className="text-[11px] text-zinc-400">Pago em {MESES_LONGOS[Number(mes.slice(5, 7)) - 1]}</p><p className="font-bold text-emerald-300">{brl(dados.periodo_pago)}</p></div>
@@ -76,8 +111,8 @@ export default function ExtratoCompartilhado() {
         )}
 
         <div className="bg-[#1a1a20] border border-white/5 rounded-2xl divide-y divide-white/5">
-          {dados.lancamentos.length === 0 && <p className="p-4 text-sm text-zinc-500">Nenhum lançamento neste período.</p>}
-          {dados.lancamentos.map((l, i) => {
+          {lista.length === 0 && <p className="p-4 text-sm text-zinc-500">Nenhum lançamento neste período.</p>}
+          {lista.map((l, i) => {
             const pagamento = l.tipo === 'RECEITA', estorno = l.tipo === 'ESTORNO';
             return (
               <div key={i} className="p-3.5 flex items-start gap-3">
