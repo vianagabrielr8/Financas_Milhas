@@ -462,8 +462,6 @@ export default function FaturaCartao() {
               if (formEdicaoLoteModo !== 'APENAS_ESTA') {
                 const addMonths = i - formParcelaAtual;
                 const faturaAlvo = avancarMesFatura(formFaturaDestino, addMonths);
-                const dataObj = new Date(formData + 'T12:00:00Z');
-                dataObj.setUTCMonth(dataObj.getUTCMonth() + addMonths);
 
                 operacoesInsert.push({
                   cartao_id: cartaoAtivo.id,
@@ -473,7 +471,7 @@ export default function FaturaCartao() {
                   valor: valorOriginal,
                   tipo: formTipo,
                   situacao: 'PENDENTE',
-                  data: dataObj.toISOString().split('T')[0],
+                  data: formData, // toda parcela fica com a data da compra; o mês vem do mes_fatura
                   mes_fatura: faturaAlvo,
                   categoria_id: categoriaSelecionada?.catId || null,
                   subcategoria_id: categoriaSelecionada?.subId || null,
