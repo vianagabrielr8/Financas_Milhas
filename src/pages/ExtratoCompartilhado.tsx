@@ -62,6 +62,12 @@ export default function ExtratoCompartilhado() {
   const vencimentos = Array.from(new Set(doMes.filter((l) => l.cartao && l.tipo !== 'RECEITA').map((l) => l.vencimento))).sort();
   const lista = doMes.filter((l) => !venc || (l.cartao && l.vencimento === venc));
   const somaLista = lista.filter(aPagar).reduce((a, l) => a + valorDe(l), 0);
+  // próximo vencimento dentro do que está selecionado
+  const proximoSel = (() => {
+    const pend = lista.filter(aPagar);
+    const d = pend.map((l) => l.vencimento).sort()[0];
+    return d ? { data: d, valor: pend.filter((l) => l.vencimento === d).reduce((a, l) => a + valorDe(l), 0) } : null;
+  })();
   const pagosNoMes = todos.filter((l) => (!mesEscolhido || mesDe(l) === mesEscolhido) && !aPagar(l)).length;
   // grupos por dia de vencimento, do mais próximo ao mais distante
   const grupos = (() => {
@@ -89,12 +95,6 @@ export default function ExtratoCompartilhado() {
           <h1 className="text-2xl font-bold text-white">{dados.titulo}</h1>
         </div>
 
-        <div className={cn('rounded-2xl p-5 border', totalAPagar > 0.004 ? 'bg-amber-500/10 border-amber-500/30' : 'bg-emerald-500/10 border-emerald-500/30')}>
-          <p className="text-sm text-zinc-300">{totalAPagar > 0.004 ? 'A pagar' : 'Tudo certo'}</p>
-          <p className={cn('text-3xl font-bold mt-1', totalAPagar > 0.004 ? 'text-amber-300' : 'text-emerald-300')}>{totalAPagar > 0.004 ? brl(totalAPagar) : 'Nada a pagar 🎉'}</p>
-          {proximo && <p className="text-xs text-zinc-300 mt-2">Próximo vencimento: <b>{dataBR(proximo.data)}</b> · {brl(proximo.valor)}</p>}
-        </div>
-
         {/* Filtros: mês e vencimento, cada um abre sua lista */}
         <div className="grid grid-cols-2 gap-2">
           <Filtro icone={<CalendarDays className="w-4 h-4" />} rotulo="Mês" valor={mesEscolhido ? rotulo(mesEscolhido) : 'Todos'}
@@ -106,9 +106,12 @@ export default function ExtratoCompartilhado() {
             bloqueado={!mesEscolhido ? 'Escolha um mês primeiro' : undefined} />
         </div>
 
-        <div className="flex items-center justify-between gap-2 text-xs bg-[#1a1a20] border border-white/5 rounded-xl px-3 py-2.5">
-          <span className="text-zinc-400">{venc ? `A pagar no dia ${dataBR(venc).slice(0, 5)}` : mesEscolhido ? `A pagar em ${nomeMes(mesEscolhido).toLowerCase()}` : 'A pagar'}: <b className="text-white">{brl(somaLista)}</b></span>
-          {pagosNoMes > 0 && <button onClick={() => setVerPagos(!verPagos)} className="text-emerald-400 font-semibold shrink-0">{verPagos ? 'Esconder pagos' : `Ver pagos (${pagosNoMes})`}</button>}
+        {/* Total do que está selecionado nos filtros */}
+        <div className={cn('rounded-2xl p-5 border', somaLista > 0.004 ? 'bg-amber-500/10 border-amber-500/30' : 'bg-emerald-500/10 border-emerald-500/30')}>
+          <p className="text-sm text-zinc-300">{venc ? `A pagar no dia ${dataBR(venc).slice(0, 5)}` : mesEscolhido ? `A pagar em ${nomeMes(mesEscolhido).toLowerCase()} de ${mesEscolhido.slice(0, 4)}` : 'A pagar (todos os meses)'}</p>
+          <p className={cn('text-3xl font-bold mt-1', somaLista > 0.004 ? 'text-amber-300' : 'text-emerald-300')}>{somaLista > 0.004 ? brl(somaLista) : 'Nada a pagar 🎉'}</p>
+          {!venc && proximoSel && new Set(lista.filter(aPagar).map((l) => l.vencimento)).size > 1 && <p className="text-xs text-zinc-300 mt-2">Próximo vencimento: <b>{dataBR(proximoSel.data)}</b> · {brl(proximoSel.valor)}</p>}
+          {pagosNoMes > 0 && <button onClick={() => setVerPagos(!verPagos)} className="text-xs text-emerald-400 font-semibold mt-2">{verPagos ? 'Esconder pagos' : `Ver pagos (${pagosNoMes})`}</button>}
         </div>
 
         {lista.length === 0 && <p className="p-4 text-sm text-zinc-500 bg-[#1a1a20] border border-white/5 rounded-2xl">Nada a pagar neste período. 🎉</p>}
