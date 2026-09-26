@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { cn, hojeLocal } from '@/lib/utils';
 import { useFamilia } from '@/contexts/FamiliaContext';
 import { ContestarModal, podeContestar } from '@/components/finance/ContestarModal';
+import { gerarModeloFatura, lerPlanilha, TITULAR } from '@/lib/planilhaFatura';
 
 type SortKey = 'data' | 'descricao' | 'categoria' | 'valor';
 
@@ -717,20 +718,22 @@ export default function FaturaCartao() {
     }
   };
 
-  const baixarModeloCSV = () => {
-    const conteudo = "Data;Descricao;Valor Total;Fatura Alvo (Ex: Set/2026);Categoria (Opcional);Centro Custo;Parcelas (Opcional);Observacao (Opcional)\n" +
-                     "30/08/2026;Uber;26,22;Set/2026;Transporte;360 Gestão;1;Corrida cliente\n" +
-                     "15/08/2026;Supermercado;450,00;Set/2026;Alimentação;Familiar;1;Compras do mês\n" +
-                     "20/08/2026;Estorno Anuidade;-120,00;Set/2026;;Familiar;1;Valores negativos viram Estorno automaticamente";
-
-    const blob = new Blob(["﻿" + conteudo], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.setAttribute("href", url);
-    link.setAttribute("download", "modelo_importacao_fatura.csv");
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  // Modelo em Excel com listas suspensas (centro de custo, categoria, fatura e cartão/adicional)
+  const baixarModeloCSV = async () => {
+    if (!cartaoAtivo) return;
+    try {
+      const blob = await gerarModeloFatura({
+        cartaoNome: cartaoAtivo.nome, faturaAtual, centros: centrosCusto as any, categorias: categorias as any,
+        subcategorias: subcategorias as any, adicionais: cartoesVinculados as any,
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      link.setAttribute("download", `modelo_importacao_${String(cartaoAtivo.nome).replace(/[^\w-]+/g, '_')}.xlsx`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch { alert('Não consegui gerar a planilha-modelo. Tente de novo.'); }
   };
 
   const exportarFaturaCSV = () => {
@@ -783,16 +786,15 @@ export default function FaturaCartao() {
       if (!pagina || pagina.length < 1000) break;
     }
 
-    const reader = new FileReader();
-    reader.onload = async ({ target }) => {
+    // Processa as linhas no formato do modelo (colunas separadas por ";", 1ª linha = cabeçalho)
+    const processarTexto = async (text: string) => {
       try {
-        const text = target?.result as string;
         const rows = text.split('\n').map(r => r.trim()).filter(r => r);
 
         const transacoesImportadas: any[] = [];
         const linhasComErro = [];
 
-        linhasComErro.push("Data;Descricao;Valor Total;Fatura Alvo;Categoria;Centro Custo;Parcelas;Observacao;MOTIVO DO ERRO");
+        linhasComErro.push("Data;Descricao;Valor Total;Fatura Alvo;Categoria;Centro Custo;Parcelas;Observacao;Cartao;MOTIVO DO ERRO");
 
         for(let i = 1; i < rows.length; i++) {
           const linhaOriginal = rows[i];
@@ -804,7 +806,16 @@ export default function FaturaCartao() {
             continue;
           }
 
-          const [dataRaw, desc, valorRaw, faturaRaw, catRaw, ccRaw, parcelasRaw, obsRaw] = colunas;
+          const [dataRaw, desc, valorRaw, faturaRaw, catRaw, ccRaw, parcelasRaw, obsRaw, cartaoRaw] = colunas;
+
+          // Cartão: vazio ou "Titular" = principal; senão, o nome de um adicional deste cartão
+          let vinculadoId: string | null = null;
+          const cartaoTxt = (cartaoRaw || '').trim();
+          if (cartaoTxt && cartaoTxt.toLowerCase() !== TITULAR.toLowerCase()) {
+            const adic = cartoesVinculados.find((cv: any) => String(cv.nome_impresso || '').trim().toLowerCase() === cartaoTxt.toLowerCase());
+            if (adic) vinculadoId = (adic as any).id;
+            else motivosErro.push(`Cartão adicional '${cartaoTxt}' não existe neste cartão`);
+          }
 
           if (!desc || desc.trim() === '') motivosErro.push("A descrição é obrigatória");
 
@@ -855,7 +866,16 @@ export default function FaturaCartao() {
 
           let categoriaMatchId = null;
           let subcategoriaMatchId = null;
-          if (catRaw && catRaw.trim() !== '') {
+          // "Categoria • Subcategoria" (formato da lista da planilha)
+          const partesCat = (catRaw || '').split('•').map((x) => x.trim()).filter(Boolean);
+          if (partesCat.length === 2) {
+            const cat = categorias.find((c: any) => c.nome.toLowerCase() === partesCat[0].toLowerCase() && (!ccMatchId || !c.centro_custo_id || c.centro_custo_id === ccMatchId))
+              || categorias.find((c: any) => c.nome.toLowerCase() === partesCat[0].toLowerCase());
+            const sub = cat && subcategorias.find((x: any) => x.categoria_id === cat.id && x.nome.toLowerCase() === partesCat[1].toLowerCase());
+            if (!cat || !sub) motivosErro.push(`Categoria '${catRaw.trim()}' não encontrada`);
+            else if (ccMatchId && cat.centro_custo_id && cat.centro_custo_id !== ccMatchId) motivosErro.push(`Categoria '${cat.nome}' não pertence ao CC '${ccEncontradoObj?.nome}'`);
+            else { categoriaMatchId = cat.id; subcategoriaMatchId = sub.id; }
+          } else if (catRaw && catRaw.trim() !== '') {
             const termo = catRaw.trim().toLowerCase();
             const catEncontrada = categorias.find((c: any) => c.nome.toLowerCase() === termo);
 
@@ -936,9 +956,10 @@ export default function FaturaCartao() {
                 categoria_id: categoriaMatchId,
                 subcategoria_id: subcategoriaMatchId,
                 centro_custo_id: ccMatchId,
+                cartao_vinculado_id: vinculadoId,
                 tipo: tipoTransacao,
                 situacao: 'PENDENTE',
-                observacao: obsRaw ? obsRaw.trim() : 'Importado via CSV',
+                observacao: obsRaw ? obsRaw.trim() : 'Importado via planilha',
               });
             }
           }
@@ -970,9 +991,19 @@ export default function FaturaCartao() {
         refetch();
         queryClient.invalidateQueries({ queryKey: ['transacoes_gerais'] });
 
-      } catch (err) { alert("Erro no processamento do arquivo CSV."); }
+      } catch (err) { alert("Erro no processamento da planilha."); }
     };
-    reader.readAsText(file, 'ISO-8859-1');
+
+    if (/\.xlsx$/i.test(file.name)) {
+      try {
+        const linhas = await lerPlanilha(file);
+        await processarTexto(['cabecalho', ...linhas.map((l) => l.join(';'))].join('\n'));
+      } catch { alert('Não consegui ler a planilha. Use o modelo baixado no botão "Modelo".'); }
+    } else {
+      const reader = new FileReader();
+      reader.onload = ({ target }) => { processarTexto(target?.result as string); };
+      reader.readAsText(file, 'ISO-8859-1');
+    }
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -989,7 +1020,7 @@ export default function FaturaCartao() {
     <div className="space-y-4 md:space-y-6 max-w-[1600px] mx-auto text-zinc-100 pb-24 relative">
       <ContestarModal transacao={contestando} onFechar={() => setContestando(null)} />
 
-      <input type="file" accept=".csv" ref={fileInputRef} onChange={handleImportarCSV} className="hidden" />
+      <input type="file" accept=".xlsx,.csv" ref={fileInputRef} onChange={handleImportarCSV} className="hidden" />
 
       <div className="flex flex-col gap-3">
         <div className="flex items-center gap-2 md:gap-3 w-full min-w-0">
@@ -1025,7 +1056,7 @@ export default function FaturaCartao() {
           </Button>
           {podeEditar && <>
           <Button onClick={baixarModeloCSV} variant="outline" className="border-white/10 bg-transparent hover:bg-white/5 text-zinc-400 hover:text-white text-xs font-bold h-9">
-            <Download className="w-4 h-4 mr-2" /> <span>Modelo<span className="hidden md:inline"> CSV</span></span>
+            <Download className="w-4 h-4 mr-2" /> <span>Modelo<span className="hidden md:inline"> Excel</span></span>
           </Button>
           <Button onClick={() => fileInputRef.current?.click()} variant="outline" className="border-[#10b981]/50 text-[#10b981] hover:bg-[#10b981]/10 bg-transparent text-xs font-bold h-9">
             <Upload className="w-4 h-4 mr-2" /> <span>Importar<span className="hidden md:inline"> Planilha</span></span>
