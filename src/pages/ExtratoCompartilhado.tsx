@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
-import { CreditCard, Landmark, CalendarDays, ChevronDown, Check } from 'lucide-react';
+import { CreditCard, CalendarDays, ChevronDown, Check } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
 
@@ -51,6 +51,18 @@ export default function ExtratoCompartilhado() {
     .filter((l) => l.cartao && l.tipo !== 'RECEITA').map((l) => l.vencimento))).sort(), [dados?.lancamentos]);
   const lista = (dados?.lancamentos || []).filter((l) => !venc || (l.cartao && l.vencimento === venc));
   const filtrado = !!mes || !!venc;
+  // grupos por dia de vencimento (conta bancária: pelo dia do lançamento), do mais novo ao mais antigo
+  const grupos = (() => {
+    const m = new Map<string, { data: string; cartao: boolean; total: number; itens: Lanc[] }>();
+    for (const l of lista) {
+      const g = m.get(l.vencimento) || { data: l.vencimento, cartao: false, total: 0, itens: [] };
+      g.cartao = g.cartao || !!l.cartao;
+      g.total += (l.tipo === 'DESPESA' ? 1 : -1) * Number(l.valor);
+      g.itens.push(l);
+      m.set(l.vencimento, g);
+    }
+    return Array.from(m.values()).sort((a, b) => b.data.localeCompare(a.data));
+  })();
   const somaLista = lista.reduce((a, l) => a + (l.tipo === 'DESPESA' ? Number(l.valor) : l.tipo === 'ESTORNO' ? -Number(l.valor) : 0), 0);
   const pagoLista = lista.reduce((a, l) => a + (l.tipo === 'RECEITA' ? Number(l.valor) : 0), 0);
 
@@ -90,28 +102,30 @@ export default function ExtratoCompartilhado() {
           </div>
         )}
 
-        <div className="bg-[#1a1a20] border border-white/5 rounded-2xl divide-y divide-white/5">
-          {lista.length === 0 && <p className="p-4 text-sm text-zinc-500">Nenhum lançamento neste período.</p>}
-          {lista.map((l, i) => {
-            const pagamento = l.tipo === 'RECEITA', estorno = l.tipo === 'ESTORNO';
-            return (
-              <div key={i} className="p-3.5 flex items-start gap-3">
-                <div className={cn('mt-0.5 h-8 w-8 rounded-full flex items-center justify-center shrink-0', pagamento ? 'bg-emerald-500/15 text-emerald-300' : l.cartao ? 'bg-violet-500/15 text-violet-300' : 'bg-sky-500/15 text-sky-300')}>
-                  {l.cartao ? <CreditCard className="w-4 h-4" /> : <Landmark className="w-4 h-4" />}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold text-white break-words">{pagamento ? `Pagamento recebido${l.descricao ? ` · ${l.descricao}` : ''}` : l.descricao}</p>
-                  <p className="text-[11px] text-zinc-400 mt-0.5">
-                    {l.cartao
-                      ? <>Compra {dataBR(l.data).slice(0, 5)} · <b className="text-zinc-200">vence {dataBR(l.vencimento).slice(0, 5)}</b></>
-                      : <>{dataBR(l.data).slice(0, 5)}{l.conta ? ` · ${l.conta}` : ''}</>}
-                  </p>
-                </div>
-                <p className={cn('text-sm font-bold whitespace-nowrap', pagamento || estorno ? 'text-emerald-300' : 'text-white')}>{pagamento || estorno ? '−' : ''}{brl(l.valor)}</p>
-              </div>
-            );
-          })}
-        </div>
+        {lista.length === 0 && <p className="p-4 text-sm text-zinc-500 bg-[#1a1a20] border border-white/5 rounded-2xl">Nenhum lançamento neste período.</p>}
+        {/* Agrupado por vencimento: um título com o total de cada dia, as compras embaixo */}
+        {grupos.map((g) => (
+          <div key={g.data} className="bg-[#1a1a20] border border-white/5 rounded-2xl overflow-hidden">
+            <div className="flex items-center justify-between gap-2 px-4 py-2.5 bg-white/[0.03] border-b border-white/5">
+              <p className="text-xs font-bold text-zinc-300">{g.cartao ? 'Vence' : 'Em'} {dataBR(g.data)}</p>
+              <p className={cn('text-sm font-bold', g.total < 0 ? 'text-emerald-300' : 'text-white')}>{g.total < 0 ? `−${brl(-g.total)}` : brl(g.total)}</p>
+            </div>
+            <div className="divide-y divide-white/5">
+              {g.itens.map((l, i) => {
+                const pagamento = l.tipo === 'RECEITA', estorno = l.tipo === 'ESTORNO';
+                return (
+                  <div key={i} className="px-4 py-3 flex items-center gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className={cn('text-sm break-words', pagamento ? 'text-emerald-300 font-semibold' : 'text-zinc-100')}>{pagamento ? `Pagamento recebido${l.descricao ? ` · ${l.descricao}` : ''}` : l.descricao}</p>
+                      <p className="text-[11px] text-zinc-500 mt-0.5">{l.cartao ? `compra em ${dataBR(l.data)}` : (l.conta || '')}{estorno ? ' · estorno' : ''}</p>
+                    </div>
+                    <p className={cn('text-sm font-semibold whitespace-nowrap', pagamento || estorno ? 'text-emerald-300' : 'text-zinc-100')}>{pagamento || estorno ? '−' : ''}{brl(l.valor)}</p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
         <p className="text-[11px] text-zinc-600 text-center">Compras no cartão aparecem no mês em que a fatura vence. Link somente para consulta.</p>
       </div>
     </Tela>
