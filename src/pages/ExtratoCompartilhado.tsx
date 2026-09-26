@@ -19,18 +19,18 @@ const somar = (am: string, n: number) => { const d = new Date(Number(am.slice(0,
 
 export default function ExtratoCompartilhado() {
   const { codigo = '' } = useParams();
-  // abre no mês atual ('' = todos os meses)
   const mesAtual = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; })();
-  const [mes, setMesEstado] = useState<string>(mesAtual);
-  const [venc, setVenc] = useState<string>(''); // vencimento do cartão: 'AAAA-MM-DD|Cartão' ('' = todos)
+  const [mes, setMesEstado] = useState<string | null>(null); // null = ainda não escolhido (abre no 1º mês com algo a pagar); '' = todos
+  const [venc, setVenc] = useState<string>(''); // dia de vencimento ('' = todos)
+  const [verPagos, setVerPagos] = useState(false);
   const setMes = (m: string) => { setMesEstado(m); setVenc(''); };
   const [dados, setDados] = useState<Extrato | null>(null);
   const [estado, setEstado] = useState<'CARREGANDO' | 'OK' | 'INVALIDO' | 'ERRO'>('CARREGANDO');
 
+  // busca tudo de uma vez (é pouca coisa por pessoa) e filtra aqui
   useEffect(() => {
     let vivo = true;
-    setEstado((e) => (e === 'OK' ? 'OK' : 'CARREGANDO'));
-    (supabase as any).rpc('extrato_compartilhado', { p_codigo: codigo, p_de: mes || null, p_ate: mes || null })
+    (supabase as any).rpc('extrato_compartilhado', { p_codigo: codigo, p_de: null, p_ate: null })
       .then(({ data, error }: { data: Extrato | null; error: unknown }) => {
         if (!vivo) return;
         if (error) { setEstado('ERRO'); return; }
@@ -39,76 +39,79 @@ export default function ExtratoCompartilhado() {
         document.title = `Contas – ${data.titulo}`;
       });
     return () => { vivo = false; };
-  }, [codigo, mes]);
+  }, [codigo]);
 
-  // meses com lançamento, do mais novo para o mais antigo
-  const meses = useMemo(() => {
-    // sempre inclui o mês atual, mesmo sem lançamento nele
-    const ini = [dados?.primeiro_mes, mesAtual].filter(Boolean).sort()[0] as string;
-    const fim = [dados?.ultimo_mes, mesAtual].filter(Boolean).sort().at(-1) as string;
-    const l: string[] = [];
-    for (let m = fim; m >= ini && l.length < 36; m = somar(m, -1)) l.push(m);
-    return l;
-  }, [dados?.primeiro_mes, dados?.ultimo_mes, mesAtual]);
+  // "A pagar" = compras ainda PENDENTES (a fatura ainda não foi paga).
+  // O que já está PAGO (fatura quitada) não entra na conta.
+  const todos = dados?.lancamentos || [];
+  const aPagar = (l: Lanc) => l.tipo !== 'RECEITA' && l.situacao !== 'PAGO';
+  const valorDe = (l: Lanc) => (l.tipo === 'ESTORNO' ? -1 : 1) * Number(l.valor);
+  const mesDe = (l: Lanc) => l.vencimento.slice(0, 7);
+  const pendentes = todos.filter(aPagar);
+  const totalAPagar = pendentes.reduce((a, l) => a + valorDe(l), 0);
+  const proximo = useMemo(() => {
+    const d = pendentes.map((l) => l.vencimento).sort()[0];
+    return d ? { data: d, valor: pendentes.filter((l) => l.vencimento === d).reduce((a, l) => a + valorDe(l), 0) } : null;
+  }, [dados]); // eslint-disable-line react-hooks/exhaustive-deps
+  // abre no 1º mês que tem algo a pagar; sem nada pendente, no mês atual
+  const mesEscolhido = mes ?? (proximo ? proximo.data.slice(0, 7) : mesAtual);
 
-  // vencimentos de cartão do período, só pelo dia (cartões que vencem no mesmo dia ficam juntos)
-  const vencimentos = useMemo(() => Array.from(new Set((dados?.lancamentos || [])
-    .filter((l) => l.cartao && l.tipo !== 'RECEITA').map((l) => l.vencimento))).sort(), [dados?.lancamentos]);
-  const lista = (dados?.lancamentos || []).filter((l) => !venc || (l.cartao && l.vencimento === venc));
-  const filtrado = !!mes || !!venc;
-  // grupos por dia de vencimento (conta bancária: pelo dia do lançamento), do mais novo ao mais antigo
+  // meses que têm lançamento (e o atual), do mais novo ao mais antigo
+  const meses = useMemo(() => Array.from(new Set([...todos.map(mesDe), mesAtual])).sort().reverse(), [dados, mesAtual]); // eslint-disable-line react-hooks/exhaustive-deps
+  const doMes = todos.filter((l) => !mesEscolhido || mesDe(l) === mesEscolhido).filter((l) => verPagos || aPagar(l));
+  const vencimentos = Array.from(new Set(doMes.filter((l) => l.cartao && l.tipo !== 'RECEITA').map((l) => l.vencimento))).sort();
+  const lista = doMes.filter((l) => !venc || (l.cartao && l.vencimento === venc));
+  const somaLista = lista.filter(aPagar).reduce((a, l) => a + valorDe(l), 0);
+  const pagosNoMes = todos.filter((l) => (!mesEscolhido || mesDe(l) === mesEscolhido) && !aPagar(l)).length;
+  // grupos por dia de vencimento, do mais próximo ao mais distante
   const grupos = (() => {
     const m = new Map<string, { data: string; cartao: boolean; total: number; itens: Lanc[] }>();
     for (const l of lista) {
       const g = m.get(l.vencimento) || { data: l.vencimento, cartao: false, total: 0, itens: [] };
       g.cartao = g.cartao || !!l.cartao;
-      g.total += (l.tipo === 'DESPESA' ? 1 : -1) * Number(l.valor);
+      if (aPagar(l)) g.total += valorDe(l);
       g.itens.push(l);
       m.set(l.vencimento, g);
     }
-    return Array.from(m.values()).sort((a, b) => b.data.localeCompare(a.data));
+    return Array.from(m.values()).sort((a, b) => a.data.localeCompare(b.data));
   })();
-  const somaLista = lista.reduce((a, l) => a + (l.tipo === 'DESPESA' ? Number(l.valor) : l.tipo === 'ESTORNO' ? -Number(l.valor) : 0), 0);
-  const pagoLista = lista.reduce((a, l) => a + (l.tipo === 'RECEITA' ? Number(l.valor) : 0), 0);
 
   if (estado === 'CARREGANDO' && !dados) return <Tela><p className="text-zinc-400 text-sm">Carregando...</p></Tela>;
   if (estado === 'INVALIDO') return <Tela><p className="text-zinc-300">Este link não existe ou foi desativado.</p><p className="text-zinc-500 text-sm mt-1">Peça um link novo para quem te enviou.</p></Tela>;
   if (estado === 'ERRO' || !dados) return <Tela><p className="text-zinc-300">Não consegui carregar agora. Tente de novo em instantes.</p></Tela>;
 
-  const deve = dados.total_lancado - dados.total_pago;
+  const nomeMes = (m: string) => `${MESES_LONGOS[Number(m.slice(5, 7)) - 1]}`;
   return (
     <Tela>
       <div className="space-y-4">
         <div>
-          <p className="text-xs text-zinc-500 uppercase tracking-wider font-bold">Resumo de gastos</p>
+          <p className="text-xs text-zinc-500 uppercase tracking-wider font-bold">Contas a pagar</p>
           <h1 className="text-2xl font-bold text-white">{dados.titulo}</h1>
         </div>
 
-        <div className={cn('rounded-2xl p-5 border', deve > 0.004 ? 'bg-amber-500/10 border-amber-500/30' : 'bg-emerald-500/10 border-emerald-500/30')}>
-          <p className="text-sm text-zinc-300">{deve > 0.004 ? 'Em aberto hoje' : 'Tudo certo'}</p>
-          <p className={cn('text-3xl font-bold mt-1', deve > 0.004 ? 'text-amber-300' : 'text-emerald-300')}>{deve > 0.004 ? brl(deve) : deve < -0.004 ? `${brl(-deve)} a seu favor` : 'Nada em aberto 🎉'}</p>
-          <p className="text-xs text-zinc-400 mt-2">Total lançado {brl(dados.total_lancado)} · já pago {brl(dados.total_pago)}</p>
+        <div className={cn('rounded-2xl p-5 border', totalAPagar > 0.004 ? 'bg-amber-500/10 border-amber-500/30' : 'bg-emerald-500/10 border-emerald-500/30')}>
+          <p className="text-sm text-zinc-300">{totalAPagar > 0.004 ? 'A pagar' : 'Tudo certo'}</p>
+          <p className={cn('text-3xl font-bold mt-1', totalAPagar > 0.004 ? 'text-amber-300' : 'text-emerald-300')}>{totalAPagar > 0.004 ? brl(totalAPagar) : 'Nada a pagar 🎉'}</p>
+          {proximo && <p className="text-xs text-zinc-300 mt-2">Próximo vencimento: <b>{dataBR(proximo.data)}</b> · {brl(proximo.valor)}</p>}
         </div>
 
-        {/* Filtros: mês e vencimento do cartão, cada um abre sua lista */}
+        {/* Filtros: mês e vencimento, cada um abre sua lista */}
         <div className="grid grid-cols-2 gap-2">
-          <Filtro icone={<CalendarDays className="w-4 h-4" />} rotulo="Mês" valor={mes ? rotulo(mes) : 'Todos'}
-            opcoes={[['', 'Todos'], ...meses.map((m) => [m, `${MESES_LONGOS[Number(m.slice(5, 7)) - 1]} ${m.slice(0, 4)}`] as [string, string])]}
-            escolhido={mes} onEscolher={setMes} />
+          <Filtro icone={<CalendarDays className="w-4 h-4" />} rotulo="Mês" valor={mesEscolhido ? rotulo(mesEscolhido) : 'Todos'}
+            opcoes={[['', 'Todos'], ...meses.map((m) => [m, `${nomeMes(m)} ${m.slice(0, 4)}`] as [string, string])]}
+            escolhido={mesEscolhido} onEscolher={setMes} />
           <Filtro icone={<CreditCard className="w-4 h-4" />} rotulo="Vencimento" valor={venc ? `dia ${dataBR(venc).slice(0, 5)}` : 'Todos'}
             opcoes={[['', 'Todos'], ...vencimentos.map((v) => [v, `Vence ${dataBR(v)}`] as [string, string])]}
-            escolhido={venc} onEscolher={setVenc} vazio="Nenhuma compra no cartão neste mês"
-            bloqueado={!mes ? 'Escolha um mês primeiro' : undefined} />
+            escolhido={venc} onEscolher={setVenc} vazio="Nada a pagar no cartão neste mês"
+            bloqueado={!mesEscolhido ? 'Escolha um mês primeiro' : undefined} />
         </div>
 
-        {filtrado && (
-          <div className="flex items-center justify-between gap-2 text-xs bg-[#1a1a20] border border-white/5 rounded-xl px-3 py-2.5">
-            <span className="text-zinc-400">{venc ? `A pagar no vencimento ${dataBR(venc).slice(0, 5)}` : 'Neste mês'}: <b className="text-white">{brl(somaLista)}</b>{pagoLista > 0 && <> · pago <b className="text-emerald-300">{brl(pagoLista)}</b></>}</span>
-            <button onClick={() => { setMes(''); setVenc(''); }} className="text-emerald-400 font-semibold shrink-0">Limpar</button>
-          </div>
-        )}
+        <div className="flex items-center justify-between gap-2 text-xs bg-[#1a1a20] border border-white/5 rounded-xl px-3 py-2.5">
+          <span className="text-zinc-400">{venc ? `A pagar no dia ${dataBR(venc).slice(0, 5)}` : mesEscolhido ? `A pagar em ${nomeMes(mesEscolhido).toLowerCase()}` : 'A pagar'}: <b className="text-white">{brl(somaLista)}</b></span>
+          {pagosNoMes > 0 && <button onClick={() => setVerPagos(!verPagos)} className="text-emerald-400 font-semibold shrink-0">{verPagos ? 'Esconder pagos' : `Ver pagos (${pagosNoMes})`}</button>}
+        </div>
 
-        {lista.length === 0 && <p className="p-4 text-sm text-zinc-500 bg-[#1a1a20] border border-white/5 rounded-2xl">Nenhum lançamento neste período.</p>}
+        {lista.length === 0 && <p className="p-4 text-sm text-zinc-500 bg-[#1a1a20] border border-white/5 rounded-2xl">Nada a pagar neste período. 🎉</p>}
         {/* Agrupado por vencimento: um título com o total de cada dia, as compras embaixo */}
         {grupos.map((g) => (
           <div key={g.data} className="bg-[#1a1a20] border border-white/5 rounded-2xl overflow-hidden">
@@ -118,12 +121,12 @@ export default function ExtratoCompartilhado() {
             </div>
             <div className="divide-y divide-white/5">
               {g.itens.map((l, i) => {
-                const pagamento = l.tipo === 'RECEITA', estorno = l.tipo === 'ESTORNO';
+                const pagamento = l.tipo === 'RECEITA', estorno = l.tipo === 'ESTORNO', pago = !aPagar(l) && !pagamento;
                 return (
-                  <div key={i} className="px-4 py-3 flex items-center gap-3">
+                  <div key={i} className={cn('px-4 py-3 flex items-center gap-3', pago && 'opacity-50')}>
                     <div className="min-w-0 flex-1">
                       <p className={cn('text-sm break-words', pagamento ? 'text-emerald-300 font-semibold' : 'text-zinc-100')}>{pagamento ? `Pagamento recebido${l.descricao ? ` · ${l.descricao}` : ''}` : l.descricao}</p>
-                      <p className="text-[11px] text-zinc-500 mt-0.5">{l.cartao ? `compra em ${dataBR(l.data)}` : (l.conta || '')}{estorno ? ' · estorno' : ''}</p>
+                      <p className="text-[11px] text-zinc-500 mt-0.5">{l.cartao ? `compra em ${dataBR(l.data)}` : (l.conta || '')}{estorno ? ' · estorno' : ''}{pago ? ' · ✓ pago' : ''}</p>
                     </div>
                     <p className={cn('text-sm font-semibold whitespace-nowrap', pagamento || estorno ? 'text-emerald-300' : 'text-zinc-100')}>{pagamento || estorno ? '−' : ''}{brl(l.valor)}</p>
                   </div>
