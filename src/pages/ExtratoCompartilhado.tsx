@@ -41,14 +41,15 @@ export default function ExtratoCompartilhado() {
     return () => { vivo = false; };
   }, [codigo]);
 
-  // "A pagar" = o que a pessoa ainda não te pagou. Os pagamentos dela (Receitas
-  // na categoria dela) e os estornos quitam as compras da mais antiga para a
-  // mais nova (pelo vencimento). Cada compra fica com o que ainda falta.
+  // "A pagar" = o que a pessoa ainda não te pagou. Cada compra fica com o que ainda falta.
   const todos = dados?.lancamentos || [];
   const falta = useMemo(() => {
     const m = new Map<Lanc, number>();
-    let credito = todos.filter((l) => l.tipo !== 'DESPESA').reduce((a, l) => a + Number(l.valor), 0);
-    for (const l of [...todos].filter((l) => l.tipo === 'DESPESA').sort((a, b) => a.vencimento.localeCompare(b.vencimento) || a.data.localeCompare(b.data))) {
+    // compra de fatura JÁ PAGA (situação "Pago") conta como acertada;
+    // os Pix da pessoa (Receitas) e os estornos pendentes quitam as pendentes, da mais antiga para a mais nova
+    for (const l of todos) if (l.tipo === 'DESPESA' && l.situacao === 'PAGO') m.set(l, 0);
+    let credito = todos.filter((l) => l.tipo === 'RECEITA' || (l.tipo === 'ESTORNO' && l.situacao !== 'PAGO')).reduce((a, l) => a + Number(l.valor), 0);
+    for (const l of [...todos].filter((l) => l.tipo === 'DESPESA' && l.situacao !== 'PAGO').sort((a, b) => a.vencimento.localeCompare(b.vencimento) || a.data.localeCompare(b.data))) {
       const usa = Math.min(credito, Number(l.valor));
       credito -= usa;
       m.set(l, Math.round((Number(l.valor) - usa) * 100) / 100);
