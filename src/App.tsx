@@ -11,6 +11,7 @@ import { ehFaltaNoBanco, erroAmigavel } from "@/lib/milhas";
 
 import { MainLayout } from "./components/layout/MainLayout";
 import Login from "./pages/Login";
+import ExtratoCompartilhado from "./pages/ExtratoCompartilhado";
 import NotFound from "./pages/NotFound";
 
 // IMPORTS MILHAS
@@ -141,17 +142,18 @@ const App = () => {
         <Toaster />
         <Sonner />
         <BrowserRouter>
-          {/* TRAVA DE SEGURANÇA: Se não tem sessão ativa, carrega APENAS as rotas de Login */}
-          {!session ? (
-            <Routes>
-              <Route path="*" element={<Login />} />
-            </Routes>
-          ) : (
-            /* Se está logado, descobre a família e o papel antes de liberar o sistema */
-            <FamiliaProvider userId={session.user.id}>
-              <AppLogado />
-            </FamiliaProvider>
-          )}
+          <Routes>
+            {/* Link compartilhado com terceiros: abre SEM login e só mostra o que a
+                função extrato_compartilhado devolve (uma categoria, só leitura). */}
+            <Route path="/compartilhado/:codigo" element={<ExtratoCompartilhado />} />
+            {/* TRAVA DE SEGURANÇA: sem sessão ativa, qualquer outra rota cai no Login.
+                Logado, descobre a família e o papel antes de liberar o sistema. */}
+            <Route path="*" element={!session ? <Login /> : (
+              <FamiliaProvider userId={session.user.id}>
+                <AppLogado />
+              </FamiliaProvider>
+            )} />
+          </Routes>
         </BrowserRouter>
       </TooltipProvider>
     </QueryClientProvider>
