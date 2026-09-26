@@ -19,7 +19,9 @@ const somar = (am: string, n: number) => { const d = new Date(Number(am.slice(0,
 
 export default function ExtratoCompartilhado() {
   const { codigo = '' } = useParams();
-  const [mes, setMesEstado] = useState<string>(''); // '' = tudo
+  // abre no mês atual ('' = todos os meses)
+  const mesAtual = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; })();
+  const [mes, setMesEstado] = useState<string>(mesAtual);
   const [venc, setVenc] = useState<string>(''); // vencimento do cartão: 'AAAA-MM-DD|Cartão' ('' = todos)
   const setMes = (m: string) => { setMesEstado(m); setVenc(''); };
   const [dados, setDados] = useState<Extrato | null>(null);
@@ -40,11 +42,13 @@ export default function ExtratoCompartilhado() {
 
   // meses com lançamento, do mais novo para o mais antigo
   const meses = useMemo(() => {
-    if (!dados?.primeiro_mes || !dados.ultimo_mes) return [];
+    // sempre inclui o mês atual, mesmo sem lançamento nele
+    const ini = [dados?.primeiro_mes, mesAtual].filter(Boolean).sort()[0] as string;
+    const fim = [dados?.ultimo_mes, mesAtual].filter(Boolean).sort().at(-1) as string;
     const l: string[] = [];
-    for (let m = dados.ultimo_mes; m >= dados.primeiro_mes && l.length < 36; m = somar(m, -1)) l.push(m);
+    for (let m = fim; m >= ini && l.length < 36; m = somar(m, -1)) l.push(m);
     return l;
-  }, [dados?.primeiro_mes, dados?.ultimo_mes]);
+  }, [dados?.primeiro_mes, dados?.ultimo_mes, mesAtual]);
 
   // vencimentos de cartão do período, só pelo dia (cartões que vencem no mesmo dia ficam juntos)
   const vencimentos = useMemo(() => Array.from(new Set((dados?.lancamentos || [])
@@ -92,7 +96,8 @@ export default function ExtratoCompartilhado() {
             escolhido={mes} onEscolher={setMes} />
           <Filtro icone={<CreditCard className="w-4 h-4" />} rotulo="Vencimento" valor={venc ? `dia ${dataBR(venc).slice(0, 5)}` : 'Todos'}
             opcoes={[['', 'Todos'], ...vencimentos.map((v) => [v, `Vence ${dataBR(v)}`] as [string, string])]}
-            escolhido={venc} onEscolher={setVenc} vazio="Nenhuma compra no cartão neste mês" />
+            escolhido={venc} onEscolher={setVenc} vazio="Nenhuma compra no cartão neste mês"
+            bloqueado={!mes ? 'Escolha um mês primeiro' : undefined} />
         </div>
 
         {filtrado && (
@@ -143,10 +148,20 @@ function Tela({ children }: { children: React.ReactNode }) {
   );
 }
 
-function Filtro({ icone, rotulo, valor, opcoes, escolhido, onEscolher, vazio }: {
-  icone: React.ReactNode; rotulo: string; valor: string; opcoes: [string, string][]; escolhido: string; onEscolher: (v: string) => void; vazio?: string;
+function Filtro({ icone, rotulo, valor, opcoes, escolhido, onEscolher, vazio, bloqueado }: {
+  icone: React.ReactNode; rotulo: string; valor: string; opcoes: [string, string][]; escolhido: string; onEscolher: (v: string) => void; vazio?: string; bloqueado?: string;
 }) {
   const [aberto, setAberto] = useState(false);
+  // desabilitado (ex.: vencimento sem mês escolhido): mostra o motivo no lugar do valor
+  if (bloqueado) return (
+    <div className="h-12 w-full flex items-center gap-2 px-3 rounded-xl border border-white/5 bg-[#1a1a20]/50 opacity-60 cursor-not-allowed" title={bloqueado}>
+      <span className="text-zinc-500">{icone}</span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-[10px] uppercase tracking-wider text-zinc-600 font-bold leading-none">{rotulo}</span>
+        <span className="block text-xs text-zinc-500 truncate mt-1">{bloqueado}</span>
+      </span>
+    </div>
+  );
   return (
     <Popover open={aberto} onOpenChange={setAberto}>
       <PopoverTrigger asChild>
