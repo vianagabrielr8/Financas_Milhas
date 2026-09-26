@@ -85,8 +85,8 @@ export default function Estoque() {
                 <Cartao className="hover:border-violet-500/50 transition-colors h-full">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <p className="text-[11px] font-bold uppercase text-violet-300 truncate">{c.titular}{!c.ativo && <span className="text-zinc-500 normal-case font-normal"> (inativa)</span>}</p>
-                      <p className="font-bold text-lg text-white truncate">{nomeProg(c.programa_id)}</p>
+                      <p className="text-[11px] font-semibold uppercase text-zinc-500 truncate">{c.titular}{!c.ativo && <span className="normal-case font-normal"> (inativa)</span>}</p>
+                      <p className="font-bold text-lg text-violet-300 truncate">{nomeProg(c.programa_id)}</p>
                     </div>
                     <ChevronRight className="w-4 h-4 text-zinc-600 shrink-0 mt-1" />
                   </div>
