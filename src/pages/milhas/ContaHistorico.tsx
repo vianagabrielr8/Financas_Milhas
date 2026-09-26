@@ -32,8 +32,8 @@ export default function ContaHistorico() {
       <div className="flex items-center gap-3">
         <Link to="/milhas/estoque" className="p-2 rounded-lg bg-white/5 text-zinc-400 hover:text-white"><ChevronLeft className="w-5 h-5" /></Link>
         <div className="min-w-0 flex-1">
-          <p className="text-[11px] font-bold uppercase text-violet-300">{nomeProg}</p>
-          <p className="font-bold text-lg truncate">{conta.titular}</p>
+          <p className="text-[11px] font-bold uppercase text-violet-300 truncate">{conta.titular}</p>
+          <p className="font-bold text-lg truncate">{nomeProg}</p>
         </div>
         <Link to="/milhas/lancar" className="text-xs font-bold text-violet-300 flex items-center gap-1"><PlusCircle className="w-4 h-4" /> Lançar</Link>
       </div>
