@@ -13,7 +13,26 @@
 
 export const MESES_CURTOS = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
-export type TxJogo = { valor: number; tipo: string; centro_custo_id: string | null; categoria_id: string | null; data: string; mes_fatura: string | null; cartao_id: string | null };
+export type TxJogo = { valor: number; tipo: string; centro_custo_id: string | null; categoria_id: string | null; data: string; mes_fatura: string | null; cartao_id: string | null; descricao?: string | null };
+
+/** Quantos meses para trás buscar a categoria Ingrid: parcelas antigas ainda caem no mês de hoje. */
+export const MESES_PARCELAS = 36;
+
+/**
+ * Data que conta na QUINZENA da Ingrid. Toda parcela é gravada com a data da
+ * compra; a parcela n de uma compra no cartão ("Bolsa (3/10)") conta n-1 meses
+ * depois, no mesmo dia (limitado ao último dia do mês). Ex.: compra 05/10 em
+ * 10x → parcela 1 em 05/10, parcela 2 em 05/11...
+ */
+export function dataNaQuinzena(t: Pick<TxJogo, 'data' | 'cartao_id' | 'descricao'>) {
+  const m = String(t.descricao || '').match(/\((\d+)\/(\d+)\)\s*$/);
+  const n = m ? Number(m[1]) : 1;
+  if (!t.cartao_id || n <= 1) return String(t.data).slice(0, 10);
+  const [a, mes, dia] = String(t.data).slice(0, 10).split('-').map(Number);
+  const alvo = new Date(Date.UTC(a, mes - 1 + n - 1, 1));
+  const ultimo = new Date(Date.UTC(alvo.getUTCFullYear(), alvo.getUTCMonth() + 1, 0)).getUTCDate();
+  return `${alvo.getUTCFullYear()}-${String(alvo.getUTCMonth() + 1).padStart(2, '0')}-${String(Math.min(dia, ultimo)).padStart(2, '0')}`;
+}
 export type MetaJogo = { mes: string; categoria_id: string; valor: number };
 export type Resultado = 'GANHOU' | 'PERDEU' | 'EM_JOGO';
 
@@ -47,7 +66,7 @@ export function calcularJogo(d: {
   categorias: { id: string; nome: string }[];
   metas: MetaJogo[];
   transacoes: TxJogo[]; // cartão pelo mês da fatura + conta pela data, dos meses do jogo
-  ingrid: TxJogo[];     // categoria Ingrid pela data da compra, dos meses do jogo
+  ingrid: TxJogo[];     // categoria Ingrid (com parcelas antigas), com descricao para achar o nº da parcela
 }) {
   const mesAtual = d.hoje.slice(0, 7) + '-01';
   const dia = Number(d.hoje.slice(8, 10));
@@ -66,7 +85,7 @@ export function calcularJogo(d: {
     m.set(k, (m.get(k) || 0) + valorGasto(t));
   }
   // Ingrid por data de compra (para as quinzenas)
-  const ingrid = idIngrid ? d.ingrid.filter(t => t.categoria_id === idIngrid) : [];
+  const ingrid = idIngrid ? d.ingrid.filter(t => t.categoria_id === idIngrid).map(t => ({ ...t, data: dataNaQuinzena(t) })) : [];
 
   // meses com meta até o fim do trimestre atual: o trimestre soma os 3 meses
   // (inclusive o que já está comprometido nos meses seguintes), igual ao bot

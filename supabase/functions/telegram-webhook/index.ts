@@ -234,6 +234,19 @@ type Placar = {
   premios: Record<string, string>; // nível -> 1º desejo ainda não conquistado
 };
 
+// Data que conta na quinzena da Ingrid: toda parcela é gravada com a data da
+// compra; a parcela n ("Bolsa (3/10)") no cartão conta n-1 meses depois, no
+// mesmo dia. Mesma regra de src/lib/game.ts (dataNaQuinzena).
+function dataNaQuinzena(t: any) {
+  const m = String(t.descricao || '').match(/\((\d+)\/(\d+)\)\s*$/);
+  const n = m ? Number(m[1]) : 1;
+  if (!t.cartao_id || n <= 1) return String(t.data).slice(0, 10);
+  const [a, mes, dia] = String(t.data).slice(0, 10).split('-').map(Number);
+  const alvo = new Date(Date.UTC(a, mes - 1 + n - 1, 1));
+  const ultimo = new Date(Date.UTC(alvo.getUTCFullYear(), alvo.getUTCMonth() + 1, 0)).getUTCDate();
+  return `${alvo.getUTCFullYear()}-${doisDig(alvo.getUTCMonth() + 1)}-${doisDig(Math.min(dia, ultimo))}`;
+}
+
 // Junta os lançamentos já buscados e devolve os números do placar.
 function montarPlacar(d: { hoje: { ano: number; mes: number; dia: number }; centros: any[]; categorias: any[]; metas: any[];
   cartao: any[]; conta: any[]; ingrid: any[]; desejos: any[] }): Placar {
@@ -279,7 +292,8 @@ function montarPlacar(d: { hoje: { ano: number; mes: number; dia: number }; cent
     if (c.metaTotal > 0) { metaTri += c.metaTotal; gastoTri += c.gasto; } // mês sem meta não entra no trimestre
   }
 
-  const ingridNoMes = d.ingrid.filter(t => String(t.data).slice(0, 7) === chaveAtual.slice(0, 7));
+  // parcela n de compra no cartão conta n-1 meses depois da compra, no mesmo dia (igual ao app)
+  const ingridNoMes = d.ingrid.map(t => ({ ...t, data: dataNaQuinzena(t) })).filter(t => String(t.data).slice(0, 7) === chaveAtual.slice(0, 7));
   const diaDe = (t: any) => Number(String(t.data).slice(8, 10));
   const gastoQuinzena = ingridNoMes.filter(t => primeiraQuinzena ? diaDe(t) <= 15 : diaDe(t) >= 16).reduce((s, t) => s + valorGasto(t), 0);
   const gastoPrimeiraQuinzena = ingridNoMes.filter(t => diaDe(t) <= 15).reduce((s, t) => s + valorGasto(t), 0);
@@ -322,8 +336,9 @@ async function calcularPlacar(familiaId: string, hoje = hojeBrasil()): Promise<P
     buscarTudoBot(() => supabase.from('transacao_pessoal').select(cols).eq('familia_id', familiaId)
       .is('cartao_id', null).gte('data', chaveDoMes(ano, triIni)).lt('data', chaveNormal(ano, triIni + 3)).order('id')),
     idIngrid
-      ? buscarTudoBot(() => supabase.from('transacao_pessoal').select(cols).eq('familia_id', familiaId)
-          .eq('categoria_id', idIngrid).gte('data', chaveDoMes(ano, mes)).lt('data', chaveNormal(ano, mes + 1)).order('id'))
+      // 36 meses para trás: parcelas de compras antigas ainda caem no mês de hoje
+      ? buscarTudoBot(() => supabase.from('transacao_pessoal').select(cols + ', cartao_id, descricao').eq('familia_id', familiaId)
+          .eq('categoria_id', idIngrid).gte('data', chaveDoMes(ano - 3, mes)).lt('data', chaveNormal(ano, mes + 1)).order('id'))
       : Promise.resolve([]),
   ]);
 
@@ -1336,12 +1351,10 @@ async function executarTarefaGravacao(p: Pessoa, mesFaturaEscolhida: string | nu
           let descFinal = descLimpa;
           if (qtdParcelas > 1) descFinal = `${descLimpa} (${i}/${qtdParcelas})`; // padrão do app: "Geladeira (2/10)"
 
+          // Cartão: toda parcela fica com a data da COMPRA (o mês vem do mes_fatura).
+          // Conta bancária parcelada: cada parcela no seu mês (é quando o dinheiro sai).
           const dataObj = new Date(tx.data + 'T12:00:00Z');
-          if (tx.conta_id && qtdParcelas > 1) {
-              dataObj.setUTCMonth(dataObj.getUTCMonth() + (i - 1));
-          } else if (tx.cartao_principal_id || tx.cartao_vinculado_id) {
-              dataObj.setUTCMonth(dataObj.getUTCMonth() + (i - 1));
-          }
+          if (tx.conta_id && qtdParcelas > 1) dataObj.setUTCMonth(dataObj.getUTCMonth() + (i - 1));
 
           rowsInsert.push({
             data: dataObj.toISOString().split('T')[0],

@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { useFamilia } from '@/contexts/FamiliaContext';
 import PainelGame from '@/components/metas/PainelGame';
+import { dataNaQuinzena, MESES_PARCELAS } from '@/lib/game';
 
 // ------------------------------------------------------------------
 // Regras do jogo (Pacote 3):
@@ -131,7 +132,10 @@ export default function Metas() {
         buscarTudo(() => supabase.from('transacao_pessoal').select(cols).not('cartao_id', 'is', null).eq('mes_fatura', rotuloFatura).order('id')),
         buscarTudo(() => supabase.from('transacao_pessoal').select(cols).is('cartao_id', null).gte('data', inicio).lt('data', fim).order('id')),
         idIngrid
-          ? buscarTudo(() => supabase.from('transacao_pessoal').select(cols).eq('categoria_id', idIngrid).gte('data', inicio).lt('data', fim).order('id'))
+          // parcelas antigas também contam no mês (a parcela n conta n-1 meses depois da compra)
+          ? buscarTudo(() => supabase.from('transacao_pessoal').select(cols + ', cartao_id, descricao').eq('categoria_id', idIngrid)
+              .gte('data', chaveMes(new Date(ano, mesNum - 1 - MESES_PARCELAS, 1))).lt('data', fim).order('id'))
+              .then((l) => l.map((t: any) => ({ ...t, data: dataNaQuinzena(t) })).filter((t: any) => t.data >= inicio && t.data < fim))
           : Promise.resolve([]),
       ]);
       return { casa: [...cartao, ...conta], ingrid };

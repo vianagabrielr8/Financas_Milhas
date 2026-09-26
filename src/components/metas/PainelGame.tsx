@@ -3,12 +3,12 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Trophy, Flame, Gift, ChevronDown } from 'lucide-react';
 import { cn, hojeLocal } from '@/lib/utils';
-import { calcularJogo, rotuloFatura, normalizarTexto, MESES_CURTOS, Resultado, MetaJogo, TxJogo } from '@/lib/game';
+import { calcularJogo, rotuloFatura, normalizarTexto, MESES_CURTOS, MESES_PARCELAS, Resultado, MetaJogo, TxJogo } from '@/lib/game';
 
 const brl = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
 const NOMES_LONGOS = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
 const nomeMes = (mes: string) => `${MESES_CURTOS[Number(mes.slice(5, 7)) - 1]}/${mes.slice(2, 4)}`;
-const COLS = 'valor, tipo, centro_custo_id, categoria_id, data, mes_fatura, cartao_id';
+const COLS = 'valor, tipo, centro_custo_id, categoria_id, data, mes_fatura, cartao_id, descricao';
 
 type Pagina = PromiseLike<{ data: TxJogo[] | null; error: unknown }>;
 type Consulta = { range: (a: number, z: number) => Pagina };
@@ -93,7 +93,7 @@ export function useJogo(centros: Centro[], categorias: Categoria[], metas: MetaJ
       const [cartao, conta, ingrid]: TxJogo[][] = await Promise.all([
         buscarTudo(() => supabase.from('transacao_pessoal').select(COLS).not('cartao_id', 'is', null).in('mes_fatura', rotulos).order('id')),
         buscarTudo(() => supabase.from('transacao_pessoal').select(COLS).is('cartao_id', null).gte('data', primeiro!).lt('data', somaMes(fimTri, 1)).order('id')),
-        idIngrid ? buscarTudo(() => supabase.from('transacao_pessoal').select(COLS).eq('categoria_id', idIngrid).gte('data', primeiro!).lt('data', fim).order('id')) : Promise.resolve([]),
+        idIngrid ? buscarTudo(() => supabase.from('transacao_pessoal').select(COLS).eq('categoria_id', idIngrid).gte('data', somaMes(primeiro!, -MESES_PARCELAS)).lt('data', fim).order('id')) : Promise.resolve([]),
       ]);
       return { transacoes: [...cartao, ...conta], ingrid };
     },
