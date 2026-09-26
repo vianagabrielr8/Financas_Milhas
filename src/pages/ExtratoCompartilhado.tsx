@@ -36,6 +36,7 @@ export default function ExtratoCompartilhado() {
         if (error) { setEstado('ERRO'); return; }
         if (!data) { setEstado('INVALIDO'); return; }
         setDados(data); setEstado('OK');
+        document.title = `Contas – ${data.titulo}`;
       });
     return () => { vivo = false; };
   }, [codigo, mes]);

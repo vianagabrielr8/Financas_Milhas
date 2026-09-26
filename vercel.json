@@ -1,5 +1,6 @@
 {
   "rewrites": [
-    { "source": "/(.*)", "destination": "/index.html" }
+    { "source": "/compartilhado/:codigo", "destination": "/api/compartilhado?codigo=:codigo" },
+    { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]
 }
