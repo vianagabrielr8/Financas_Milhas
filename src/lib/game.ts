@@ -68,8 +68,11 @@ export function calcularJogo(d: {
   // Ingrid por data de compra (para as quinzenas)
   const ingrid = idIngrid ? d.ingrid.filter(t => t.categoria_id === idIngrid) : [];
 
-  const mesesComMeta = Array.from(new Set(d.metas.map(m => m.mes))).filter(m => m <= mesAtual).sort();
-  const meses: MesJogo[] = mesesComMeta.map(mes => {
+  // meses com meta até o fim do trimestre atual: o trimestre soma os 3 meses
+  // (inclusive o que já está comprometido nos meses seguintes), igual ao bot
+  const triAtualChave = chaveTri(mesAtual);
+  const mesesComMeta = Array.from(new Set(d.metas.map(m => m.mes))).filter(m => m <= mesAtual || chaveTri(m) === triAtualChave).sort();
+  const todosMeses: MesJogo[] = mesesComMeta.map(mes => {
     const metas = new Map(d.metas.filter(m => m.mes === mes).map(m => [m.categoria_id, Number(m.valor)]));
     const meta = Array.from(metas.values()).reduce((s, v) => s + v, 0);
     const gastos = porMes.get(mes) || new Map<string, number>();
@@ -91,7 +94,8 @@ export function calcularJogo(d: {
 
   // Trimestres: soma dos meses com meta; fecha quando os 3 meses do calendário passaram.
   const grupos = new Map<string, MesJogo[]>();
-  for (const m of meses) { const k = chaveTri(m.mes); if (!grupos.has(k)) grupos.set(k, []); grupos.get(k)!.push(m); }
+  const meses = todosMeses.filter(m => m.mes <= mesAtual);
+  for (const m of todosMeses) { const k = chaveTri(m.mes); if (!grupos.has(k)) grupos.set(k, []); grupos.get(k)!.push(m); }
   const trimestres: Trimestre[] = Array.from(grupos.entries()).map(([chave, ms]) => {
     const ano = Number(chave.slice(0, 4)), t = Number(chave.slice(6));
     const ultimoMes = `${ano}-${String(t * 3).padStart(2, '0')}-01`;

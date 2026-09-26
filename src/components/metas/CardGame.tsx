@@ -44,7 +44,7 @@ export default function CardGame() {
       }
     },
   });
-  const { jogo, temJogo, hoje } = useJogo(centros, categorias, metas);
+  const { jogo, temJogo, hoje, antecipado } = useJogo(centros, categorias, metas);
   if (!temJogo || !jogo?.atual) return null; // sem metas no mês: o card não aparece
 
   const dia = Number(hoje.slice(8, 10));
@@ -54,7 +54,7 @@ export default function CardGame() {
   return (
     <Link to="/financas/metas" className="block bg-[#1e1e24] border border-white/5 hover:border-amber-500/30 rounded-2xl p-3 md:p-5 transition-colors">
       <div className="flex items-center justify-between gap-2 mb-3">
-        <p className="text-sm font-bold flex items-center gap-2"><Trophy className="w-4 h-4 text-amber-400" /> Game</p>
+        <p className="text-sm font-bold flex items-center gap-2"><Trophy className="w-4 h-4 text-amber-400" /> Game{antecipado && <span className="text-[10px] font-semibold text-amber-300 bg-amber-500/10 rounded px-1.5 py-0.5">prévia · começa em {MESES_CURTOS[Number(hoje.slice(5, 7)) - 1]}</span>}</p>
         <span className="text-[11px] text-zinc-400 flex items-center gap-1">
           <Flame className="w-3.5 h-3.5 text-orange-400" /> {jogo.seqQuinzenas.atual} quinzena(s) seguida(s) <ChevronRight className="w-3.5 h-3.5" />
         </span>
